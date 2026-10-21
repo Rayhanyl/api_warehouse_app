@@ -6,6 +6,7 @@ from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from psycopg import Connection
 
+from app.core.config import settings
 from app.core.database import get_conn
 from app.core.exceptions import AuthTokenInvalid
 from app.core.security import decode_access_token
@@ -15,13 +16,13 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def get_client_ip(request: Request) -> str | None:
-    """Mengambil alamat IP klien dari X-Forwarded-For atau request.client."""
-    forwarded_for = request.headers.get("X-Forwarded-For")
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
-    if request.client:
-        return request.client.host
-    return None
+    """Mengambil alamat IP klien; X-Forwarded-For hanya dipercaya bila request berasal dari trusted_proxy_ips."""
+    client_host = request.client.host if request.client else None
+    if client_host and client_host in settings.trusted_proxy_ips:
+        forwarded_for = request.headers.get("X-Forwarded-For")
+        if forwarded_for:
+            return forwarded_for.split(",")[0].strip()
+    return client_host
 
 
 def get_current_user(
@@ -44,4 +45,3 @@ def get_current_user(
         raise AuthTokenInvalid("Akun pengguna tidak ditemukan atau sudah dinonaktifkan.")
 
     return user
-

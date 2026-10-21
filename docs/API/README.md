@@ -102,18 +102,21 @@ Sesuai pentahapan di [`docs/core/FOLDER_STRUCTURE.MD`](../core/FOLDER_STRUCTURE.
 
 ---
 
-## 4. Ringkasan Temuan yang Perlu Ditinjau (*Perlu Ditinjau*)
+## 4. Ringkasan Status Verifikasi & Perbaikan Temuan
 
-Berikut daftar temuan hasil pemeriksaan silang antara kode aktual, skema database, pengujian, dan PRD yang perlu ditinjau lebih lanjut:
+Seluruh temuan hasil tinjauan silang antara kode aktual, skema database, pengujian, dan PRD telah diperbaiki dan diverifikasi dengan pengujian otomatis (`pytest`):
 
-1. **Nilai Default Konfigurasi di `app/core/config.py`** ([authentication.md](authentication.md#8-catatan-dan-status-verifikasi)):
-   * Atribut `database_url` dan `jwt_secret` di `Settings` memiliki nilai *fallback* statis di dalam kode sumber. Sebaiknya dikosongkan/diwajibkan dari `.env` agar selaras penuh dengan PRD 7.2 dan AGENTS.md §6.
-2. **Pencegahan Penguncian Diri (*Self-Lockout*) Super Admin** ([users.md](users.md#8-catatan-dan-status-verifikasi)):
-   * Belum ada validasi yang menolak *Super Admin* menonaktifkan akunnya sendiri (`PATCH /api/v1/users/{id}` dengan `is_active: false`) atau menghapus permission `user:manage` dari peran `Super Admin`.
-3. **Header `X-Forwarded-For` Tanpa Daftar Proxy Tepercaya** ([authentication.md](authentication.md#8-catatan-dan-status-verifikasi)):
-   * `get_client_ip()` mengambil nilai pertama dari `X-Forwarded-For` secara langsung. Pada lingkungan produksi, pastikan *reverse proxy* menimpa header ini.
-4. **Perilaku `GET /health` Saat Database Mati Total** ([health.md](health.md#8-catatan-dan-status-verifikasi)):
-   * Kegagalan memperoleh koneksi dari pool melempar exception sebelum masuk ke handler route sehingga menghasilkan HTTP `500 INTERNAL_ERROR` alih-alih respons `status: "degraded"`.
-5. **Pengujian Otomatis Imutabilitas (`tests/test_immutability.py`)** ([audit-logs.md](audit-logs.md#8-catatan-dan-status-verifikasi)):
-   * Trigger dan `REVOKE` sudah terpasang di migrasi `007_append_only_guards.sql`, tetapi berkas test `tests/test_immutability.py` untuk memverifikasi **AC-08** secara otomatis masih perlu diisi.
+1. **Kredensial & Rahasia Wajib dari Lingkungan (`app/core/config.py`)** — ✅ **Terverifikasi** ([authentication.md](authentication.md#8-catatan-dan-status-verifikasi)):
+   * Atribut `database_url` dan `jwt_secret` (minimal 32 karakter) pada `Settings` kini diwajibkan tanpa nilai *fallback* statis di kode sumber, selaras dengan PRD 7.2 dan AGENTS.md §6.
+2. **Pencegahan Penguncian Diri (*Self-Lockout*) Super Admin & Validasi Email** — ✅ **Terverifikasi** ([users.md](users.md#8-catatan-dan-status-verifikasi)):
+   * `PATCH /api/v1/users/{id}` menolak penonaktifan akun sendiri (`is_active: false`) dan perubahan peran sendiri (`role_id`) dengan `422 VALIDATION_ERROR`.
+   * `PUT /api/v1/users/roles/{role_id}/permissions` menolak pencabutan izin `user:manage` dari peran `Super Admin` dengan `422 VALIDATION_ERROR`.
+   * Pembuatan dan pembaruan pengguna memvalidasi format alamat email (`EMAIL_REGEX`).
+3. **Validasi Proxy Tepercaya pada Header `X-Forwarded-For`** — ✅ **Terverifikasi** ([authentication.md](authentication.md#8-catatan-dan-status-verifikasi)):
+   * `get_client_ip()` hanya mempercayai header `X-Forwarded-For` apabila alamat IP koneksi langsung (`request.client.host`) terdaftar di `TRUSTED_PROXY_IPS`.
+4. **Ketahanan `GET /health` Saat Database Tidak Dapat Dihubungi** — ✅ **Terverifikasi** ([health.md](health.md#8-catatan-dan-status-verifikasi)):
+   * `check_pool_health()` menangkap kegagalan koneksi pool (`PsycopgError`, `PoolTimeout`, `OSError`) sehingga endpoint tetap mengembalikan respons terstruktur `status: "degraded", database: "disconnected"` tanpa melempar `500 INTERNAL_ERROR`.
+5. **Pengujian Otomatis Imutabilitas (`tests/test_immutability.py` — AC-08)** — ✅ **Terverifikasi** ([audit-logs.md](audit-logs.md#8-catatan-dan-status-verifikasi)):
+   * Skenario pengujian `test_ac08_immutability_stock_movements_and_audit_logs` telah diimplementasikan dan lulus terhadap role aplikasi (`wms_app`) maupun pemilik tabel (*table owner*).
+
 

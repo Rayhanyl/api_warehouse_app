@@ -7,7 +7,7 @@
 | **Modul** | Audit Log (Jejak Audit Aktivitas & Perubahan Data) |
 | **Base path** | `/api/v1/audit-logs` |
 | **Rujukan PRD** | FR-09, FR-11, Bagian 3.1, 6.4 (Imutabilitas), AC-05, AC-08 |
-| **Status implementasi** | ✅ Sudah diimplementasikan dan diuji (`tests/test_auth.py`, `tests/test_rbac_scoping.py`) |
+| **Status implementasi** | ✅ Sudah diimplementasikan dan diuji (`tests/test_auth.py`, `tests/test_rbac_scoping.py`, `tests/test_immutability.py`) |
 | **Kode sumber** | [routes/audit_logs.py](../../app/api/routes/audit_logs.py), [audit_service.py](../../app/services/audit_service.py), [audit_repo.py](../../app/repositories/audit_repo.py), [schemas/audit_log.py](../../app/schemas/audit_log.py) |
 | **Tabel terkait** | `audit_logs`, `users` |
 | **Modul terkait** | [Autentikasi & Otorisasi](authentication.md), [Pengguna & RBAC](users.md) |
@@ -36,6 +36,7 @@ Berdasarkan kode layanan yang telah diimplementasikan saat ini (`auth_service.py
 | `AUTH_LOGIN_FAILED` | `users` | Login gagal (username tak dikenal, akun nonaktif, akun sedang terkunci, atau password salah ke-1 s.d. ke-4) | `null` bila username tak dikenal; ID pengguna bila dikenali |
 | `AUTH_LOGIN_LOCKED` | `users` | Kegagalan login ke-5 berturut-turut yang memicu penguncian akun 15 menit | ID pengguna |
 | `AUTH_TOKEN_REFRESHED` | `refresh_tokens` | Rotasi *Refresh Token* berhasil (`POST /api/v1/auth/refresh`) | ID pengguna |
+| `AUTH_TOKEN_REFRESH_FAILED` | `refresh_tokens` | Rotasi *Refresh Token* ditolak karena token sudah kedaluwarsa (`TOKEN_EXPIRED`) atau pemilik token sudah nonaktif (`USER_INACTIVE`) | ID pengguna |
 | `AUTH_REFRESH_TOKEN_REUSE_DETECTED` | `refresh_tokens` | Penggunaan ulang *Refresh Token* yang sudah dicabut (mencabut seluruh sesi aktif user) | ID pengguna |
 | `AUTH_LOGOUT` | `refresh_tokens` | Logout (`POST /api/v1/auth/logout`) | ID pengguna |
 | `USER_PASSWORD_CHANGED` | `users` | Ganti kata sandi sendiri (`POST /api/v1/auth/change-password`) | ID pengguna |
@@ -187,5 +188,5 @@ curl -s "$BASE/audit-logs?date_from=2026-10-21T00:00:00Z&date_to=2026-10-21T23:5
 | --- | --- | --- |
 | 1 | ✅ Terverifikasi | Pembatasan akses `audit:read` dan kelengkapan struktur `old_values`/`new_values` telah diverifikasi di `test_ac05_rbac_enforcement_and_audit_log_recording`. |
 | 2 | ✅ Terverifikasi | Sanitasi otomatis atribut kata sandi dan token pada `audit_service._sanitize_payload()` telah diverifikasi di `test_login_lockout_after_5_failed_attempts_and_audit_log`. |
-| 3 | ⚠️ **Perlu Ditinjau** | Berkas `tests/test_immutability.py` untuk menguji **AC-08** (penolakan `UPDATE`/`DELETE` langsung ke tabel `audit_logs` dan `stock_movements` menggunakan koneksi database) masih berupa file kosong dan belum diisi skenario pengujiannya. |
+| 3 | ✅ Terverifikasi | Imutabilitas tabel append-only (`audit_logs` dan `stock_movements`) terhadap operasi `UPDATE` dan `DELETE` telah diuji secara otomatis di `tests/test_immutability.py` (`test_ac08_immutability_stock_movements_and_audit_logs` — **AC-08**) baik menggunakan koneksi role aplikasi `wms_app` maupun pemilik tabel. |
 

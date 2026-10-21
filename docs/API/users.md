@@ -166,7 +166,7 @@ Membuat pengguna baru, menetapkan penugasan gudang awal (bila `warehouse_ids` di
 | Field | Tipe | Wajib | Default | Validasi |
 | --- | --- | --- | --- | --- |
 | `username` | string | Ya | – | 3–64 karakter; di-*trim* di service; harus unik. |
-| `email` | string | Ya | – | 3–255 karakter; di-*trim* dan diubah ke huruf kecil (*lowercase*); harus unik. |
+| `email` | string | Ya | – | 3–255 karakter; di-*trim*, diubah ke huruf kecil (*lowercase*), divalidasi dengan pola format email (`EMAIL_REGEX`), dan harus unik. |
 | `password` | string | Ya | – | 8–255 karakter (PRD 7.2). |
 | `full_name` | string | Ya | – | 1–150 karakter; di-*trim*. |
 | `role_id` | integer | Ya | – | Harus merujuk ke `roles.id` yang valid. |
@@ -338,7 +338,7 @@ Mengganti daftar *permission* yang dimiliki oleh suatu peran (`role_id`).
 | Status | Kode Error | Penyebab | Contoh `details` |
 | --- | --- | --- | --- |
 | `404` | `NOT_FOUND` | `role_id` tidak ditemukan. | `{"role_id": 999}` |
-| `422` | `VALIDATION_ERROR` | Terdapat kode *permission* yang tidak dikenal di tabel `permissions`. | `{"unknown_permissions": ["tidak:ada"]}` |
+| `422` | `VALIDATION_ERROR` | Terdapat kode *permission* yang tidak dikenal di tabel `permissions`, atau mencoba menghapus izin `user:manage` dari peran `Super Admin`. | `{"unknown_permissions": ["tidak:ada"]}` atau `{"role_name": "Super Admin", "required_permission": "user:manage"}` |
 
 **Aturan Bisnis & Dampak Data**
 
@@ -443,7 +443,7 @@ Seluruh field bersifat opsional; hanya field yang dikirim (tidak `null`) yang di
 | --- | --- | --- |
 | `404` | `NOT_FOUND` | `user_id` atau `role_id` baru tidak ditemukan. |
 | `409` | `DUPLICATE` | `email` baru sudah dipakai pengguna lain. |
-| `422` | `VALIDATION_ERROR` | Panjang `password < 8`, `email < 3`, atau tipe data salah. |
+| `422` | `VALIDATION_ERROR` | Panjang `password < 8`, format `email` tidak valid, pengguna mencoba menonaktifkan dirinya sendiri (`is_active: false`), atau pengguna mencoba mengubah `role_id` miliknya sendiri. |
 
 **Aturan Bisnis & Dampak Data**
 
@@ -616,6 +616,6 @@ curl -s -X PATCH "$BASE/users/2" \
 | --- | --- | --- |
 | 1 | ✅ Terverifikasi | Penolakan akses `403 PERMISSION_DENIED` untuk pengguna tanpa `user:manage` serta pencatatan `old_values`/`new_values` di `audit_logs` telah diuji di `test_ac05_rbac_enforcement_and_audit_log_recording` (**AC-05**). |
 | 2 | ✅ Terverifikasi | Penugasan gudang lewat `PUT /api/v1/users/{id}/warehouses` dan pemeriksaan `access_service.ensure_warehouse_access()` telah diuji di `test_ac12_warehouse_scoping_assignment_and_access_enforcement` (**AC-12**). |
-| 3 | ⚠️ **Perlu Ditinjau** | Endpoint `PATCH /api/v1/users/{user_id}` mengizinkan *Super Admin* menonaktifkan dirinya sendiri (`is_active: false`) dan endpoint `PUT /api/v1/users/roles/{role_id}/permissions` mengizinkan pencabutan `user:manage` dari peran `Super Admin`. Belum ada penjagaan (*guard*) khusus untuk mencegah penguncian akses *Super Admin* terakhir. |
-| 4 | ⚠️ **Perlu Ditinjau** | Validasi format `email` pada `UserCreate` dan `UserUpdate` saat ini menggunakan validasi panjang string (`min_length=3, max_length=255`) dan normalisasi *lowercase*, belum memeriksa pola format alamat email (`@`). |
+| 3 | ✅ Terverifikasi | Pencegahan *self-lockout*: `PATCH /api/v1/users/{user_id}` menolak pengguna menonaktifkan dirinya sendiri (`is_active: false`) atau mengubah `role_id` miliknya sendiri, serta `PUT /api/v1/users/roles/{role_id}/permissions` menolak pencabutan `user:manage` dari peran `Super Admin` (`422 VALIDATION_ERROR`, diuji di `test_ac05_rbac_enforcement_and_audit_log_recording`). |
+| 4 | ✅ Terverifikasi | Validasi format `email` menggunakan pola `EMAIL_REGEX` disertai normalisasi *lowercase* pada pembuatan dan pembaruan pengguna. |
 

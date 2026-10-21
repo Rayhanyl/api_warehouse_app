@@ -3,9 +3,9 @@
 from collections.abc import Generator
 from typing import Any
 
-from psycopg import Connection
+from psycopg import Connection, Error as PsycopgError
 from psycopg.rows import dict_row
-from psycopg_pool import ConnectionPool
+from psycopg_pool import ConnectionPool, PoolTimeout
 
 from app.core.config import settings
 
@@ -46,6 +46,20 @@ def get_conn() -> Generator[Connection[dict[str, Any]], None, None]:
 
 
 def check_db_health(conn: Connection[dict[str, Any]]) -> bool:
-    """Memeriksa konektivitas database menggunakan koneksi pool."""
-    row = conn.execute("SELECT 1 AS ok").fetchone()
-    return bool(row and row.get("ok") == 1)
+    """Memeriksa konektivitas database menggunakan koneksi yang diberikan."""
+    try:
+        row = conn.execute("SELECT 1 AS ok").fetchone()
+        return bool(row and row.get("ok") == 1)
+    except PsycopgError:
+        return False
+
+
+def check_pool_health() -> bool:
+    """Memeriksa kesehatan koneksi pool secara aman tanpa melempar exception saat DB mati."""
+    try:
+        if pool.closed:
+            return False
+        with pool.connection(timeout=2.0) as conn:
+            return check_db_health(conn)
+    except (PsycopgError, PoolTimeout, OSError):
+        return False

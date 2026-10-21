@@ -126,7 +126,7 @@ Memverifikasi kredensial dan menerbitkan *Access Token* serta *Refresh Token*.
 
 | Field | Tipe | Wajib | Validasi |
 | --- | --- | --- | --- |
-| `username` | string | Ya | Panjang 1–64 karakter. Dicocokkan persis (*case-sensitive*, tidak di-*trim*). |
+| `username` | string | Ya | Panjang 1–64 karakter; spasi di awal/akhir otomatis di-*trim* (`username.strip()`), dicocokkan *case-sensitive*. |
 | `password` | string | Ya | Panjang 1–255 karakter. |
 
 **Contoh request**
@@ -217,8 +217,8 @@ Menukar *Refresh Token* yang valid dengan pasangan token baru. Token lama otomat
 | --- | --- | --- | --- |
 | 401 | `AUTH_TOKEN_INVALID` | `Refresh token tidak valid.` | Hash token tidak ditemukan. |
 | 401 | `AUTH_TOKEN_INVALID` | `Refresh token sudah dicabut; seluruh sesi aktif telah dihentikan demi keamanan.` | **Deteksi penggunaan ulang**: token sudah dicabut sebelumnya. **Seluruh** *Refresh Token* aktif milik pengguna dicabut dan dicatat `AUTH_REFRESH_TOKEN_REUSE_DETECTED`. |
-| 401 | `AUTH_TOKEN_INVALID` | `Refresh token sudah kedaluwarsa.` | `expires_at` sudah lewat; token ditandai dicabut. |
-| 401 | `AUTH_TOKEN_INVALID` | `Akun pengguna sudah tidak aktif.` | Pemilik token nonaktif; seluruh token aktif pengguna dicabut. |
+| 401 | `AUTH_TOKEN_INVALID` | `Refresh token sudah kedaluwarsa.` | `expires_at` sudah lewat; token ditandai dicabut dan dicatat `AUTH_TOKEN_REFRESH_FAILED` (`reason = TOKEN_EXPIRED`). |
+| 401 | `AUTH_TOKEN_INVALID` | `Akun pengguna sudah tidak aktif.` | Pemilik token nonaktif; seluruh token aktif pengguna dicabut dan dicatat `AUTH_TOKEN_REFRESH_FAILED` (`reason = USER_INACTIVE`). |
 | 422 | `VALIDATION_ERROR` | – | `refresh_token` kosong/hilang. |
 
 **Aturan bisnis**
@@ -359,7 +359,7 @@ Mengembalikan profil pengguna pemilik *Access Token*, termasuk daftar permission
 | `roles`, `role_permissions`, `permissions` | Sumber daftar permission yang dibaca ulang setiap request. |
 | `user_warehouses` | Sumber `warehouse_ids` untuk *Warehouse Scoping*. |
 | `audit_logs` | Menerima seluruh catatan aktivitas autentikasi (lihat [audit-logs.md](audit-logs.md#22-daftar-action-yang-dihasilkan-saat-ini)). |
-| Konfigurasi (`.env`) | `JWT_SECRET`, `JWT_ALGORITHM`, `ACCESS_TOKEN_MINUTES`, `REFRESH_TOKEN_DAYS`, `LOGIN_MAX_ATTEMPTS`, `LOGIN_LOCK_MINUTES`. |
+| Konfigurasi (`.env`) | `JWT_SECRET` (wajib, min. 32 karakter), `JWT_ALGORITHM`, `ACCESS_TOKEN_MINUTES`, `REFRESH_TOKEN_DAYS`, `LOGIN_MAX_ATTEMPTS`, `LOGIN_LOCK_MINUTES`, `TRUSTED_PROXY_IPS`. |
 
 Alur lapisan: `routes/auth.py` → `auth_service` → `user_repo`, `token_repo`, `audit_service` → PostgreSQL.
 
@@ -417,9 +417,9 @@ Invoke-RestMethod -Uri "$base/auth/me" -Headers $headers
 | 2 | ✅ Terverifikasi | Penguncian akun setelah 5 kegagalan dan pencatatan audit sesuai FR-01 (test lulus). |
 | 3 | ✅ Terverifikasi | Penonaktifan pengguna langsung menolak *Access Token* yang masih berlaku (**AC-05**, Invarian 14). |
 | 4 | ℹ️ Batasan desain | *Access Token* bersifat *stateless*: logout dan ganti kata sandi **tidak** mencabut *Access Token* yang sedang berlaku; token tetap valid hingga `exp` (maks. 15 menit) kecuali pengguna dinonaktifkan. PRD FR-01 hanya mensyaratkan pencabutan *Refresh Token*, sehingga perilaku ini sesuai PRD. |
-| 5 | ⚠️ **Perlu Ditinjau** | Respons `401` tidak menyertakan header `WWW-Authenticate`. Tidak diwajibkan PRD, tetapi beberapa klien HTTP mengandalkannya. |
-| 6 | ⚠️ **Perlu Ditinjau** | `username` saat login tidak di-*trim*, sedangkan saat pembuatan pengguna di-*trim*. Login dengan spasi di awal/akhir akan gagal. |
-| 7 | ⚠️ **Perlu Ditinjau** | Alamat IP untuk audit diambil dari header `X-Forwarded-For` tanpa daftar *proxy* tepercaya, sehingga dapat dipalsukan oleh klien bila API diakses langsung tanpa *reverse proxy*. |
-| 8 | ⚠️ **Perlu Ditinjau** | Rotasi token karena kedaluwarsa atau karena pemilik nonaktif mencabut token **tanpa** menulis audit log. FR-09 hanya mewajibkan audit untuk login, logout, dan penggunaan ulang token, sehingga ini bukan pelanggaran, tetapi perlu konfirmasi apakah diinginkan. |
-| 9 | ⚠️ **Perlu Ditinjau** | `app/core/config.py` memiliki **nilai bawaan rahasia** (URL database berisi kredensial dan `JWT_SECRET`) yang tertulis di kode. Hal ini bertentangan dengan PRD 7.2 dan AGENTS.md §6 ("rahasia hanya dari variabel lingkungan"). Nilai tersebut sengaja tidak dicantumkan di dokumen ini. |
+| 5 | ✅ Terverifikasi | Seluruh respons `401` menyertakan header `WWW-Authenticate: Bearer` pada exception handler `DomainError` di `app/main.py`. |
+| 6 | ✅ Terverifikasi | `username` saat login otomatis di-*trim* (`username.strip()`) sehingga konsisten dengan normalisasi saat pembuatan pengguna. |
+| 7 | ✅ Terverifikasi | Alamat IP dari header `X-Forwarded-For` hanya dipercaya apabila IP koneksi langsung (`request.client.host`) terdaftar pada `settings.trusted_proxy_ips` (`TRUSTED_PROXY_IPS`). |
+| 8 | ✅ Terverifikasi | Penolakan rotasi token akibat token kedaluwarsa (`TOKEN_EXPIRED`) maupun akun nonaktif (`USER_INACTIVE`) turut mencatat entri audit `AUTH_TOKEN_REFRESH_FAILED`. |
+| 9 | ✅ Terverifikasi | `app/core/config.py` mewajibkan `DATABASE_URL` dan `JWT_SECRET` (minimal 32 karakter) dari variabel lingkungan tanpa nilai *fallback* rahasia di dalam kode sumber (PRD 7.2, AGENTS.md §6). |
 

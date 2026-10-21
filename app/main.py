@@ -50,8 +50,10 @@ def create_app() -> FastAPI:
 
     @application.exception_handler(DomainError)
     def handle_domain_error(_request: Request, exc: DomainError) -> JSONResponse:
+        headers = {"WWW-Authenticate": "Bearer"} if exc.http_status == 401 else None
         return JSONResponse(
             status_code=exc.http_status,
+            headers=headers,
             content={
                 "error": {
                     "code": exc.code,

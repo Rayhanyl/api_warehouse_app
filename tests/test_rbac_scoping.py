@@ -82,6 +82,24 @@ def test_ac05_rbac_enforcement_and_audit_log_recording(
     assert audit_list_res.status_code == 200
     assert audit_list_res.json()["total"] >= 2
 
+    # 6. Pencegahan self-lockout: Super Admin tidak boleh menonaktifkan dirinya sendiri
+    #    atau menghapus permission user:manage dari role Super Admin
+    self_deact = client.patch(
+        f"/api/v1/users/{superadmin_user['id']}",
+        headers=superadmin_user["auth_headers"],
+        json={"is_active": False},
+    )
+    assert self_deact.status_code == 422
+    assert self_deact.json()["error"]["code"] == "VALIDATION_ERROR"
+
+    strip_perm = client.put(
+        f"/api/v1/users/roles/{superadmin_user['role_id']}/permissions",
+        headers=superadmin_user["auth_headers"],
+        json={"permissions": ["master:read"]},
+    )
+    assert strip_perm.status_code == 422
+    assert strip_perm.json()["error"]["code"] == "VALIDATION_ERROR"
+
 
 def test_ac12_warehouse_scoping_assignment_and_access_enforcement(
     client: TestClient,

@@ -1,6 +1,7 @@
 """Service Manajemen Pengguna, Role/Permission, dan Penugasan Gudang (Bagian 3 PRD, FR-01, FR-09)."""
 
 from datetime import datetime, timezone
+import re
 from typing import Any
 
 from psycopg import Connection
@@ -11,10 +12,23 @@ from app.core.exceptions import (
     NotFoundError,
     ValidationDomainError,
 )
+from app.core.permissions import ROLE_SUPER_ADMIN, USER_MANAGE
 from app.core.security import hash_password
 from app.repositories import permission_repo, token_repo, user_repo
 from app.services import audit_service
 from app.utils.pagination import normalize_pagination
+
+EMAIL_REGEX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _validate_email_format(email: str) -> str:
+    clean_email = email.strip().lower()
+    if not EMAIL_REGEX.match(clean_email):
+        raise ValidationDomainError(
+            "Format alamat email tidak valid.",
+            details={"email": email},
+        )
+    return clean_email
 
 
 def _public_user_snapshot(user: dict[str, Any]) -> dict[str, Any]:
@@ -91,7 +105,7 @@ def create_user(
         raise ValidationDomainError("Kata sandi minimal harus terdiri dari 8 karakter.")
 
     clean_username = username.strip()
-    clean_email = email.strip().lower()
+    clean_email = _validate_email_format(email)
     clean_name = full_name.strip()
 
     with conn.transaction():
@@ -169,6 +183,19 @@ def update_user(
     now = datetime.now(timezone.utc)
     actor_id = int(actor["id"])
 
+    # Pencegahan self-lockout: pengguna tidak boleh menonaktifkan atau menurunkan role dirinya sendiri
+    if user_id == actor_id:
+        if is_active is False:
+            raise ValidationDomainError(
+                "Anda tidak dapat menonaktifkan akun Anda sendiri.",
+                details={"user_id": user_id},
+            )
+        if role_id is not None and int(role_id) != int(actor["role_id"]):
+            raise ValidationDomainError(
+                "Anda tidak dapat mengubah peran (role) akun Anda sendiri.",
+                details={"user_id": user_id, "role_id": role_id},
+            )
+
     with conn.transaction():
         locked = user_repo.lock_user_by_id(conn, user_id)
         if not locked:
@@ -179,7 +206,11 @@ def update_user(
         before_ctx = user_repo.get_user_auth_context(conn, user_id)
         assert before_ctx is not None
 
-        new_email = email.strip().lower() if email is not None else before_ctx["email"]
+        new_email = (
+            _validate_email_format(email)
+            if email is not None
+            else before_ctx["email"]
+        )
         if new_email != before_ctx["email"]:
             existing_email = user_repo.get_user_by_email(conn, new_email)
             if existing_email and int(existing_email["id"]) != user_id:
@@ -321,6 +352,12 @@ def set_role_permissions(
                 details={"role_id": role_id},
             )
 
+        if role["name"] == ROLE_SUPER_ADMIN and USER_MANAGE not in unique_codes:
+            raise ValidationDomainError(
+                f"Peran '{ROLE_SUPER_ADMIN}' wajib mempertahankan permission '{USER_MANAGE}'.",
+                details={"role_name": ROLE_SUPER_ADMIN, "required_permission": USER_MANAGE},
+            )
+
         found_perms = permission_repo.get_permissions_by_codes(conn, unique_codes)
         found_codes = {r["code"] for r in found_perms}
         missing_codes = sorted(set(unique_codes) - found_codes)
@@ -375,4 +412,3 @@ def _validate_warehouses_exist_and_active(
             "Gudang yang tidak aktif tidak dapat ditugaskan kepada pengguna.",
             details={"inactive_warehouse_ids": inactive},
         )
-

@@ -32,7 +32,8 @@ def login(
 ) -> dict[str, Any]:
     """Memproses login pengguna, mencatat kegagalan/penguncian akun, dan menerbitkan pasangan token."""
     now = datetime.now(timezone.utc)
-    user = user_repo.get_user_by_username(conn, username)
+    clean_username = username.strip()
+    user = user_repo.get_user_by_username(conn, clean_username)
 
     # 1. Username tidak dikenali -> catat gagal login dengan user_id=None (FR-09)
     if not user:
@@ -43,7 +44,7 @@ def login(
                 action="AUTH_LOGIN_FAILED",
                 entity_type="users",
                 entity_id=None,
-                new_values={"username": username, "reason": "UNKNOWN_USERNAME"},
+                new_values={"username": clean_username, "reason": "UNKNOWN_USERNAME"},
                 ip_address=ip_address,
             )
         raise AuthInvalidCredentials("Username atau kata sandi salah.")
@@ -203,11 +204,29 @@ def refresh_session(
                 token_repo.update_revoke_and_replace_token(
                     conn, token_id, revoked_at=now, replaced_by_id=None
                 )
+                audit_service.record(
+                    conn,
+                    user_id=user_id,
+                    action="AUTH_TOKEN_REFRESH_FAILED",
+                    entity_type="refresh_tokens",
+                    entity_id=token_id,
+                    new_values={"reason": "TOKEN_EXPIRED"},
+                    ip_address=ip_address,
+                )
                 error_to_raise = AuthTokenInvalid("Refresh token sudah kedaluwarsa.")
             else:
                 user = user_repo.lock_user_by_id(conn, user_id)
                 if not user or not user["is_active"]:
                     token_repo.update_revoke_all_user_tokens(conn, user_id, revoked_at=now)
+                    audit_service.record(
+                        conn,
+                        user_id=user_id,
+                        action="AUTH_TOKEN_REFRESH_FAILED",
+                        entity_type="refresh_tokens",
+                        entity_id=token_id,
+                        new_values={"reason": "USER_INACTIVE"},
+                        ip_address=ip_address,
+                    )
                     error_to_raise = AuthTokenInvalid("Akun pengguna sudah tidak aktif.")
                 else:
                     access_token, access_exp = create_access_token(user_id)

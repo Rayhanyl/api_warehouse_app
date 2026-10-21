@@ -67,17 +67,24 @@ Keduanya memanggil fungsi handler yang sama dan mengembalikan payload yang ident
 | `version` | string | `"2.0.0"` | Nilai `settings.app_version`. |
 | `database` | string | `"connected"` \| `"disconnected"` | Status konektivitas ke PostgreSQL. |
 
-**Kemungkinan Response Error**
+**Kemungkinan Kondisi Degraded (`200 OK` — `HealthResponse`)**
 
-| Status | Kode Error | Penyebab |
-| --- | --- | --- |
-| `500` | `INTERNAL_ERROR` | Jika *connection pool* gagal memperoleh koneksi ke PostgreSQL (misalnya database mati total dan melempar `OperationalError` / `PoolTimeout`), exception ditangkap oleh handler global `Exception` di `app/main.py`. |
+Apabila *connection pool* belum diinisialisasi atau gagal memperoleh koneksi ke PostgreSQL (misalnya layanan database mati atau melempar `OperationalError` / `PoolTimeout`), fungsi `check_pool_health()` menangkap exception tersebut dan mengembalikan:
+
+```json
+{
+  "status": "degraded",
+  "service": "WMS REST API",
+  "version": "2.0.0",
+  "database": "disconnected"
+}
+```
 
 ---
 
 ## 6. Relasi dan Ketergantungan
 
-* Menggunakan dependency `get_conn()` dari [`app/core/database.py`](../../app/core/database.py) yang mengambil koneksi dari `psycopg_pool.ConnectionPool` dan memanggil `check_db_health(conn)`.
+* Menggunakan fungsi `check_pool_health()` dari [`app/core/database.py`](../../app/core/database.py) yang mengambil koneksi dari `psycopg_pool.ConnectionPool`, menjalankan `check_db_health(conn)` (`SELECT 1 AS ok`), serta menangani kegagalan koneksi secara aman.
 * Setiap respons juga menerima header `X-Request-ID` dari middleware di `app/main.py`.
 
 ---
@@ -96,5 +103,5 @@ curl -i http://localhost:8000/api/v1/health
 | # | Status | Catatan |
 | --- | --- | --- |
 | 1 | ✅ Terverifikasi | Kedua path `/health` dan `/api/v1/health` telah diuji terhadap PostgreSQL aktif dan mengembalikan `200 OK` beserta header `X-Request-ID`. |
-| 2 | ⚠️ **Perlu Ditinjau** | Apabila database sedang tidak dapat dihubungi sehingga `pool.connection()` melempar exception sebelum masuk ke fungsi route, server mengembalikan HTTP `500 INTERNAL_ERROR` alih-alih HTTP `503` atau `200` dengan `status: "degraded"`. |
+| 2 | ✅ Terverifikasi | Apabila database tidak dapat dihubungi atau *pool* melempar `PsycopgError` / `PoolTimeout` / `OSError`, `check_pool_health()` menangkap exception tersebut dan mengembalikan `status: "degraded", database: "disconnected"` tanpa melempar HTTP `500 INTERNAL_ERROR`. |
 
