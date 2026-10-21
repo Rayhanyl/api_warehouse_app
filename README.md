@@ -48,11 +48,11 @@ Pengembangan dilakukan bertahap sesuai urutan milestone pada [`docs/core/FOLDER_
 | **M0** | Kerangka aplikasi, connection pool, middleware `X-Request-ID`, exception handler, `/health` & `/api/v1/health` | ✅ **Selesai** | – |
 | **M1** | Runner migrasi (`db/migrate.py`), migrasi DDL `001`–`008`, role `wms_app`, trigger imutabilitas, seed RBAC, `create_superadmin.py` | ✅ **Selesai** | `AC-08` |
 | **M2** | Autentikasi JWT, rotasi & *reuse detection* Refresh Token, *account lockout*, CRUD Pengguna, RBAC, *Warehouse Scoping*, & Audit Log | ✅ **Selesai** | `AC-05`, `AC-11`, `AC-12` |
-| **M3** | Master Data (Kategori, UoM, Barang, Pemasok) & Gudang + Lokasi Penyimpanan | ⏳ Berikutnya | `AC-10` |
-| **M4** | Inti Persediaan (`inventory_service.apply_movement`), Saldo Stok, & Buku Besar Pergerakan | ⏳ Menunggu | – |
+| **M3** | Master Data (Kategori, UoM, Barang, Pemasok) & Gudang + Lokasi Penyimpanan | ✅ **Selesai** | `AC-05`, `AC-12` |
+| **M4** | Inti Persediaan (`inventory_service.apply_movement`), Saldo Stok, & Buku Besar Pergerakan | ⏳ Berikutnya | – |
 | **M5** | Purchase Order (PO) & Goods Receipt (GR) | ⏳ Menunggu | `AC-01`, `AC-02`, `AC-09` |
 | **M6** | Stock Transfer Dua Tahap (`DRAFT` → `APPROVED` → `SHIPPED` → `RECEIVED`) | ⏳ Menunggu | `AC-03`, `AC-06`, `AC-07` |
-| **M7** | Stock Opname, Pembekuan Lokasi, & Rekonsiliasi Stok | ⏳ Menunggu | `AC-04`, `AC-13` |
+| **M7** | Stock Opname, Pembekuan Lokasi, & Rekonsiliasi Stok | ⏳ Menunggu | `AC-04`, `AC-10`, `AC-13` |
 | **M8** | Pengujian Regresi Penuh & Perapihan Akhir | ⏳ Menunggu | `AC-01` s.d. `AC-13` |
 
 ---
@@ -192,9 +192,11 @@ Invoke-Item .\htmlcov\index.html
 ## Dokumentasi API & Dokumen Rujukan
 
 ### Dokumentasi Endpoint REST API (`docs/api/`)
-* [**Indeks Dokumentasi API (`docs/api/README.md`)**](docs/api/README.md) — Konvensi global, format error, daftar 17 endpoint aktif, dan status verifikasi.
+* [**Indeks Dokumentasi API (`docs/api/README.md`)**](docs/api/README.md) — Konvensi global, format error, daftar 43 endpoint aktif, dan status verifikasi.
 * [**Autentikasi & Otorisasi (`docs/api/authentication.md`)**](docs/api/authentication.md) — Login, rotasi *Refresh Token*, deteksi penggunaan ulang token, logout, profil `/me`, dan ganti kata sandi.
 * [**Manajemen Pengguna, RBAC & Gudang (`docs/api/users.md`)**](docs/api/users.md) — CRUD pengguna, peran & izin (`user:manage`), serta penugasan gudang (*Warehouse Scoping*).
+* [**Master Data (`docs/api/master-data.md`)**](docs/api/master-data.md) — CRUD Kategori, Satuan Ukur (UoM), Pemasok, dan Barang (SKU), beserta perlindungan `ENTITY_IN_USE` dan imutabilitas SKU/UoM dasar.
+* [**Gudang & Lokasi Penyimpanan (`docs/api/warehouses.md`)**](docs/api/warehouses.md) — CRUD Gudang (`allow_negative_stock`) & Lokasi Penyimpanan (*Bin/Rack*) dengan *Warehouse Scoping* (`location:manage`).
 * [**Audit Log (`docs/api/audit-logs.md`)**](docs/api/audit-logs.md) — Pembacaan jejak audit *append-only* beserta filter dan paginasi.
 * [**Health Check (`docs/api/health.md`)**](docs/api/health.md) — Pemeriksaan status layanan API dan konektivitas pool PostgreSQL.
 

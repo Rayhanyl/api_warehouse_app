@@ -10,7 +10,7 @@
 | **Status implementasi** | ✅ Sudah diimplementasikan dan diuji (`tests/test_auth.py`, `tests/test_rbac_scoping.py`, `tests/test_immutability.py`) |
 | **Kode sumber** | [routes/audit_logs.py](../../app/api/routes/audit_logs.py), [audit_service.py](../../app/services/audit_service.py), [audit_repo.py](../../app/repositories/audit_repo.py), [schemas/audit_log.py](../../app/schemas/audit_log.py) |
 | **Tabel terkait** | `audit_logs`, `users` |
-| **Modul terkait** | [Autentikasi & Otorisasi](authentication.md), [Pengguna & RBAC](users.md) |
+| **Modul terkait** | [Autentikasi & Otorisasi](authentication.md), [Pengguna & RBAC](users.md), [Master Data](master-data.md), [Gudang & Lokasi](warehouses.md) |
 
 ---
 
@@ -27,7 +27,7 @@ Sesuai PRD 6.4 dan AGENTS.md Invarian 2:
 
 ### 2.2 Daftar `action` yang Dihasilkan Saat Ini
 
-Berdasarkan kode layanan yang telah diimplementasikan saat ini (`auth_service.py`, `user_service.py`, dan `scripts/create_superadmin.py`), nilai `action` dan `entity_type` yang tercatat di `audit_logs` meliputi:
+Berdasarkan kode layanan yang telah diimplementasikan saat ini (`auth_service.py`, `user_service.py`, `master_service.py`, `warehouse_service.py`, dan `scripts/create_superadmin.py`), nilai `action` dan `entity_type` yang tercatat di `audit_logs` meliputi:
 
 | `action` | `entity_type` | Pemicu | `user_id` |
 | --- | --- | --- | --- |
@@ -45,6 +45,12 @@ Berdasarkan kode layanan yang telah diimplementasikan saat ini (`auth_service.py
 | `USER_DEACTIVATED` | `users` | Penonaktifan pengguna (`is_active: true -> false` via `PATCH /api/v1/users/{id}`) | ID pemanggil |
 | `USER_WAREHOUSES_UPDATED` | `user_warehouses` | Perubahan penugasan gudang (`PUT /api/v1/users/{id}/warehouses`) | ID pemanggil |
 | `ROLE_PERMISSIONS_UPDATED` | `roles` | Perubahan daftar kode permission peran (`PUT /api/v1/users/roles/{id}/permissions`) | ID pemanggil |
+| `CATEGORY_CREATED` / `CATEGORY_UPDATED` / `CATEGORY_DEACTIVATED` | `categories` | Pembuatan, pembaruan, atau penonaktifan kategori barang (`/api/v1/categories`) | ID pemanggil |
+| `UOM_CREATED` / `UOM_UPDATED` / `UOM_DEACTIVATED` | `uoms` | Pembuatan, pembaruan, atau penonaktifan satuan ukur (`/api/v1/uoms`) | ID pemanggil |
+| `SUPPLIER_CREATED` / `SUPPLIER_UPDATED` / `SUPPLIER_DEACTIVATED` | `suppliers` | Pembuatan, pembaruan, atau penonaktifan pemasok (`/api/v1/suppliers`) | ID pemanggil |
+| `ITEM_CREATED` / `ITEM_UPDATED` / `ITEM_DEACTIVATED` | `items` | Pembuatan, pembaruan, atau penonaktifan barang (`/api/v1/items`) | ID pemanggil |
+| `WAREHOUSE_CREATED` / `WAREHOUSE_UPDATED` / `WAREHOUSE_DEACTIVATED` | `warehouses` | Pembuatan, pembaruan (termasuk `allow_negative_stock`), atau penonaktifan gudang (`/api/v1/warehouses`) | ID pemanggil |
+| `LOCATION_CREATED` / `LOCATION_UPDATED` / `LOCATION_DEACTIVATED` | `storage_locations` | Pembuatan, pembaruan, atau penonaktifan lokasi penyimpanan (`/api/v1/locations` & `/api/v1/warehouses/{id}/locations`) | ID pemanggil |
 
 ---
 
