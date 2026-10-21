@@ -72,3 +72,108 @@ def create_warehouse(
     assert row is not None
     return row
 
+
+def create_location(
+    conn: Connection[dict[str, Any]],
+    *,
+    warehouse_id: int,
+    code: str = "RACK-A1",
+    name: str = "Rak A1",
+    is_active: bool = True,
+) -> dict[str, Any]:
+    """Membuat lokasi penyimpanan uji di database `wms_test`."""
+    row = conn.execute(
+        """
+        INSERT INTO storage_locations (warehouse_id, code, name, is_active)
+        VALUES (%s, %s, %s, %s)
+        RETURNING id, warehouse_id, code, name, is_active, created_at, updated_at
+        """,
+        (warehouse_id, code, name, is_active),
+    ).fetchone()
+    assert row is not None
+    return row
+
+
+def create_category(
+    conn: Connection[dict[str, Any]],
+    *,
+    name: str = "Elektronik",
+    description: str | None = "Kategori Elektronik",
+    is_active: bool = True,
+) -> dict[str, Any]:
+    """Membuat kategori barang uji di database `wms_test`."""
+    row = conn.execute(
+        """
+        INSERT INTO categories (name, description, is_active)
+        VALUES (%s, %s, %s)
+        RETURNING id, name, description, is_active, created_at, updated_at
+        """,
+        (name, description, is_active),
+    ).fetchone()
+    assert row is not None
+    return row
+
+
+def create_uom(
+    conn: Connection[dict[str, Any]],
+    *,
+    code: str = "PCS",
+    name: str = "Pieces",
+    allow_decimal: bool = False,
+    is_active: bool = True,
+) -> dict[str, Any]:
+    """Membuat UoM uji di database `wms_test`."""
+    row = conn.execute(
+        """
+        INSERT INTO uoms (code, name, allow_decimal, is_active)
+        VALUES (%s, %s, %s, %s)
+        RETURNING id, code, name, allow_decimal, is_active, created_at, updated_at
+        """,
+        (code, name, allow_decimal, is_active),
+    ).fetchone()
+    assert row is not None
+    return row
+
+
+def create_supplier(
+    conn: Connection[dict[str, Any]],
+    *,
+    code: str = "SUP-01",
+    name: str = "PT Pemasok Utama",
+    is_active: bool = True,
+) -> dict[str, Any]:
+    """Membuat pemasok uji di database `wms_test`."""
+    row = conn.execute(
+        """
+        INSERT INTO suppliers (code, name, is_active)
+        VALUES (%s, %s, %s)
+        RETURNING id, code, name, is_active, created_at, updated_at
+        """,
+        (code, name, is_active),
+    ).fetchone()
+    assert row is not None
+    return row
+
+
+def create_item(
+    conn: Connection[dict[str, Any]],
+    *,
+    sku: str = "SKU-001",
+    name: str = "Barang Uji 001",
+    category_id: int,
+    uom_id: int,
+    is_active: bool = True,
+) -> dict[str, Any]:
+    """Membuat barang uji di database `wms_test`."""
+    row = conn.execute(
+        """
+        INSERT INTO items (sku, name, category_id, uom_id, is_active)
+        VALUES (%s, %s, %s, %s, %s)
+        RETURNING id, sku, name, category_id, uom_id, is_active, created_at, updated_at
+        """,
+        (sku, name, category_id, uom_id, is_active),
+    ).fetchone()
+    assert row is not None
+    return row
+
+
