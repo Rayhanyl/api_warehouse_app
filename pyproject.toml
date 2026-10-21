@@ -1,0 +1,26 @@
+[project]
+name = "warehouse-api"
+version = "0.1.0"
+description = "Warehouse Management System (WMS) REST API — FastAPI + PostgreSQL (psycopg 3)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "psycopg[binary,pool]",
+    "pydantic-settings",
+    "argon2-cffi",
+    "pyjwt",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "httpx",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --tb=short"
+

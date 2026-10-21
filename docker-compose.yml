@@ -1,0 +1,52 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: wms_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-wms_owner}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-wms_owner_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-wms}
+      WMS_APP_PASSWORD: ${WMS_APP_PASSWORD:-wms_app_pass}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-wms_owner} -d $${POSTGRES_DB:-wms}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wms_api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://wms_app:${WMS_APP_PASSWORD:-wms_app_pass}@postgres:5432/${POSTGRES_DB:-wms}
+      MIGRATION_DATABASE_URL: postgresql://${POSTGRES_USER:-wms_owner}:${POSTGRES_PASSWORD:-wms_owner_pass}@postgres:5432/${POSTGRES_DB:-wms}
+      TEST_DATABASE_URL: postgresql://${POSTGRES_USER:-wms_owner}:${POSTGRES_PASSWORD:-wms_owner_pass}@postgres:5432/wms_test
+      JWT_SECRET: ${JWT_SECRET:-ganti-dengan-string-acak-minimal-32-byte-untuk-dev}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      ACCESS_TOKEN_MINUTES: ${ACCESS_TOKEN_MINUTES:-15}
+      REFRESH_TOKEN_DAYS: ${REFRESH_TOKEN_DAYS:-7}
+      LOGIN_MAX_ATTEMPTS: ${LOGIN_MAX_ATTEMPTS:-5}
+      LOGIN_LOCK_MINUTES: ${LOGIN_LOCK_MINUTES:-15}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - ./app:/app/app
+      - ./db:/app/db
+      - ./scripts:/app/scripts
+    command: >
+      sh -c "python -m db.migrate && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
+volumes:
+  postgres_data:
+
