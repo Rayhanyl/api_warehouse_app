@@ -3,11 +3,14 @@ services:
     image: postgres:16-alpine
     container_name: wms_postgres
     restart: unless-stopped
+    env_file:
+      - path: .env.docker
+        required: false
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-wms_owner}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-wms_owner_pass}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-CHANGE_ME_OWNER_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-wms}
-      WMS_APP_PASSWORD: ${WMS_APP_PASSWORD:-wms_app_pass}
+      WMS_APP_PASSWORD: ${WMS_APP_PASSWORD:-CHANGE_ME_APP_PASSWORD}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
@@ -25,14 +28,19 @@ services:
       dockerfile: Dockerfile
     container_name: wms_api
     restart: unless-stopped
+    env_file:
+      - path: .env.docker
+        required: false
     depends_on:
       postgres:
         condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
-      DATABASE_URL: postgresql://wms_app:${WMS_APP_PASSWORD:-wms_app_pass}@postgres:5432/${POSTGRES_DB:-wms}
-      MIGRATION_DATABASE_URL: postgresql://${POSTGRES_USER:-wms_owner}:${POSTGRES_PASSWORD:-wms_owner_pass}@postgres:5432/${POSTGRES_DB:-wms}
-      TEST_DATABASE_URL: postgresql://${POSTGRES_USER:-wms_owner}:${POSTGRES_PASSWORD:-wms_owner_pass}@postgres:5432/wms_test
-      JWT_SECRET: ${JWT_SECRET:-ganti-dengan-string-acak-minimal-32-byte-untuk-dev}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://wms_app:CHANGE_ME_APP_PASSWORD@postgres:5432/wms}
+      MIGRATION_DATABASE_URL: ${MIGRATION_DATABASE_URL:-postgresql://wms_owner:CHANGE_ME_OWNER_PASSWORD@postgres:5432/wms}
+      TEST_DATABASE_URL: ${TEST_DATABASE_URL:-postgresql://wms_owner:CHANGE_ME_OWNER_PASSWORD@postgres:5432/wms_test}
+      JWT_SECRET: ${JWT_SECRET:-ganti-dengan-string-acak-minimal-32-byte}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
       ACCESS_TOKEN_MINUTES: ${ACCESS_TOKEN_MINUTES:-15}
       REFRESH_TOKEN_DAYS: ${REFRESH_TOKEN_DAYS:-7}
@@ -49,4 +57,3 @@ services:
 
 volumes:
   postgres_data:
-

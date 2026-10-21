@@ -8,8 +8,10 @@ venv/
 .venv/
 env/
 
-# Environment variables
+# Environment variables (jangan pernah commit kredensial/rahasia)
 .env
+.env.*
+!.env.example
 
 # Testing & coverage
 .pytest_cache/
@@ -19,4 +21,3 @@ htmlcov/
 # IDE
 .vscode/
 .idea/
-

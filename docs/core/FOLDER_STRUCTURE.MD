@@ -1,6 +1,6 @@
 # Acuan Struktur Folder & Arsitektur Kode — WMS API
 
-Dokumen pendamping `PRD_v2.md`. Struktur ini untuk FastAPI + PostgreSQL yang diakses langsung (psycopg 3, tanpa ORM). Setiap kode FR, AC, permission, status, dan kode error di sini merujuk ke PRD v2.
+Dokumen pendamping `PRODUCT_REQUIREMENTS_DOCUMENT.md` (keduanya disimpan di folder `docs/core`). Struktur ini untuk FastAPI + PostgreSQL yang diakses langsung (psycopg 3, tanpa ORM). Setiap kode FR, AC, permission, status, dan kode error di sini merujuk ke PRD v2.
 
 ---
 
@@ -8,8 +8,13 @@ Dokumen pendamping `PRD_v2.md`. Struktur ini untuk FastAPI + PostgreSQL yang dia
 
 ```
 warehouse_api/
+├── AGENTS.md                       # aturan kerja untuk AI coding agent (harus di root repositori)
+├── docs/core/
+│   ├── PRODUCT_REQUIREMENTS_DOCUMENT.md                   # sumber kebenaran: apa yang dibangun
+│   ├── FOLDER_STRUCTURE.md         # dokumen ini
+│   └── schema_database.sql         # (opsional) hasil pg_dump --schema-only; referensi baca saja, bukan sumber kebenaran
 ├── app/
-│   ├── main.py                     # bikin FastAPI(), lifespan (buka/tutup pool), daftarkan router & exception handler
+│   ├── main.py                     # bikin FastAPI(), lifespan (buka/tutup pool), daftarkan middleware, router & exception handler
 │   │
 │   ├── core/                       # fondasi teknis, tidak tahu soal bisnis gudang
 │   │   ├── config.py               # Settings (pydantic-settings) dari .env
@@ -17,7 +22,8 @@ warehouse_api/
 │   │   ├── security.py             # hash/verify password (argon2), buat/decode JWT, hash refresh token
 │   │   ├── permissions.py          # konstanta kode permission + require_permission()
 │   │   ├── exceptions.py           # DomainError + turunannya (InsufficientStock, OverReceipt, dst.)
-│   │   └── logging.py              # log terstruktur + request id
+│   │   ├── logging.py              # log terstruktur; membaca request id dari contextvar
+│   │   └── middleware.py           # middleware request id (X-Request-ID); CORS dipasang di main.py bila perlu
 │   │
 │   ├── schemas/                    # Pydantic: bentuk request/response (bukan bentuk tabel)
 │   │   ├── common.py               # Page[T], ErrorResponse, tipe Decimal -> string
@@ -137,6 +143,8 @@ Dua jenis pemeriksaan akses dipisah:
 
 * **Permission (level peran):** di route lewat `require_permission("po:issue")`. Gagal → 403 `PERMISSION_DENIED`.
 * **Warehouse scoping (level data):** di service lewat `access_service.ensure_warehouse_access(conn, actor, warehouse_id)`, karena gudangnya baru diketahui setelah dokumen dibaca. Gagal → 403 `WAREHOUSE_NOT_ASSIGNED`.
+
+Middleware dibatasi pada hal lintas-request yang tidak butuh konteks bisnis: *request id* (`core/middleware.py`) dan CORS bila diperlukan. Hal lain **bukan** middleware: autentikasi dan permission adalah *dependency*, penanganan error adalah *exception handler* di `main.py`, sedangkan audit log dan transaksi berada di service.
 
 ---
 
@@ -278,7 +286,7 @@ TEST_DATABASE_URL=postgresql://wms_owner:...@localhost:5432/wms_test
 
 | Tahap | Isi | Selesai bila |
 | --- | --- | --- |
-| **M0 Fondasi** | Kerangka proyek, `config.py`, pool, `health`, `migrate.py`, docker-compose Postgres. | `GET /health` hidup dan migrasi kosong berjalan. |
+| **M0 Fondasi** | Kerangka proyek, `config.py`, pool, middleware *request id*, `health`, `migrate.py`, docker-compose Postgres. | `GET /health` hidup dan migrasi kosong berjalan. |
 | **M1 Skema** | Migrasi 001–008 ditulis tangan: tabel, FK komposit, `UNIQUE`, `CHECK`, indeks, *trigger* append-only, seed role/permission. | Coba `UPDATE stock_movements` lewat `psql` dengan role `wms_app` → ditolak. |
 | **M2 Auth & Audit dasar** | Login, rotasi *refresh token*, `require_permission`, `audit_service`, `create_superadmin.py`. | AC-11 lulus. |
 | **M3 Master & penugasan** | CRUD master, aturan penonaktifan, `access_service`. | AC-12 (bagian akses) lulus. |

@@ -8,9 +8,11 @@ Dokumen ini mengikat setiap agen yang menulis, mengubah, atau meninjau kode di r
 
 Urutan rujukan (yang di atas menang bila bertentangan):
 
-1. `Product_requirements_document.md` — apa yang dibangun: lingkup, peran, status dokumen, aturan bisnis, acceptance criteria (AC-01 s.d. AC-13), entitas data (Lampiran A), konvensi API dan kode error (Lampiran B).
-2. `folder_structure.md` — bagaimana kode disusun: folder, lapisan, pola transaksi, pola penguncian, urutan implementasi.
-3. `AGENTS.md` (dokumen ini) — cara agen bekerja.
+1. `docs/core/PRODUCT_REQUIREMENTS_DOCUMENT.md` — apa yang dibangun: lingkup, peran, status dokumen, aturan bisnis, acceptance criteria (AC-01 s.d. AC-13), entitas data (Lampiran A), konvensi API dan kode error (Lampiran B).
+2. `docs/core/FOLDER_STRUCTURE.md` — bagaimana kode disusun: folder, lapisan, pola transaksi, pola penguncian, urutan implementasi.
+3. `AGENTS.md` (dokumen ini, di root repositori) — cara agen bekerja.
+
+Dokumen rujukan nomor 1 dan 2 tersimpan di folder `docs/core`.
 
 Aturan turunannya:
 
@@ -35,7 +37,7 @@ Aturan turunannya:
 * ORM atau pembangun query apa pun: SQLAlchemy, SQLModel, Tortoise, Peewee, Django ORM, dan sejenisnya. **Alembic juga dilarang** (tidak ada `--autogenerate`).
 * Mencampur `async def` dengan driver sinkron. Route memakai `def` biasa.
 * Menambah infrastruktur baru: Redis, Celery, RabbitMQ, Kafka, cache, *message queue*, *background worker*.
-* Menambah dependensi baru di luar daftar pada `FOLDER_STRUCTURE.md`. Bila perlu, tanyakan dulu beserta alasannya.
+* Menambah dependensi baru di luar daftar pada `docs/core/FOLDER_STRUCTURE.md`. Bila perlu, tanyakan dulu beserta alasannya.
 
 ---
 
@@ -64,8 +66,9 @@ Arah ketergantungan hanya satu: **routes → services → repositories → core/
 | `schemas` | Validasi bentuk request/response. | Logika bisnis, akses DB. |
 | `core` | Config, pool, keamanan, exception. | Mengetahui detail modul gudang. |
 
-* Ikuti struktur folder di `FOLDER_STRUCTURE.md`. **Jangan membuat folder atau lapisan baru** (misalnya `controllers/`, `domain/`, `managers/`, `helpers/`) dan jangan memindahkan file keluar dari tempatnya.
+* Ikuti struktur folder di `docs/core/FOLDER_STRUCTURE.md`. **Jangan membuat folder atau lapisan baru** (misalnya `controllers/`, `domain/`, `managers/`, `helpers/`) dan jangan memindahkan file keluar dari tempatnya.
 * Pemeriksaan **permission** dilakukan di route; pemeriksaan **penugasan gudang** (`ensure_warehouse_access`) dilakukan di service.
+* **Middleware hanya** `core/middleware.py` untuk *request id* (dan CORS di `main.py` bila perlu). Autentikasi/permission adalah *dependency*, penanganan error adalah *exception handler*, audit log dan transaksi berada di service. Jangan memindahkan hal-hal itu ke middleware.
 * Satu use case = satu transaksi database di satu fungsi service.
 
 ---
@@ -124,10 +127,10 @@ Arah ketergantungan hanya satu: **routes → services → repositories → core/
 
 ## 9. Cara Bekerja
 
-* Kerjakan **satu tahap pada satu waktu** sesuai urutan M0 → M8 di `FOLDER_STRUCTURE.md` bagian 9. Jangan melompati tahap atau mengerjakan modul yang dependensinya belum ada.
+* Kerjakan **satu tahap pada satu waktu** sesuai urutan M0 → M8 di `docs/core/FOLDER_STRUCTURE.md` bagian 9. Jangan melompati tahap atau mengerjakan modul yang dependensinya belum ada.
 * Buat perubahan **kecil dan terfokus.** Jangan merapikan, me-refactor, atau mengganti nama hal yang tidak berkaitan dengan tugas.
 * Sebelum mengerjakan tugas, sebutkan FR/AC/bagian PRD yang dituju. Setelah selesai, laporkan apa yang berubah, AC mana yang tercakup, dan apa yang **belum** dikerjakan.
-* Penamaan mengikuti `FOLDER_STRUCTURE.md` bagian 6 (`snake_case`; service = kata kerja use case; repository `get_/list_/insert_/update_/lock_`; schema `XxxCreate/XxxUpdate/XxxOut`).
+* Penamaan mengikuti `docs/core/FOLDER_STRUCTURE.md` bagian 6 (`snake_case`; service = kata kerja use case; repository `get_/list_/insert_/update_/lock_`; schema `XxxCreate/XxxUpdate/XxxOut`).
 * Aturan bisnis dilempar sebagai turunan `DomainError` dengan `code` dan `http_status` dari katalog Lampiran B; jangan membuat kode error baru tanpa persetujuan.
 * Git: commit kecil dengan pesan jelas; jangan `push --force`, jangan menulis ulang riwayat, jangan commit `.env` atau berkas rahasia.
 
