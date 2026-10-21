@@ -17,10 +17,33 @@ dependencies = [
 dev = [
     "pytest",
     "httpx",
+    "pytest-cov",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
+omit = [
+    "tests/*",
+    "db/*",
+    "scripts/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"
+title = "WMS REST API — Code Coverage Report"
 
