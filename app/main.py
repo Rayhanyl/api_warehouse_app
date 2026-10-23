@@ -16,6 +16,7 @@ from app.api.routes import (
     master,
     purchase_orders,
     stock,
+    stock_opnames,
     stock_transfers,
     users,
     warehouses,
@@ -116,6 +117,7 @@ def create_app() -> FastAPI:
     application.include_router(purchase_orders.router, prefix=settings.api_v1_prefix)
     application.include_router(goods_receipts.router, prefix=settings.api_v1_prefix)
     application.include_router(stock_transfers.router, prefix=settings.api_v1_prefix)
+    application.include_router(stock_opnames.router, prefix=settings.api_v1_prefix)
     application.include_router(audit_logs.router, prefix=settings.api_v1_prefix)
 
     return application
