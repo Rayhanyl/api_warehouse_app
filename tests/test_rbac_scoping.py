@@ -2,13 +2,23 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+from decimal import Decimal
+import threading
 from typing import Any
 
 from fastapi.testclient import TestClient
+import psycopg
 from psycopg import Connection
+from psycopg.rows import dict_row
 
-from app.core.exceptions import WarehouseNotAssigned
-from app.services import access_service
+from app.core.exceptions import (
+    InsufficientStock,
+    LocationFrozen,
+    ValidationDomainError,
+    WarehouseNotAssigned,
+)
+from app.services import access_service, inventory_service, numbering_service
 from tests import factories
 
 
@@ -525,6 +535,262 @@ def test_master_data_and_warehouse_crud_deactivation_and_sku_immutability(
     )
     assert inactive_wh_loc.status_code == 422
     assert inactive_wh_loc.json()["error"]["code"] == "INACTIVE_REFERENCE"
+
+
+def test_m4_inventory_apply_movement_concurrency_stock_views_and_ledger(
+    client: TestClient,
+    db_conn: Connection[dict[str, Any]],
+    setup_test_database: str,
+    superadmin_user: dict[str, Any],
+    purchasing_user: dict[str, Any],
+    staff_user: dict[str, Any],
+    auditor_user: dict[str, Any],
+) -> None:
+    """Tahap M4 (FR-03, FR-08, FR-10, PRD 6.1, 6.5, 6.6):
+    - Penomoran dokumen atomik {PREFIX}-{YYYYMM}-{NNNN}.
+    - inventory_service.apply_movement: pembuatan saldo otomatis, penguncian baris FOR UPDATE,
+      validasi UoM allow_decimal, pencegahan stok negatif, dan pembekuan lokasi Opname.
+    - Konkurensi 2 thread pada apply_movement: saldo 10 dikurangi 8 oleh 2 thread bersamaan ->
+      tepat 1 berhasil (sisa 2) dan 1 ditolak InsufficientStock.
+    - Endpoint pembacaan stok (/balances, /by-warehouse, /summary) termasuk perhitungan in-transit
+      serta buku besar (/movements) dan penegakan RBAC + Warehouse Scoping pada pembacaan.
+    """
+    wh_a = factories.create_warehouse(db_conn, code="WH-A", name="Gudang A", allow_negative_stock=False)
+    wh_b = factories.create_warehouse(db_conn, code="WH-B", name="Gudang B", allow_negative_stock=False)
+    loc_a1 = factories.create_location(db_conn, warehouse_id=wh_a["id"], code="A-01", name="Lokasi A1")
+    loc_b1 = factories.create_location(db_conn, warehouse_id=wh_b["id"], code="B-01", name="Lokasi B1")
+    cat = factories.create_category(db_conn, name="Logam")
+    uom_pcs = factories.create_uom(db_conn, code="PCS", name="Pieces", allow_decimal=False)
+    uom_kg = factories.create_uom(db_conn, code="KG", name="Kilogram", allow_decimal=True)
+    item_pcs = factories.create_item(
+        db_conn, sku="ITM-PCS-01", name="Baut Baja", category_id=cat["id"], uom_id=uom_pcs["id"]
+    )
+    item_kg = factories.create_item(
+        db_conn, sku="ITM-KG-01", name="Kawat Tembaga", category_id=cat["id"], uom_id=uom_kg["id"]
+    )
+
+    # Tugaskan staff_user hanya ke Gudang A
+    client.put(
+        f"/api/v1/users/{staff_user['id']}/warehouses",
+        headers=superadmin_user["auth_headers"],
+        json={"warehouse_ids": [wh_a["id"]]},
+    )
+
+    # 1. Uji penomoran dokumen (FR-10)
+    with db_conn.transaction():
+        po_num1 = numbering_service.generate_document_number(db_conn, "PO")
+        po_num2 = numbering_service.generate_document_number(db_conn, "PO")
+    assert po_num1.startswith("PO-") and po_num1.endswith("-0001")
+    assert po_num2.startswith("PO-") and po_num2.endswith("-0002")
+
+    # 2. Validasi UoM allow_decimal = FALSE menolak angka desimal, allow_decimal = TRUE mengizinkan desimal
+    try:
+        with db_conn.transaction():
+            inventory_service.apply_movement(
+                db_conn,
+                movement_type="IN_PURCHASE",
+                warehouse_id=wh_a["id"],
+                location_id=loc_a1["id"],
+                item_id=item_pcs["id"],
+                qty_change=Decimal("1.5000"),
+                reference_type="GOODS_RECEIPT",
+                reference_id=101,
+                created_by=superadmin_user["id"],
+            )
+        raise AssertionError("Seharusnya menolak kuantitas desimal untuk UoM PCS")
+    except ValidationDomainError as exc:
+        assert exc.code == "VALIDATION_ERROR"
+
+    with db_conn.transaction():
+        mov_in_pcs = inventory_service.apply_movement(
+            db_conn,
+            movement_type="IN_PURCHASE",
+            warehouse_id=wh_a["id"],
+            location_id=loc_a1["id"],
+            item_id=item_pcs["id"],
+            qty_change=Decimal("10.0000"),
+            reference_type="GOODS_RECEIPT",
+            reference_id=101,
+            created_by=superadmin_user["id"],
+            notes="Penerimaan awal 10 PCS",
+        )
+        mov_in_kg = inventory_service.apply_movement(
+            db_conn,
+            movement_type="IN_PURCHASE",
+            warehouse_id=wh_b["id"],
+            location_id=loc_b1["id"],
+            item_id=item_kg["id"],
+            qty_change=Decimal("12.7500"),
+            reference_type="GOODS_RECEIPT",
+            reference_id=102,
+            created_by=superadmin_user["id"],
+        )
+    assert Decimal(mov_in_pcs["qty_before"]) == Decimal("0.0000")
+    assert Decimal(mov_in_pcs["qty_after"]) == Decimal("10.0000")
+    assert Decimal(mov_in_kg["qty_after"]) == Decimal("12.7500")
+
+    # 3. Uji konkurensi 2 thread pada apply_movement (saldo 10 dikurangi 8 oleh 2 thread bersamaan)
+    barrier = threading.Barrier(2)
+
+    def _worker_deduct(ref_id: int) -> str:
+        with psycopg.connect(setup_test_database, autocommit=True, row_factory=dict_row) as worker_conn:
+            barrier.wait(timeout=5)
+            try:
+                with worker_conn.transaction():
+                    inventory_service.apply_movement(
+                        worker_conn,
+                        movement_type="OUT_TRANSFER",
+                        warehouse_id=wh_a["id"],
+                        location_id=loc_a1["id"],
+                        item_id=item_pcs["id"],
+                        qty_change=Decimal("-8.0000"),
+                        reference_type="STOCK_TRANSFER",
+                        reference_id=ref_id,
+                        created_by=superadmin_user["id"],
+                    )
+                return "SUCCESS"
+            except InsufficientStock:
+                return "INSUFFICIENT_STOCK"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(_worker_deduct, [201, 202]))
+
+    assert sorted(results) == ["INSUFFICIENT_STOCK", "SUCCESS"]
+
+    # Pastikan saldo akhir di Lokasi A1 adalah tepat 2.0000
+    bal_row = db_conn.execute(
+        "SELECT qty_on_hand FROM inventory_balances WHERE warehouse_id = %s AND location_id = %s AND item_id = %s",
+        (wh_a["id"], loc_a1["id"], item_pcs["id"]),
+    ).fetchone()
+    assert bal_row is not None
+    assert Decimal(bal_row["qty_on_hand"]) == Decimal("2.0000")
+
+    # 4. Uji pembekuan lokasi saat Opname IN_PROGRESS (LOCATION_FROZEN) & bypass untuk ADJUSTMENT_*
+    opn_row = db_conn.execute(
+        """
+        INSERT INTO stock_opnames (opname_number, warehouse_id, location_id, status, started_at, started_by, created_by)
+        VALUES ('OPN-202610-0001', %s, %s, 'IN_PROGRESS', CURRENT_TIMESTAMP, %s, %s)
+        RETURNING id
+        """,
+        (wh_a["id"], loc_a1["id"], superadmin_user["id"], superadmin_user["id"]),
+    ).fetchone()
+    assert opn_row is not None
+
+    try:
+        with db_conn.transaction():
+            inventory_service.apply_movement(
+                db_conn,
+                movement_type="IN_PURCHASE",
+                warehouse_id=wh_a["id"],
+                location_id=loc_a1["id"],
+                item_id=item_pcs["id"],
+                qty_change=Decimal("5.0000"),
+                reference_type="GOODS_RECEIPT",
+                reference_id=103,
+                created_by=superadmin_user["id"],
+            )
+        raise AssertionError("Seharusnya melempar LocationFrozen saat Opname IN_PROGRESS")
+    except LocationFrozen as exc:
+        assert exc.code == "LOCATION_FROZEN"
+        assert exc.http_status == 409
+
+    # Pergerakan ADJUSTMENT_PLUS melewati pemeriksaan pembekuan lokasi (PRD 6.6 & Invarian 7)
+    with db_conn.transaction():
+        adj_mov = inventory_service.apply_movement(
+            db_conn,
+            movement_type="ADJUSTMENT_PLUS",
+            warehouse_id=wh_a["id"],
+            location_id=loc_a1["id"],
+            item_id=item_pcs["id"],
+            qty_change=Decimal("3.0000"),
+            reference_type="STOCK_OPNAME",
+            reference_id=opn_row["id"],
+            created_by=superadmin_user["id"],
+        )
+    assert Decimal(adj_mov["qty_after"]) == Decimal("5.0000")
+
+    # Selesaikan Opname & buat 1 Transfer berstatus SHIPPED menuju Lokasi B1 untuk menguji perhitungan qty_in_transit
+    db_conn.execute("UPDATE stock_opnames SET status = 'COMPLETED' WHERE id = %s", (opn_row["id"],))
+    trf_row = db_conn.execute(
+        """
+        INSERT INTO stock_transfers (
+            transfer_number, source_warehouse_id, source_location_id,
+            destination_warehouse_id, destination_location_id, status, created_by
+        )
+        VALUES ('TRF-202610-0001', %s, %s, %s, %s, 'SHIPPED', %s)
+        RETURNING id
+        """,
+        (wh_a["id"], loc_a1["id"], wh_b["id"], loc_b1["id"], superadmin_user["id"]),
+    ).fetchone()
+    assert trf_row is not None
+    db_conn.execute(
+        """
+        INSERT INTO stock_transfer_lines (transfer_id, item_id, qty, created_by)
+        VALUES (%s, %s, 4.0000, %s)
+        """,
+        (trf_row["id"], item_pcs["id"], superadmin_user["id"]),
+    )
+
+    # 5. Uji endpoint tampilan stok (/balances, /by-warehouse, /summary) & in-transit
+    loc_stock_res = client.get(
+        f"/api/v1/stock/balances?warehouse_id={wh_b['id']}&item_id={item_pcs['id']}",
+        headers=auditor_user["auth_headers"],
+    )
+    assert loc_stock_res.status_code == 200
+    loc_items = loc_stock_res.json()["items"]
+    assert len(loc_items) == 1
+    assert loc_items[0]["qty_on_hand"] == "0.0000"
+    assert loc_items[0]["qty_in_transit"] == "4.0000"
+
+    wh_stock_res = client.get(
+        f"/api/v1/stock/by-warehouse?item_id={item_pcs['id']}&sort_by=warehouse_code&sort_dir=asc",
+        headers=purchasing_user["auth_headers"],
+    )
+    assert wh_stock_res.status_code == 200
+    wh_items = wh_stock_res.json()["items"]
+    assert len(wh_items) == 2
+    assert wh_items[0]["warehouse_code"] == "WH-A"
+    assert wh_items[0]["qty_on_hand"] == "5.0000"
+    assert wh_items[1]["warehouse_code"] == "WH-B"
+    assert wh_items[1]["qty_in_transit"] == "4.0000"
+
+    sum_res = client.get(
+        f"/api/v1/stock/summary?item_id={item_pcs['id']}",
+        headers=auditor_user["auth_headers"],
+    )
+    assert sum_res.status_code == 200
+    sum_item = sum_res.json()["items"][0]
+    assert sum_item["qty_on_hand"] == "5.0000"
+    assert sum_item["qty_in_transit"] == "4.0000"
+
+    # 6. Uji Warehouse Scoping pada pembacaan stok & ledger untuk Warehouse Staff
+    staff_stock_all = client.get("/api/v1/stock/balances", headers=staff_user["auth_headers"])
+    assert staff_stock_all.status_code == 200
+    assert all(r["warehouse_id"] == wh_a["id"] for r in staff_stock_all.json()["items"])
+
+    staff_stock_wh_b = client.get(
+        f"/api/v1/stock/balances?warehouse_id={wh_b['id']}",
+        headers=staff_user["auth_headers"],
+    )
+    assert staff_stock_wh_b.status_code == 403
+    assert staff_stock_wh_b.json()["error"]["code"] == "WAREHOUSE_NOT_ASSIGNED"
+
+    # Purchasing Staff tidak memiliki ledger:read -> 403 PERMISSION_DENIED
+    purch_ledger = client.get("/api/v1/stock/movements", headers=purchasing_user["auth_headers"])
+    assert purch_ledger.status_code == 403
+    assert purch_ledger.json()["error"]["code"] == "PERMISSION_DENIED"
+
+    # Auditor membaca buku besar pergerakan stok dengan filter
+    ledger_res = client.get(
+        f"/api/v1/stock/movements?warehouse_id={wh_a['id']}&item_id={item_pcs['id']}",
+        headers=auditor_user["auth_headers"],
+    )
+    assert ledger_res.status_code == 200
+    ledger_items = ledger_res.json()["items"]
+    assert len(ledger_items) == 3
+    assert ledger_items[0]["movement_type"] == "ADJUSTMENT_PLUS"
+    assert ledger_items[0]["qty_after"] == "5.0000"
+
 
 
 
