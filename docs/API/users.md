@@ -387,7 +387,7 @@ Mengambil informasi detail satu pengguna berdasarkan ID.
 
 ### PATCH `/api/v1/users/{user_id}` — Perbarui / Nonaktifkan Pengguna
 
-Memperbarui sebagian atribut pengguna (`email`, `full_name`, `role_id`, `is_active`, atau `password`). Karena tidak ada *hard delete* (PRD FR-02 & AGENTS.md Invarian 9), penonaktifan pengguna dilakukan melalui endpoint ini dengan mengirim `{"is_active": false}`.
+Memperbarui sebagian atribut pengguna (`email`, `full_name`, `role_id`, `is_active`, atau `password`). Karena tidak ada *hard delete* (PRD FR-02 & AGENTS.MD Invarian 9), penonaktifan pengguna dilakukan melalui endpoint ini dengan mengirim `{"is_active": false}`.
 
 * **HTTP Method & URL:** `PATCH /api/v1/users/{user_id}`
 * **Autentikasi & Permission:** Bearer Token, `user:manage`

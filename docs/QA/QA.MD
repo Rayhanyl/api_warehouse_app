@@ -3,7 +3,7 @@
 | Informasi Dokumen | Keterangan |
 | --- | --- |
 | **Nama Proyek** | Warehouse Management System (WMS) |
-| **Acuan Dokumen** | `docs/core/PRODUCT_REQUIREMENTS_DOCUMENT.md` (PRD v2.0) & `docs/core/FOLDER_STRUCTURE.md` |
+| **Acuan Dokumen** | `docs/CORE/PRODUCT_REQUIREMENTS_DOCUMENT.MD` (PRD v2.0) & `docs/CORE/FOLDER_STRUCTURE.MD` |
 | **Fokus Dokumen** | Test Plan, Automation Testing, Regression Testing, Defect Management, Jenkins CI/CD, Playwright, Maestro, & Microsoft Office |
 | **Lokasi Berkas** | `docs/QA/QA.MD` |
 
@@ -64,16 +64,16 @@ Pengujian otomatis menjadi tulang punggung verifikasi WMS API agar setiap aturan
   * `tests/test_immutability.py` → Otomasi serangan `UPDATE`/`DELETE` langsung ke tabel *append-only* menggunakan role `wms_app` (**AC-08**).
 
 ### 2.2. Otomasi Skenario Konkurensi (*Race Condition*)
-Untuk **AC-06** (dua pengiriman Transfer memperebutkan sisa stok yang sama) dan **AC-13** (dua request mem-posting GR yang sama bersamaan), skrip otomasi menggunakan `concurrent.futures.ThreadPoolExecutor` dan `threading.Barrier(2)` agar kedua request mengeksekusi transaksi tepat pada milidetik yang sama dan memvalidasi bahwa penguncian `SELECT ... FOR UPDATE` bekerja sempurna.
+Untuk **AC-06** (dua pengiriman Transfer memperebutkan sisa stok yang sama) dan **AC-13** (dua request mem-posting GR yang sama bersamaan), test aktual memakai dua `threading.Thread`, koneksi database terpisah, dan `threading.Barrier(2)` untuk menyinkronkan request serta memverifikasi penguncian `SELECT ... FOR UPDATE`.
 
 ---
 
 ## 3. Playwright (E2E API & Web/Swagger Automation)
 
-Meskipun inti produk MVP adalah REST API, **Playwright** digunakan pada lapisan QA untuk tiga kebutuhan strategis:
+**Status: rencana, belum diimplementasikan di repository.** Suite saat ini memakai `pytest` dan `httpx`; belum ada dependensi/configuration Playwright atau test browser. Skenario di bawah adalah usulan tambahan jika otomasi browser dibutuhkan, bukan bukti cakupan uji yang sudah berjalan.
 
 ### 3.1. End-to-End (E2E) API Workflow Testing (`APIRequestContext`)
-Playwright menyediakan `request` context yang sangat kuat untuk menguji alur bisnis lintas-aktor dari ujung ke ujung (*end-to-end journey*) layaknya klien eksternal sesungguhnya:
+Playwright dapat memakai `request` context untuk menguji alur bisnis lintas-aktor dari ujung ke ujung:
 1. **Context A (Super Admin):** Menyiapkan gudang, lokasi penyimpanan, dan menugaskan staf ke gudang.
 2. **Context B (Purchasing Staff):** Membuat pemasok, barang, dan menerbitkan PO (`ISSUED`).
 3. **Context C (Warehouse Staff Gudang A):** Mem-posting GR (`POSTED`), membuat Transfer, dan mengirim barang (`SHIPPED`).
@@ -81,7 +81,7 @@ Playwright menyediakan `request` context yang sangat kuat untuk menguji alur bis
 5. **Context E (Auditor):** Memverifikasi konsistensi laporan stok, `stock_movements`, dan `audit_logs`.
 
 ### 3.2. Otomasi Pengujian Swagger UI (`/docs`) & Kontrak OpenAPI
-FastAPI menghasilkan antarmuka dokumentasi interaktif di `/docs` (Swagger UI). Playwright digunakan untuk:
+FastAPI menghasilkan antarmuka dokumentasi interaktif di `/docs` (Swagger UI). Jika Playwright ditambahkan, pengujian yang dapat dibuat meliputi:
 * Memastikan halaman `/docs` dan skema `/openapi.json` termuat tanpa error.
 * Menguji alur *Authorize* (Bearer JWT) langsung melalui antarmuka Swagger UI dan mengeksekusi *Try it out* pada endpoint utama.
 * Menghasilkan rekaman jejak (*Playwright Trace Viewer*, *screenshot*, dan *video*) sebagai bukti uji visual.
@@ -95,7 +95,7 @@ Saat antarmuka web manajemen gudang dihubungkan ke WMS API, suite Playwright yan
 
 Operasional fisik di lantai gudang (penerimaan barang di *loading dock*, pemindahan rak, dan penghitungan fisik Stock Opname) umumnya dijalankan oleh *Warehouse Staff* menggunakan perangkat bergerak (*mobile app* / *handheld terminal* / *PDA scanner*) yang berkomunikasi dengan WMS API.
 
-**Maestro** digunakan sebagai framework otomasi UI deklaratif berbasis YAML untuk menguji alur aplikasi klien mobile gudang:
+**Status: rencana untuk klien masa depan.** Belum ada aplikasi mobile/handheld dalam repository dan UI berada di luar MVP. Jika klien tersebut dibuat pada fase berikutnya, Maestro dapat digunakan sebagai framework otomasi UI deklaratif berbasis YAML:
 
 ### 4.1. Skenario Uji Maestro di Lantai Gudang
 1. **`flow_login_and_warehouse_scope.yaml`**
@@ -119,7 +119,7 @@ Pengujian regresi memastikan bahwa penambahan fitur pada tahap berikutnya (M0 �
 | --- | --- | --- | --- |
 | **Smoke Test** | Setiap *commit* / sebelum memulai pengujian fitur baru | `GET /health`, migrasi skema `001`–`008`, login Super Admin, dan pembuatan 1 master data dasar. | < 15 detik |
 | **Sanity / Module Regression** | Setiap selesai perubahan pada satu modul (mis. ubah `transfer_service.py`) | Seluruh test pada modul terkait + verifikasi invarian `inventory_service.apply_movement()` dan `audit_logs`. | < 1 menit |
-| **Full Regression Suite** | Setiap *Pull Request* ke branch utama & sebelum rilis tahap (M1–M8) | Seluruh **AC-01 s.d. AC-13**, seluruh test RBAC & *warehouse scoping*, test konkurensi, test imutabilitas DB, serta skenario E2E Playwright. | < 3 menit |
+| **Full Regression Suite** | Setiap *Pull Request* ke branch utama & sebelum rilis tahap (M1–M8) | Seluruh **AC-01 s.d. AC-13**, test RBAC & *warehouse scoping*, test konkurensi, serta test imutabilitas DB. E2E Playwright masih rencana dan belum termasuk suite aktif. | Target < 3 menit |
 
 ### 5.2. Titik Kritis yang Wajib Dijaga pada Setiap Regresi
 1. **Invarian Saldo & Ledger:** Tidak boleh ada selisih antara `inventory_balances.qty_on_hand` dengan `qty_after` terakhir pada `stock_movements`.
@@ -131,9 +131,9 @@ Pengujian regresi memastikan bahwa penambahan fitur pada tahap berikutnya (M0 �
 
 ## 6. Jenkins (Integrasi Pipeline CI/CD Pengujian)
 
-**Jenkins** digunakan sebagai server orkestrasi CI/CD untuk menjalankan seluruh rangkaian pengujian otomatis dan regresi secara terjadwal maupun setiap kali ada perubahan kode (*Push* / *Pull Request*).
+**Status: rencana, belum dikonfigurasi.** Repository belum berisi `Jenkinsfile` atau konfigurasi Jenkins. Diagram dan tahapan berikut adalah rancangan pipeline yang dapat diterapkan kemudian, bukan status CI/CD aktif.
 
-### 6.1. Alur Tahapan Pipeline Jenkins (`Jenkinsfile`)
+### 6.1. Rancangan Alur Pipeline Jenkins
 
 ```mermaid
 flowchart LR
@@ -154,8 +154,8 @@ flowchart LR
    ```bash
    pytest --junitxml=reports/pytest-results.xml -v
    ```
-5. **E2E Execution (Playwright / Maestro):** Menjalankan skenario E2E API & UI bila layanan klien diaktifkan pada pipeline.
-6. **Reporting & Quality Gate:** Jenkins mempublikasikan grafik tren kelulusan test dari `reports/pytest-results.xml`. Jika ada **1 saja test gagal**, pipeline otomatis berstatus **FAILED** dan memblokir proses *merge* / *deployment*.
+5. **E2E Execution (opsional/fase mendatang):** Jalankan Playwright/Maestro hanya setelah framework dan klien terkait ditambahkan.
+6. **Reporting & Quality Gate (rancangan):** Pipeline yang kelak dibuat dapat mempublikasikan `reports/pytest-results.xml` dan gagal jika ada test yang gagal. Saat ini belum ada gate Jenkins yang memblokir *merge* atau *deployment*.
 
 ---
 
@@ -200,7 +200,7 @@ Setiap tiket bug wajib mencantumkan:
 
 ## 8. Microsoft Office (Administrasi, Pelaporan & Traceability QA)
 
-Selain kakas otomasi teknis, rangkaian aplikasi **Microsoft Office** digunakan untuk tata kelola dokumentasi pengujian, pelacakan cakupan kebutuhan, dan pelaporan kualitas kepada pemangku kepentingan (*stakeholders*):
+Selain kakas otomasi, file Excel/Word/PowerPoint di bagian ini adalah format keluaran yang disarankan untuk tata kelola dan pelaporan QA; file maupun alur Office tersebut tidak dihasilkan oleh service API saat ini:
 
 ### 8.1. Microsoft Excel — Matriks & Pelacakan Data Uji
 Digunakan untuk mengelola lembar kerja (*workbook*) QA yang terdiri dari beberapa *sheet* utama:

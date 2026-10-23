@@ -20,7 +20,7 @@
 
 Modul Audit Log menyediakan akses **baca-saja (*read-only*)** terhadap tabel `audit_logs` untuk menelusuri siapa melakukan aksi apa, kapan, dari alamat IP mana, serta nilai sebelum (`old_values`) dan sesudah (`new_values`) perubahan.
 
-Sesuai PRD 6.4 dan AGENTS.md Invarian 2:
+Sesuai PRD 6.4 dan AGENTS.MD Invarian 2:
 * Tabel `audit_logs` bersifat **append-only** (tidak memiliki endpoint `POST`/`PATCH`/`DELETE` publik; entri hanya ditulis secara internal oleh layanan aplikasi di dalam transaksi yang sama dengan aksi bisnis).
 * Di level PostgreSQL (`007_append_only_guards.sql`), dipasang *trigger* `trg_audit_logs_immutable` (`BEFORE UPDATE OR DELETE`) yang menolak segala upaya perubahan atau penghapusan baris, serta pencabutan hak `UPDATE, DELETE, TRUNCATE` dari role aplikasi `wms_app`.
 * Fungsi [`audit_service.record()`](../../app/services/audit_service.py) secara otomatis menyaring atribut sensitif (`password`, `password_hash`, `current_password`, `new_password`, `token`, `token_hash`, `access_token`, `refresh_token`) agar tidak pernah tersimpan di kolom JSONB `old_values` maupun `new_values`.

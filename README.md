@@ -41,7 +41,7 @@ Layanan REST API manajemen gudang multi-lokasi (*multi-warehouse & bin location*
 
 ## Status Implementasi Saat Ini
 
-Pengembangan dilakukan bertahap sesuai urutan milestone pada [`docs/core/FOLDER_STRUCTURE.MD`](docs/core/FOLDER_STRUCTURE.MD):
+Pengembangan dilakukan bertahap sesuai urutan milestone pada [`docs/CORE/FOLDER_STRUCTURE.MD`](docs/CORE/FOLDER_STRUCTURE.MD):
 
 | Tahap | Modul / Cakupan | Status | Acceptance Criteria Tercakup |
 | :---: | --- | :---: | --- |
@@ -49,11 +49,11 @@ Pengembangan dilakukan bertahap sesuai urutan milestone pada [`docs/core/FOLDER_
 | **M1** | Runner migrasi (`db/migrate.py`), migrasi DDL `001`–`008`, role `wms_app`, trigger imutabilitas, seed RBAC, `create_superadmin.py` | ✅ **Selesai** | `AC-08` |
 | **M2** | Autentikasi JWT, rotasi & *reuse detection* Refresh Token, *account lockout*, CRUD Pengguna, RBAC, *Warehouse Scoping*, & Audit Log | ✅ **Selesai** | `AC-05`, `AC-11`, `AC-12` |
 | **M3** | Master Data (Kategori, UoM, Barang, Pemasok) & Gudang + Lokasi Penyimpanan | ✅ **Selesai** | `AC-05`, `AC-12` |
-| **M4** | Inti Persediaan (`inventory_service.apply_movement`), Saldo Stok, & Buku Besar Pergerakan | ⏳ Berikutnya | – |
-| **M5** | Purchase Order (PO) & Goods Receipt (GR) | ⏳ Menunggu | `AC-01`, `AC-02`, `AC-09` |
-| **M6** | Stock Transfer Dua Tahap (`DRAFT` → `APPROVED` → `SHIPPED` → `RECEIVED`) | ⏳ Menunggu | `AC-03`, `AC-06`, `AC-07` |
-| **M7** | Stock Opname, Pembekuan Lokasi, & Rekonsiliasi Stok | ⏳ Menunggu | `AC-04`, `AC-10`, `AC-13` |
-| **M8** | Pengujian Regresi Penuh & Perapihan Akhir | ⏳ Menunggu | `AC-01` s.d. `AC-13` |
+| **M4** | Inti Persediaan (`inventory_service.apply_movement`), Saldo Stok, & Buku Besar Pergerakan | ✅ **Selesai** | Pembacaan saldo/ledger dan penerapan mutasi stok |
+| **M5** | Purchase Order (PO) & Goods Receipt (GR) | ✅ **Selesai** | `AC-01`, `AC-07`, `AC-13` |
+| **M6** | Stock Transfer Dua Tahap (`DRAFT` → `APPROVED` → `SHIPPED` → `RECEIVED`) | ✅ **Selesai** | `AC-02`, `AC-03`, `AC-06`, `AC-09` |
+| **M7** | Stock Opname, Pembekuan Lokasi, & Rekonsiliasi Stok | ✅ **Selesai** | `AC-04`, `AC-10` |
+| **M8** | Tinjauan akhir AC, performa query stok/ledger, logging, dan request ID | ✅ **Selesai** | `AC-01` s.d. `AC-13`; hasil benchmark lokal diringkas di indeks API |
 
 ---
 
@@ -79,8 +79,9 @@ warehouse_app/
 │   ├── seeds/                      # Data contoh untuk pengembangan lokal (dev_seed.sql)
 │   └── migrate.py                  # Runner migrasi SQL (mencatat versi di tabel schema_migrations)
 ├── docs/
-│   ├── api/                        # Dokumentasi lengkap REST API per modul (README, auth, users, audit-logs, health)
-│   └── core/                       # Dokumen acuan utama (PRD, FOLDER_STRUCTURE, SCHEMA_DATABASE, aturan dokumentasi)
+│   ├── API/                        # Dokumentasi REST API per modul dan indeks
+│   ├── CORE/                       # Dokumen acuan utama (PRD, FOLDER_STRUCTURE, SCHEMA_DATABASE, aturan dokumentasi)
+│   └── QA/                         # Rencana dan spesifikasi pengujian
 ├── scripts/
 │   └── create_superadmin.py        # Bootstrap akun Super Admin pertama
 ├── tests/                          # Pengujian otomatis berbasis pytest terhadap database wms_test
@@ -90,7 +91,7 @@ warehouse_app/
 ├── .env.docker.example             # Template variabel lingkungan untuk Docker Compose
 ├── docker-compose.yml              # Orkestrasi container PostgreSQL & API
 ├── pyproject.toml                  # Konfigurasi proyek, dependensi, pytest, dan coverage
-└── AGENTS.md                       # Aturan kerja dan batasan invarian bisnis
+└── AGENTS.MD                       # Aturan kerja dan batasan invarian bisnis
 ```
 
 ---
@@ -125,9 +126,9 @@ Copy-Item .env.local.example .env
 Contoh isi `.env` (semua kredensial database dan `JWT_SECRET` minimal 32 karakter wajib diisi di `.env`):
 
 ```env
-DATABASE_URL=postgresql://wms_app:wms_app_secret@127.0.0.1:5432/warehouse_db
-MIGRATION_DATABASE_URL=postgresql://postgres:123456@127.0.0.1:5432/warehouse_db
-TEST_DATABASE_URL=postgresql://postgres:123456@127.0.0.1:5432/wms_test
+DATABASE_URL=postgresql://wms_app:<APP_PASSWORD>@127.0.0.1:5432/warehouse_db
+MIGRATION_DATABASE_URL=postgresql://wms_owner:<OWNER_PASSWORD>@127.0.0.1:5432/warehouse_db
+TEST_DATABASE_URL=postgresql://wms_owner:<OWNER_PASSWORD>@127.0.0.1:5432/wms_test
 
 JWT_SECRET=ganti-dengan-string-acak-minimal-32-karakter
 JWT_ALGORITHM=HS256
@@ -191,18 +192,25 @@ Invoke-Item .\htmlcov\index.html
 
 ## Dokumentasi API & Dokumen Rujukan
 
-### Dokumentasi Endpoint REST API (`docs/api/`)
-* [**Indeks Dokumentasi API (`docs/api/README.md`)**](docs/api/README.md) — Konvensi global, format error, daftar 43 endpoint aktif, dan status verifikasi.
-* [**Autentikasi & Otorisasi (`docs/api/authentication.md`)**](docs/api/authentication.md) — Login, rotasi *Refresh Token*, deteksi penggunaan ulang token, logout, profil `/me`, dan ganti kata sandi.
-* [**Manajemen Pengguna, RBAC & Gudang (`docs/api/users.md`)**](docs/api/users.md) — CRUD pengguna, peran & izin (`user:manage`), serta penugasan gudang (*Warehouse Scoping*).
-* [**Master Data (`docs/api/master-data.md`)**](docs/api/master-data.md) — CRUD Kategori, Satuan Ukur (UoM), Pemasok, dan Barang (SKU), beserta perlindungan `ENTITY_IN_USE` dan imutabilitas SKU/UoM dasar.
-* [**Gudang & Lokasi Penyimpanan (`docs/api/warehouses.md`)**](docs/api/warehouses.md) — CRUD Gudang (`allow_negative_stock`) & Lokasi Penyimpanan (*Bin/Rack*) dengan *Warehouse Scoping* (`location:manage`).
-* [**Audit Log (`docs/api/audit-logs.md`)**](docs/api/audit-logs.md) — Pembacaan jejak audit *append-only* beserta filter dan paginasi.
-* [**Health Check (`docs/api/health.md`)**](docs/api/health.md) — Pemeriksaan status layanan API dan konektivitas pool PostgreSQL.
+### Dokumentasi Endpoint REST API (`docs/API/`)
+* [**Indeks Dokumentasi API (`docs/API/README.md`)**](docs/API/README.md) — Konvensi global, modul aktif, daftar 82 path/method, dan ringkasan verifikasi.
+* [**Autentikasi & Otorisasi**](docs/API/authentication.md) — Login, rotasi *Refresh Token*, deteksi penggunaan ulang token, logout, profil `/me`, dan ganti kata sandi.
+* [**Pengguna, RBAC & Penugasan Gudang**](docs/API/users.md) — CRUD pengguna, permission, dan *Warehouse Scoping*.
+* [**Master Data**](docs/API/master-data.md) — Kategori, UoM, pemasok, dan barang.
+* [**Gudang & Lokasi Penyimpanan**](docs/API/warehouses.md) — Gudang, lokasi penyimpanan, dan penugasan akses.
+* [**Purchase Order**](docs/API/purchase-orders.md) — Pembuatan, penerbitan, pemenuhan, pembatalan, dan penutupan PO.
+* [**Goods Receipt**](docs/API/goods-receipts.md) — Penerimaan PO, posting saldo/ledger, dan pencegahan over-receipt.
+* [**Transfer Stok**](docs/API/stock-transfers.md) — Persetujuan, pengiriman, penerimaan, dan pencatatan selisih transfer.
+* [**Stock Opname**](docs/API/stock-opnames.md) — Snapshot, pembekuan lokasi, hitung fisik, persetujuan, dan penyesuaian.
+* [**Stok & Buku Besar**](docs/API/stock-ledger.md) — Saldo, stok dalam perjalanan, dan pergerakan stok.
+* [**Audit Log**](docs/API/audit-logs.md) — Pembacaan jejak audit *append-only*.
+* [**Health Check**](docs/API/health.md) — Status layanan dan konektivitas pool PostgreSQL.
 
-### Dokumen Spesifikasi & Arsitektur (`docs/core/`)
-* [**PRODUCT_REQUIREMENTS_DOCUMENT.MD**](docs/core/PRODUCT_REQUIREMENTS_DOCUMENT.MD) — Spesifikasi kebutuhan fungsional (FR-01 s.d. FR-11), matriks RBAC, siklus status dokumen, aturan validasi, kode error, dan kriteria penerimaan (AC-01 s.d. AC-13).
-* [**FOLDER_STRUCTURE.MD**](docs/core/FOLDER_STRUCTURE.MD) — Arsitektur kode berlapis, pola koneksi/transaksi, urutan penguncian (*locking order*), dan tahapan implementasi (M0 s.d. M8).
-* [**SCHEMA_DATABASE.MD**](docs/core/SCHEMA_DATABASE.MD) — Spesifikasi tabel, relasi *Composite Foreign Key*, DDL PostgreSQL lengkap (`001` s.d. `008`), serta *trigger* imutabilitas.
-* [**AGENTS.md**](AGENTS.md) — Aturan kerja dan batasan invarian bisnis yang wajib dipatuhi selama pengembangan.
+### Dokumen Spesifikasi, Arsitektur & QA
+* [**PRD**](docs/CORE/PRODUCT_REQUIREMENTS_DOCUMENT.MD) — Kebutuhan fungsional, RBAC, status, validasi, error, dan AC-01–AC-13.
+* [**Struktur Proyek**](docs/CORE/FOLDER_STRUCTURE.MD) — Arsitektur, transaksi, locking, serta urutan milestone.
+* [**Skema Database**](docs/CORE/SCHEMA_DATABASE.MD) — Entitas, relasi, migrasi, dan trigger.
+* [**Aturan Dokumentasi API**](docs/CORE/RULE_CREATE_API_DOKUMENTATION.MD) — Standar dokumentasi endpoint.
+* [**Rencana QA**](docs/QA/QA.MD) · [**Spesifikasi Test Plan**](docs/QA/DOKUMENT_RENCANA_PENGUJIAN.MD) — Cakupan uji otomatis dan skenario penerimaan.
+* [**AGENTS.md**](AGENTS.MD) — Aturan kerja dan batasan invarian bisnis.
 

@@ -78,7 +78,7 @@ Dependency [`get_current_user`](../../app/api/deps.py) dijalankan pada setiap en
 3. **Membaca ulang dari database**: status aktif, `role_name`, daftar `permissions`, dan `warehouse_ids`.
 4. Bila pengguna tidak ada atau `is_active = FALSE` → `401 AUTH_TOKEN_INVALID`.
 
-Karena peran dan status dibaca dari DB, **penonaktifan atau perubahan peran langsung berlaku** tanpa menunggu token kedaluwarsa (PRD FR-01, AGENTS.md Invarian 14). Perilaku ini diuji di `test_ac05_rbac_enforcement_and_audit_log_recording`.
+Karena peran dan status dibaca dari DB, **penonaktifan atau perubahan peran langsung berlaku** tanpa menunggu token kedaluwarsa (PRD FR-01, AGENTS.MD Invarian 14). Perilaku ini diuji di `test_ac05_rbac_enforcement_and_audit_log_recording`.
 
 ### 3.3 Model Otorisasi (RBAC)
 
@@ -98,7 +98,7 @@ Pemeriksaan penugasan gudang dilakukan di lapisan **service** oleh [`access_serv
 | `get_scoped_warehouse_ids_for_read(conn, actor)` | Mengembalikan daftar gudang yang ditugaskan bila peran = *Warehouse Staff*; `None` (tidak dibatasi) untuk peran lain (PRD 3.2 poin 5–6). |
 
 > [!NOTE]
-> Saat ini **belum ada endpoint publik** yang memanggil `ensure_warehouse_access`, karena modul yang memerlukan *scoping* (GR, Transfer, Opname, Lokasi) belum diimplementasikan. Fungsinya sudah diuji langsung di `test_ac12_warehouse_scoping_assignment_and_access_enforcement`. Penugasan gudang dikelola lewat [`PUT /api/v1/users/{user_id}/warehouses`](users.md#put-apiv1usersuser_idwarehouses--atur-penugasan-gudang).
+> Pemeriksaan `ensure_warehouse_access` digunakan oleh endpoint operasional yang membatasi akses gudang, termasuk GR, Transfer, Stock Opname, dan pengelolaan lokasi. Scoping assignment diuji di `test_ac12_warehouse_scoping_assignment_and_access_enforcement`. Penugasan gudang dikelola lewat [`PUT /api/v1/users/{user_id}/warehouses`](users.md#put-apiv1usersuser_idwarehouses--atur-penugasan-gudang).
 
 ---
 
@@ -421,5 +421,5 @@ Invoke-RestMethod -Uri "$base/auth/me" -Headers $headers
 | 6 | ✅ Terverifikasi | `username` saat login otomatis di-*trim* (`username.strip()`) sehingga konsisten dengan normalisasi saat pembuatan pengguna. |
 | 7 | ✅ Terverifikasi | Alamat IP dari header `X-Forwarded-For` hanya dipercaya apabila IP koneksi langsung (`request.client.host`) terdaftar pada `settings.trusted_proxy_ips` (`TRUSTED_PROXY_IPS`). |
 | 8 | ✅ Terverifikasi | Penolakan rotasi token akibat token kedaluwarsa (`TOKEN_EXPIRED`) maupun akun nonaktif (`USER_INACTIVE`) turut mencatat entri audit `AUTH_TOKEN_REFRESH_FAILED`. |
-| 9 | ✅ Terverifikasi | `app/core/config.py` mewajibkan `DATABASE_URL` dan `JWT_SECRET` (minimal 32 karakter) dari variabel lingkungan tanpa nilai *fallback* rahasia di dalam kode sumber (PRD 7.2, AGENTS.md §6). |
+| 9 | ✅ Terverifikasi | `app/core/config.py` mewajibkan `DATABASE_URL` dan `JWT_SECRET` (minimal 32 karakter) dari variabel lingkungan tanpa nilai *fallback* rahasia di dalam kode sumber (PRD 7.2, AGENTS.MD §6). |
 

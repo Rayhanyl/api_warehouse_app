@@ -3,8 +3,8 @@
 | Informasi Dokumen | Keterangan |
 | --- | --- |
 | **Produk** | Warehouse Management System (WMS) REST API |
-| **Versi Acuan PRD** | v2.0 (`docs/core/PRODUCT_REQUIREMENTS_DOCUMENT.md`) |
-| **Acuan Arsitektur** | `docs/core/FOLDER_STRUCTURE.md` & `AGENTS.md` |
+| **Versi Acuan PRD** | v2.0 (`docs/CORE/PRODUCT_REQUIREMENTS_DOCUMENT.MD`) |
+| **Acuan Arsitektur** | `docs/CORE/FOLDER_STRUCTURE.MD` & `AGENTS.MD` |
 | **Alat Pengujian** | `pytest`, `httpx`, PostgreSQL sungguhan (`psycopg` 3) |
 | **Target Database Uji** | `wms_test` (terpisah dari database pengembangan `wms`) |
 
@@ -22,7 +22,7 @@ Prinsip utama pengujian pada proyek ini:
    * `wms_owner` digunakan oleh *test runner* hanya untuk menjalankan migrasi skema awal dan mereset data antar pengujian (`TRUNCATE ... RESTART IDENTITY CASCADE`).
    * `wms_app` digunakan oleh aplikasi (dan pengujian imutabilitas AC-08) untuk memastikan hak akses level database benar-benar membatasi operasi destruktif pada tabel *append-only*.
 3. **Pengujian Konkurensi Nyata:**
-   Skenario balapan (*race condition*) seperti pengiriman stok bersamaan (AC-06) dan posting dokumen ganda (AC-13) tidak dapat diuji dengan pola *transaction rollback per test*. Pengujian dilakukan menggunakan beberapa koneksi independen dari *connection pool* yang dieksekusi secara paralel (misalnya menggunakan `ThreadPoolExecutor` + `threading.Barrier`) terhadap data yang sudah di-*commit*.
+   Skenario balapan (*race condition*) seperti pengiriman stok bersamaan (AC-06) dan posting dokumen ganda (AC-13) tidak dapat diuji dengan pola *transaction rollback per test*. Test aktual membuka dua `threading.Thread`, menyinkronkannya dengan `threading.Barrier(2)`, dan menggunakan koneksi independen terhadap data yang sudah di-*commit*.
 
 ---
 
@@ -39,7 +39,7 @@ Pengujian menggunakan variabel lingkungan terpisah agar tidak pernah menyentuh d
 ```ini
 TEST_DATABASE_URL=postgresql://wms_owner:...@localhost:5432/wms_test
 DATABASE_URL=postgresql://wms_app:...@localhost:5432/wms_test
-JWT_SECRET=test-secret-key-minimal-32-bytes-panjangnya
+JWT_SECRET=<RANDOM_TEST_SECRET_MIN_32_CHARS>
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_MINUTES=15
 REFRESH_TOKEN_DAYS=7
@@ -49,7 +49,7 @@ LOGIN_LOCK_MINUTES=15
 
 ### 2.3. Struktur Berkas Pengujian (`tests/`)
 
-Sesuai `docs/core/FOLDER_STRUCTURE.md`, berkas pengujian disusun sebagai berikut:
+Sesuai `docs/CORE/FOLDER_STRUCTURE.MD`, berkas pengujian disusun sebagai berikut:
 
 | Berkas | Tanggung Jawab & Cakupan AC |
 | --- | --- |
@@ -70,7 +70,7 @@ Setiap Kriteria Penerimaan pada PRD Bagian 8 wajib memiliki minimal satu fungsi 
 
 ### AC-01 — Penerimaan Parsial & Pemenuhan PO
 * **Berkas:** `tests/test_goods_receipt.py`
-* **Contoh Nama Test:** `test_ac01_partial_and_full_goods_receipt_fulfillment`
+* **Nama Test Aktual:** `test_ac01_partial_receipt_over_receipt_and_po_fulfillment`
 * **Prasyarat (*Given*):** PO berstatus `ISSUED` untuk 50 unit Barang X pada Gudang A.
 * **Langkah & Ekspektasi (*When / Then*):**
   1. Posting GR #1 sebesar `20.0000` unit → HTTP 200; status PO berubah menjadi `PARTIALLY_RECEIVED`; `po_lines.qty_received = 20.0000`; `inventory_balances.qty_on_hand = 20.0000`; tercatat 1 baris `stock_movements` bertipe `IN_PURCHASE` (`+20.0000`).
@@ -79,7 +79,7 @@ Setiap Kriteria Penerimaan pada PRD Bagian 8 wajib memiliki minimal satu fungsi 
 
 ### AC-02 — Pencegahan Stok Negatif
 * **Berkas:** `tests/test_stock_transfer.py`
-* **Contoh Nama Test:** `test_ac02_negative_stock_prevention_on_transfer_ship`
+* **Nama Test Aktual:** `test_ac02_negative_stock_prevention_and_allow_negative_stock_flag`
 * **Prasyarat (*Given*):** Saldo Barang Y di Gudang A (Lokasi A1) = `10.0000` unit; Gudang A memiliki `allow_negative_stock = FALSE`; dokumen Transfer 12 unit dari Gudang A (Lokasi A1) ke Gudang B berstatus `APPROVED`.
 * **Langkah & Ekspektasi (*When / Then*):**
   1. Eksekusi `POST /api/v1/stock-transfers/{id}/ship` → Ditolak dengan **HTTP 409** (`INSUFFICIENT_STOCK`) beserta detail barang, stok tersedia (`10.0000`), dan kuantitas diminta (`12.0000`).
@@ -87,7 +87,7 @@ Setiap Kriteria Penerimaan pada PRD Bagian 8 wajib memiliki minimal satu fungsi 
 
 ### AC-03 — Konsistensi Transfer Antar-Gudang
 * **Berkas:** `tests/test_stock_transfer.py`
-* **Contoh Nama Test:** `test_ac03_inter_warehouse_transfer_consistency`
+* **Nama Test Aktual:** `test_ac03_inter_warehouse_transfer_consistency_in_transit_and_scoping`
 * **Prasyarat (*Given*):** Saldo awal Gudang A (Lokasi A1) = `50.0000`, Gudang B (Lokasi B1) = `0.0000`. Transfer 15 unit dari A1 ke B1 berstatus `APPROVED`.
 * **Langkah & Ekspektasi (*When / Then*):**
   1. Eksekusi `POST /api/v1/stock-transfers/{id}/ship` → HTTP 200; status menjadi `SHIPPED`; stok Lokasi A1 berkurang menjadi `35.0000`; tercatat 1 baris `OUT_TRANSFER` (`qty_before=50`, `qty_change=-15`, `qty_after=35`); stok Lokasi B1 masih `0.0000`; endpoint stok menampilkan `in_transit = 15.0000`.
@@ -95,7 +95,7 @@ Setiap Kriteria Penerimaan pada PRD Bagian 8 wajib memiliki minimal satu fungsi 
 
 ### AC-04 — Rekonsiliasi Stock Opname
 * **Berkas:** `tests/test_stock_opname.py`
-* **Contoh Nama Test:** `test_ac04_stock_opname_reconciliation_adjustment_minus`
+* **Nama Test Aktual:** `test_ac04_stock_opname_reconciliation_variance_and_zero_variance_no_ledger`
 * **Prasyarat (*Given*):** Saldo Barang Z di Lokasi A1 tercatat `100.0000` unit. Sesi Opname dimulai (`IN_PROGRESS` → mengambil `qty_system = 100.0000`), petugas menginput `qty_physical = "97.0000"` dan mengajukan persetujuan (`WAITING_APPROVAL`).
 * **Langkah & Ekspektasi (*When / Then*):**
   1. *Warehouse Manager* menyetujui opname (`POST /api/v1/stock-opnames/{id}/approve`) → HTTP 200; status Opname menjadi `COMPLETED`.
@@ -105,7 +105,7 @@ Setiap Kriteria Penerimaan pada PRD Bagian 8 wajib memiliki minimal satu fungsi 
 
 ### AC-05 — Kepatuhan RBAC & Audit Log
 * **Berkas:** `tests/test_rbac_scoping.py`
-* **Contoh Nama Test:** `test_ac05_rbac_enforcement_and_audit_log_recording`
+* **Nama Test Aktual:** `test_ac05_rbac_enforcement_and_audit_log_recording`
 * **Prasyarat (*Given*):** Pengguna dengan peran *Warehouse Staff* dan pengguna dengan peran *Purchasing Staff* / *Warehouse Manager*.
 * **Langkah & Ekspektasi (*When / Then*):**
   1. *Warehouse Staff* mencoba menerbitkan PO (`POST /purchase-orders/{id}/issue`) atau menyetujui akhir Stock Opname (`POST /stock-opnames/{id}/approve`) → Ditolak dengan **HTTP 403** (`PERMISSION_DENIED`).
@@ -113,7 +113,7 @@ Setiap Kriteria Penerimaan pada PRD Bagian 8 wajib memiliki minimal satu fungsi 
 
 ### AC-06 — Konkurensi Pengiriman
 * **Berkas:** `tests/test_stock_transfer.py`
-* **Contoh Nama Test:** `test_ac06_concurrent_ship_only_one_succeeds`
+* **Nama Test Aktual:** `test_ac06_concurrent_ship_only_one_succeeds`
 * **Prasyarat (*Given*):** Saldo Barang Y di Lokasi A1 = `10.0000` unit (`allow_negative_stock = FALSE`). Dua dokumen Transfer berbeda (TRF-1 dan TRF-2) masing-masing meminta `8.0000` unit dari Lokasi A1, keduanya berstatus `APPROVED`.
 * **Langkah & Ekspektasi (*When / Then*):**
   1. Dua *worker thread* disinkronkan dengan `threading.Barrier(2)` untuk memanggil `POST /stock-transfers/{id1}/ship` dan `POST /stock-transfers/{id2}/ship` secara bersamaan melalui koneksi database terpisah.
@@ -122,7 +122,7 @@ Setiap Kriteria Penerimaan pada PRD Bagian 8 wajib memiliki minimal satu fungsi 
 
 ### AC-07 — Atomisitas Transaksi
 * **Berkas:** `tests/test_goods_receipt.py`
-* **Contoh Nama Test:** `test_ac07_transaction_atomicity_rollback_on_failure`
+* **Nama Test Aktual:** `test_ac07_gr_post_transaction_atomicity_rollback_on_failure`
 * **Prasyarat (*Given*):** Sebuah GR berstatus `DRAFT` untuk PO yang `ISSUED`.
 * **Langkah & Ekspektasi (*When / Then*):**
   1. Simulasikan kegagalan di tengah eksekusi `post_goods_receipt` setelah perubahan stok tetapi sebelum transaksi selesai (misalnya dengan menyuntikkan kegagalan pada pemanggilan `audit_repo` / `audit_service.record` atau *ledger*).
@@ -131,7 +131,7 @@ Setiap Kriteria Penerimaan pada PRD Bagian 8 wajib memiliki minimal satu fungsi 
 
 ### AC-08 — Imutabilitas Buku Besar & Audit Log
 * **Berkas:** `tests/test_immutability.py`
-* **Contoh Nama Test:** `test_ac08_stock_movements_and_audit_logs_are_immutable`
+* **Nama Test Aktual:** `test_ac08_immutability_stock_movements_and_audit_logs`
 * **Prasyarat (*Given*):** Terdapat baris data pada tabel `stock_movements` dan `audit_logs`.
 * **Langkah & Ekspektasi (*When / Then*):**
   1. Menggunakan koneksi langsung ber-role `wms_app` (dan diuji pula terhadap *trigger* database), jalankan perintah SQL `UPDATE stock_movements SET qty_change = 999 WHERE id = ...` dan `DELETE FROM stock_movements WHERE id = ...`.
@@ -140,7 +140,7 @@ Setiap Kriteria Penerimaan pada PRD Bagian 8 wajib memiliki minimal satu fungsi 
 
 ### AC-09 — Selisih Penerimaan Transfer
 * **Berkas:** `tests/test_stock_transfer.py`
-* **Contoh Nama Test:** `test_ac09_transfer_receive_variance_validation_and_recording`
+* **Nama Test Aktual:** `test_ac09_transfer_receipt_variance_validation_and_accounting`
 * **Prasyarat (*Given*):** Transfer 25 unit berstatus `SHIPPED` dari Gudang A ke Gudang B.
 * **Langkah & Ekspektasi (*When / Then*):**
   1. Terima Transfer dengan `qty_received = "26.0000"` → Ditolak **HTTP 409** (`TRANSFER_QTY_EXCEEDS_SHIPPED`).
@@ -150,7 +150,7 @@ Setiap Kriteria Penerimaan pada PRD Bagian 8 wajib memiliki minimal satu fungsi 
 
 ### AC-10 — Pembekuan Lokasi Opname
 * **Berkas:** `tests/test_stock_opname.py`
-* **Contoh Nama Test:** `test_ac10_location_frozen_during_active_opname`
+* **Nama Test Aktual:** `test_ac10_location_freeze_during_opname_and_unfreeze_on_complete_or_cancel`
 * **Prasyarat (*Given*):** Sesi Opname pada Lokasi X dimulai sehingga berstatus `IN_PROGRESS` (dan juga diuji saat `WAITING_APPROVAL`).
 * **Langkah & Ekspektasi (*When / Then*):**
   1. Coba posting GR yang memasukkan barang ke Lokasi X → Ditolak **HTTP 409** (`LOCATION_FROZEN`).
@@ -159,7 +159,7 @@ Setiap Kriteria Penerimaan pada PRD Bagian 8 wajib memiliki minimal satu fungsi 
 
 ### AC-11 — Siklus Refresh Token & Deteksi Pencurian
 * **Berkas:** `tests/test_auth.py`
-* **Contoh Nama Test:** `test_ac11_refresh_token_rotation_reuse_detection_and_logout`
+* **Nama Test Aktual:** `test_ac11_refresh_token_rotation_reuse_detection_and_logout`
 * **Prasyarat (*Given*):** Pengguna berhasil login dan memperoleh *Refresh Token* `R1`.
 * **Langkah & Ekspektasi (*When / Then*):**
   1. Gunakan `R1` pada `POST /api/v1/auth/refresh` → HTTP 200; terbit *Access Token* baru dan *Refresh Token* `R2`; status `R1` di database tercatat `revoked_at IS NOT NULL` dan `replaced_by_id` menunjuk ke `R2`.
@@ -169,7 +169,7 @@ Setiap Kriteria Penerimaan pada PRD Bagian 8 wajib memiliki minimal satu fungsi 
 
 ### AC-12 — Warehouse Scoping
 * **Berkas:** `tests/test_rbac_scoping.py`
-* **Contoh Nama Test:** `test_ac12_warehouse_scoping_blocks_unassigned_warehouse`
+* **Nama Test Aktual:** `test_ac12_warehouse_scoping_assignment_and_access_enforcement`
 * **Prasyarat (*Given*):** Pengguna *Warehouse Staff* yang hanya ditugaskan pada **Gudang A** di tabel `user_warehouses`. Terdapat PO yang ditujukan ke **Gudang B**.
 * **Langkah & Ekspektasi (*When / Then*):**
   1. Pengguna tersebut mencoba membuat atau memposting GR untuk PO Gudang B → Ditolak **HTTP 403** dengan kode `WAREHOUSE_NOT_ASSIGNED`.
@@ -177,7 +177,7 @@ Setiap Kriteria Penerimaan pada PRD Bagian 8 wajib memiliki minimal satu fungsi 
 
 ### AC-13 — Pencegahan Posting Ganda
 * **Berkas:** `tests/test_goods_receipt.py`
-* **Contoh Nama Test:** `test_ac13_concurrent_double_post_goods_receipt_prevented`
+* **Nama Test Aktual:** `test_ac13_concurrent_gr_post_prevents_double_posting`
 * **Prasyarat (*Given*):** Sebuah GR berstatus `DRAFT` sebesar `10.0000` unit.
 * **Langkah & Ekspektasi (*When / Then*):**
   1. Dua permintaan `POST /api/v1/goods-receipts/{id}/post` untuk ID GR yang sama dikirim secara bersamaan menggunakan 2 *thread* yang disinkronkan lewat `threading.Barrier(2)`.
@@ -248,7 +248,7 @@ Selain ke-13 AC utama di atas, suite pengujian juga mencakup validasi per modul 
 
 ## 6. Matriks Pemetaan Tahap Implementasi ke Pengujian
 
-Sesuai urutan kerja pada `docs/core/FOLDER_STRUCTURE.md` Bagian 9:
+Sesuai urutan kerja pada `docs/CORE/FOLDER_STRUCTURE.MD` Bagian 9:
 
 | Tahap | Fokus Implementasi | Pengujian yang Wajib Lulus |
 | --- | --- | --- |
@@ -294,7 +294,7 @@ Sebuah fitur atau tahap implementasi baru dinyatakan **Selesai (Done)** apabila:
 - [ ] Pengujian imutabilitas (**AC-08**) terbukti menolak `UPDATE`/`DELETE`/`TRUNCATE` pada `stock_movements` dan `audit_logs` menggunakan role aplikasi `wms_app`.
 ### 2.3. Struktur Berkas Pengujian (`tests/`)
 
-Sesuai `docs/core/FOLDER_STRUCTURE.md`, berkas pengujian disusun sebagai berikut:
+Sesuai `docs/CORE/FOLDER_STRUCTURE.MD`, berkas pengujian disusun sebagai berikut:
 
 | Berkas | Tanggung Jawab & Cakupan AC |
 | --- | --- |
@@ -315,7 +315,7 @@ Setiap Kriteria Penerimaan pada PRD Bagian 8 wajib memiliki minimal satu fungsi 
 
 ### AC-01 — Penerimaan Parsial & Pemenuhan PO
 * **Berkas:** `tests/test_goods_receipt.py`
-* **Contoh Nama Test:** `test_ac01_partial_and_full_goods_receipt_fulfillment`
+* **Nama Test Aktual:** `test_ac01_partial_receipt_over_receipt_and_po_fulfillment`
 * **Prasyarat (*Given*):** PO berstatus `ISSUED` untuk 50 unit Barang X pada Gudang A.
 * **Langkah & Ekspektasi (*When / Then*):**
   1. Posting GR #1 sebesar `20.0000` unit → HTTP 200; status PO berubah menjadi `PARTIALLY_RECEIVED`; `po_lines.qty_received = 20.0000`; `inventory_balances.qty_on_hand = 20.0000`; tercatat 1 baris `stock_movements` bertipe `IN_PURCHASE` (`+20.0000`).
@@ -324,7 +324,7 @@ Setiap Kriteria Penerimaan pada PRD Bagian 8 wajib memiliki minimal satu fungsi 
 
 ### AC-02 — Pencegahan Stok Negatif
 * **Berkas:** `tests/test_stock_transfer.py`
-* **Contoh Nama Test:** `test_ac02_negative_stock_prevention_on_transfer_ship`
+* **Nama Test Aktual:** `test_ac02_negative_stock_prevention_and_allow_negative_stock_flag`
 * **Prasyarat (*Given*):** Saldo Barang Y di Gudang A (Lokasi A1) = `10.0000` unit; Gudang A memiliki `allow_negative_stock = FALSE`; dokumen Transfer 12 unit dari Gudang A (Lokasi A1) ke Gudang B berstatus `APPROVED`.
 * **Langkah & Ekspektasi (*When / Then*):**
   1. Eksekusi `POST /api/v1/stock-transfers/{id}/ship` → Ditolak dengan **HTTP 409** (`INSUFFICIENT_STOCK`) beserta detail barang, stok tersedia (`10.0000`), dan kuantitas diminta (`12.0000`).
@@ -332,7 +332,7 @@ Setiap Kriteria Penerimaan pada PRD Bagian 8 wajib memiliki minimal satu fungsi 
 
 ### AC-03 — Konsistensi Transfer Antar-Gudang
 * **Berkas:** `tests/test_stock_transfer.py`
-* **Contoh Nama Test:** `test_ac03_inter_warehouse_transfer_consistency`
+* **Nama Test Aktual:** `test_ac03_inter_warehouse_transfer_consistency_in_transit_and_scoping`
 * **Prasyarat (*Given*):** Saldo awal Gudang A (Lokasi A1) = `50.0000`, Gudang B (Lokasi B1) = `0.0000`. Transfer 15 unit dari A1 ke B1 berstatus `APPROVED`.
 * **Langkah & Ekspektasi (*When / Then*):**
   1. Eksekusi `POST /api/v1/stock-transfers/{id}/ship` → HTTP 200; status menjadi `SHIPPED`; stok Lokasi A1 berkurang menjadi `35.0000`; tercatat 1 baris `OUT_TRANSFER` (`qty_before=50`, `qty_change=-15`, `qty_after=35`); stok Lokasi B1 masih `0.0000`; endpoint stok menampilkan `in_transit = 15.0000`.
@@ -340,7 +340,7 @@ Setiap Kriteria Penerimaan pada PRD Bagian 8 wajib memiliki minimal satu fungsi 
 
 ### AC-04 — Rekonsiliasi Stock Opname
 * **Berkas:** `tests/test_stock_opname.py`
-* **Contoh Nama Test:** `test_ac04_stock_opname_reconciliation_adjustment_minus`
+* **Nama Test Aktual:** `test_ac04_stock_opname_reconciliation_variance_and_zero_variance_no_ledger`
 * **Prasyarat (*Given*):** Saldo Barang Z di Lokasi A1 tercatat `100.0000` unit. Sesi Opname dimulai (`IN_PROGRESS` → mengambil `qty_system = 100.0000`), petugas menginput `qty_physical = "97.0000"` dan mengajukan persetujuan (`WAITING_APPROVAL`).
 * **Langkah & Ekspektasi (*When / Then*):**
   1. *Warehouse Manager* menyetujui opname (`POST /api/v1/stock-opnames/{id}/approve`) → HTTP 200; status Opname menjadi `COMPLETED`.
@@ -350,7 +350,7 @@ Setiap Kriteria Penerimaan pada PRD Bagian 8 wajib memiliki minimal satu fungsi 
 
 ### AC-05 — Kepatuhan RBAC & Audit Log
 * **Berkas:** `tests/test_rbac_scoping.py`
-* **Contoh Nama Test:** `test_ac05_rbac_enforcement_and_audit_log_recording`
+* **Nama Test Aktual:** `test_ac05_rbac_enforcement_and_audit_log_recording`
 * **Prasyarat (*Given*):** Pengguna dengan peran *Warehouse Staff* dan pengguna dengan peran *Purchasing Staff* / *Warehouse Manager*.
 * **Langkah & Ekspektasi (*When / Then*):**
   1. *Warehouse Staff* mencoba menerbitkan PO (`POST /purchase-orders/{id}/issue`) atau menyetujui akhir Stock Opname (`POST /stock-opnames/{id}/approve`) → Ditolak dengan **HTTP 403** (`PERMISSION_DENIED`).
@@ -358,7 +358,7 @@ Setiap Kriteria Penerimaan pada PRD Bagian 8 wajib memiliki minimal satu fungsi 
 
 ### AC-06 — Konkurensi Pengiriman
 * **Berkas:** `tests/test_stock_transfer.py`
-* **Contoh Nama Test:** `test_ac06_concurrent_ship_only_one_succeeds`
+* **Nama Test Aktual:** `test_ac06_concurrent_ship_only_one_succeeds`
 * **Prasyarat (*Given*):** Saldo Barang Y di Lokasi A1 = `10.0000` unit (`allow_negative_stock = FALSE`). Dua dokumen Transfer berbeda (TRF-1 dan TRF-2) masing-masing meminta `8.0000` unit dari Lokasi A1, keduanya berstatus `APPROVED`.
 * **Langkah & Ekspektasi (*When / Then*):**
   1. Dua *worker thread* disinkronkan dengan `threading.Barrier(2)` untuk memanggil `POST /stock-transfers/{id1}/ship` dan `POST /stock-transfers/{id2}/ship` secara bersamaan melalui koneksi database terpisah.
@@ -367,7 +367,7 @@ Setiap Kriteria Penerimaan pada PRD Bagian 8 wajib memiliki minimal satu fungsi 
 
 ### AC-07 — Atomisitas Transaksi
 * **Berkas:** `tests/test_goods_receipt.py`
-* **Contoh Nama Test:** `test_ac07_transaction_atomicity_rollback_on_failure`
+* **Nama Test Aktual:** `test_ac07_gr_post_transaction_atomicity_rollback_on_failure`
 * **Prasyarat (*Given*):** Sebuah GR berstatus `DRAFT` untuk PO yang `ISSUED`.
 * **Langkah & Ekspektasi (*When / Then*):**
   1. Simulasikan kegagalan di tengah eksekusi `post_goods_receipt` setelah perubahan stok tetapi sebelum transaksi selesai (misalnya dengan menyuntikkan kegagalan pada pemanggilan `audit_repo` / `audit_service.record` atau *ledger*).
@@ -376,7 +376,7 @@ Setiap Kriteria Penerimaan pada PRD Bagian 8 wajib memiliki minimal satu fungsi 
 
 ### AC-08 — Imutabilitas Buku Besar & Audit Log
 * **Berkas:** `tests/test_immutability.py`
-* **Contoh Nama Test:** `test_ac08_stock_movements_and_audit_logs_are_immutable`
+* **Nama Test Aktual:** `test_ac08_immutability_stock_movements_and_audit_logs`
 * **Prasyarat (*Given*):** Terdapat baris data pada tabel `stock_movements` dan `audit_logs`.
 * **Langkah & Ekspektasi (*When / Then*):**
   1. Menggunakan koneksi langsung ber-role `wms_app` (dan diuji pula terhadap *trigger* database), jalankan perintah SQL `UPDATE stock_movements SET qty_change = 999 WHERE id = ...` dan `DELETE FROM stock_movements WHERE id = ...`.
@@ -385,7 +385,7 @@ Setiap Kriteria Penerimaan pada PRD Bagian 8 wajib memiliki minimal satu fungsi 
 
 ### AC-09 — Selisih Penerimaan Transfer
 * **Berkas:** `tests/test_stock_transfer.py`
-* **Contoh Nama Test:** `test_ac09_transfer_receive_variance_validation_and_recording`
+* **Nama Test Aktual:** `test_ac09_transfer_receipt_variance_validation_and_accounting`
 * **Prasyarat (*Given*):** Transfer 25 unit berstatus `SHIPPED` dari Gudang A ke Gudang B.
 * **Langkah & Ekspektasi (*When / Then*):**
   1. Terima Transfer dengan `qty_received = "26.0000"` → Ditolak **HTTP 409** (`TRANSFER_QTY_EXCEEDS_SHIPPED`).
@@ -395,7 +395,7 @@ Setiap Kriteria Penerimaan pada PRD Bagian 8 wajib memiliki minimal satu fungsi 
 
 ### AC-10 — Pembekuan Lokasi Opname
 * **Berkas:** `tests/test_stock_opname.py`
-* **Contoh Nama Test:** `test_ac10_location_frozen_during_active_opname`
+* **Nama Test Aktual:** `test_ac10_location_freeze_during_opname_and_unfreeze_on_complete_or_cancel`
 * **Prasyarat (*Given*):** Sesi Opname pada Lokasi X dimulai sehingga berstatus `IN_PROGRESS` (dan juga diuji saat `WAITING_APPROVAL`).
 * **Langkah & Ekspektasi (*When / Then*):**
   1. Coba posting GR yang memasukkan barang ke Lokasi X → Ditolak **HTTP 409** (`LOCATION_FROZEN`).
@@ -404,7 +404,7 @@ Setiap Kriteria Penerimaan pada PRD Bagian 8 wajib memiliki minimal satu fungsi 
 
 ### AC-11 — Siklus Refresh Token & Deteksi Pencurian
 * **Berkas:** `tests/test_auth.py`
-* **Contoh Nama Test:** `test_ac11_refresh_token_rotation_reuse_detection_and_logout`
+* **Nama Test Aktual:** `test_ac11_refresh_token_rotation_reuse_detection_and_logout`
 * **Prasyarat (*Given*):** Pengguna berhasil login dan memperoleh *Refresh Token* `R1`.
 * **Langkah & Ekspektasi (*When / Then*):**
   1. Gunakan `R1` pada `POST /api/v1/auth/refresh` → HTTP 200; terbit *Access Token* baru dan *Refresh Token* `R2`; status `R1` di database tercatat `revoked_at IS NOT NULL` dan `replaced_by_id` menunjuk ke `R2`.
@@ -414,7 +414,7 @@ Setiap Kriteria Penerimaan pada PRD Bagian 8 wajib memiliki minimal satu fungsi 
 
 ### AC-12 — Warehouse Scoping
 * **Berkas:** `tests/test_rbac_scoping.py`
-* **Contoh Nama Test:** `test_ac12_warehouse_scoping_blocks_unassigned_warehouse`
+* **Nama Test Aktual:** `test_ac12_warehouse_scoping_assignment_and_access_enforcement`
 * **Prasyarat (*Given*):** Pengguna *Warehouse Staff* yang hanya ditugaskan pada **Gudang A** di tabel `user_warehouses`. Terdapat PO yang ditujukan ke **Gudang B**.
 * **Langkah & Ekspektasi (*When / Then*):**
   1. Pengguna tersebut mencoba membuat atau memposting GR untuk PO Gudang B → Ditolak **HTTP 403** dengan kode `WAREHOUSE_NOT_ASSIGNED`.
@@ -422,7 +422,7 @@ Setiap Kriteria Penerimaan pada PRD Bagian 8 wajib memiliki minimal satu fungsi 
 
 ### AC-13 — Pencegahan Posting Ganda
 * **Berkas:** `tests/test_goods_receipt.py`
-* **Contoh Nama Test:** `test_ac13_concurrent_double_post_goods_receipt_prevented`
+* **Nama Test Aktual:** `test_ac13_concurrent_gr_post_prevents_double_posting`
 * **Prasyarat (*Given*):** Sebuah GR berstatus `DRAFT` sebesar `10.0000` unit.
 * **Langkah & Ekspektasi (*When / Then*):**
   1. Dua permintaan `POST /api/v1/goods-receipts/{id}/post` untuk ID GR yang sama dikirim secara bersamaan menggunakan 2 *thread* yang disinkronkan lewat `threading.Barrier(2)`.
@@ -493,7 +493,7 @@ Selain ke-13 AC utama di atas, suite pengujian juga mencakup validasi per modul 
 
 ## 6. Matriks Pemetaan Tahap Implementasi ke Pengujian
 
-Sesuai urutan kerja pada `docs/core/FOLDER_STRUCTURE.md` Bagian 9:
+Sesuai urutan kerja pada `docs/CORE/FOLDER_STRUCTURE.MD` Bagian 9:
 
 | Tahap | Fokus Implementasi | Pengujian yang Wajib Lulus |
 | --- | --- | --- |
