@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+import re
 import uuid
 
 from fastapi import FastAPI, Request
@@ -51,7 +52,13 @@ def create_app() -> FastAPI:
 
     @application.middleware("http")
     async def request_id_middleware(request: Request, call_next):
-        req_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+        supplied_req_id = request.headers.get("X-Request-ID", "")
+        req_id = (
+            supplied_req_id
+            if len(supplied_req_id) <= 128
+            and re.fullmatch(r"[A-Za-z0-9._:-]+", supplied_req_id)
+            else str(uuid.uuid4())
+        )
         token = request_id_ctx.set(req_id)
         try:
             response = await call_next(request)
