@@ -8,7 +8,17 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from app.api.routes import audit_logs, auth, health, master, stock, users, warehouses
+from app.api.routes import (
+    audit_logs,
+    auth,
+    goods_receipts,
+    health,
+    master,
+    purchase_orders,
+    stock,
+    users,
+    warehouses,
+)
 from app.core import database
 from app.core.config import settings
 from app.core.exceptions import DomainError
@@ -102,6 +112,8 @@ def create_app() -> FastAPI:
     application.include_router(master.router, prefix=settings.api_v1_prefix)
     application.include_router(warehouses.router, prefix=settings.api_v1_prefix)
     application.include_router(stock.router, prefix=settings.api_v1_prefix)
+    application.include_router(purchase_orders.router, prefix=settings.api_v1_prefix)
+    application.include_router(goods_receipts.router, prefix=settings.api_v1_prefix)
     application.include_router(audit_logs.router, prefix=settings.api_v1_prefix)
 
     return application
