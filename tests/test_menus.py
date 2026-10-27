@@ -116,6 +116,59 @@ def test_ac14_menu_tree_filters_permissions_and_keeps_visible_parents(
     assert _find_menu(auditor_tree, "dashboard") is not None
 
 
+def test_ac14_menu_tree_matches_each_role_permission_set(
+    client: TestClient,
+    superadmin_user: dict[str, Any],
+    manager_user: dict[str, Any],
+    purchasing_user: dict[str, Any],
+    staff_user: dict[str, Any],
+    auditor_user: dict[str, Any],
+) -> None:
+    """Setiap role hanya menerima root menu yang memiliki child berpermission miliknya."""
+    expected_root_codes = {
+        "superadmin": {
+            "dashboard",
+            "master",
+            "inventory",
+            "purchasing",
+            "warehouse_ops",
+            "administration",
+        },
+        "manager": {
+            "dashboard",
+            "master",
+            "inventory",
+            "purchasing",
+            "warehouse_ops",
+        },
+        "purchasing": {"dashboard", "master", "inventory", "purchasing"},
+        "staff": {"dashboard", "master", "inventory", "purchasing", "warehouse_ops"},
+        "auditor": {
+            "dashboard",
+            "master",
+            "inventory",
+            "purchasing",
+            "warehouse_ops",
+            "administration",
+        },
+    }
+    users = {
+        "superadmin": superadmin_user,
+        "manager": manager_user,
+        "purchasing": purchasing_user,
+        "staff": staff_user,
+        "auditor": auditor_user,
+    }
+
+    for role, user in users.items():
+        response = client.get(
+            "/api/v1/menus/my-menu",
+            headers=user["auth_headers"],
+        )
+        assert response.status_code == 200, response.text
+        assert {node["code"] for node in response.json()} == expected_root_codes[role]
+
+
 def test_ac14_menu_admin_permission_crud_and_audit_log(
     client: TestClient,
     db_conn: psycopg.Connection[dict[str, Any]],

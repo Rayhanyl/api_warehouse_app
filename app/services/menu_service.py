@@ -41,7 +41,12 @@ def get_my_menu_tree(
     4. Jika suatu menu adalah menu mandiri/daun (tidak memiliki anak di database) dan `permission_code IS NULL`
        (seperti 'Dashboard'), menu tersebut ditampilkan untuk seluruh pengguna terautentikasi.
     """
-    user_permissions: set[str] = set(actor.get("permissions", []))
+    raw_permissions = actor.get("permissions", [])
+    user_permissions = {
+        permission.strip()
+        for permission in raw_permissions
+        if isinstance(permission, str) and permission.strip()
+    }
     active_rows = menu_repo.list_active_menus_ordered(conn)
 
     children_by_parent: dict[int | None, list[dict[str, Any]]] = {}
