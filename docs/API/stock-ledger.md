@@ -1,171 +1,234 @@
-# Stok & Buku Besar Pergerakan Stok
+# Saldo Stok & Buku Besar Pergerakan Stok (Stock & Ledger)
 
 ## 1. Informasi Umum
 
 | Atribut | Keterangan |
 | --- | --- |
-| **Modul** | Saldo Stok (*inventory balance*) dan Buku Besar Pergerakan Stok (*Stock Movement Ledger*) |
+| **Modul** | Saldo Stok (*Inventory Balances*), Stok Dalam Perjalanan (*In-Transit*), dan Buku Besar Pergerakan Stok (*Stock Movement Ledger*) |
 | **Base path** | `/api/v1/stock` |
-| **Rujukan PRD** | FR-03, FR-08, FR-11, Bagian 3.1, 3.2, 5.3, 6.1, 6.4, 7.3, 7.4, Lampiran A & B |
-| **Status** | Sudah diimplementasikan; saldo, ledger, dan scoping baca dicakup oleh `test_m4_inventory_apply_movement_concurrency_stock_views_and_ledger` di `tests/test_rbac_scoping.py`. |
-| **Kode sumber** | [stock.py](../../app/api/routes/stock.py), [stock_service.py](../../app/services/stock_service.py), [inventory_repo.py](../../app/repositories/inventory_repo.py), [stock.py schema](../../app/schemas/stock.py) |
+| **Rujukan PRD** | FR-03, FR-08, FR-11, Bagian 3.1 (Matriks Permission), 3.2 (*Warehouse Scoping*), 5.3 (*Movement Types*), 6.1 (Stok Negatif), 6.4 (Imutabilitas Ledger), 7.3 (Kinerja `< 200 ms`), 7.4 (Presisi Numerik), AC-01 s.d. AC-04, AC-08, AC-12, Lampiran A & B |
+| **Status implementasi** | ✅ Sudah diimplementasikan dan diuji (`tests/test_rbac_scoping.py`, `tests/test_immutability.py`, `tests/test_goods_receipt.py`, `tests/test_stock_transfer.py`, `tests/test_stock_opname.py`) |
+| **Kode sumber** | [routes/stock.py](../../app/api/routes/stock.py), [stock_service.py](../../app/services/stock_service.py), [inventory_service.py](../../app/services/inventory_service.py), [access_service.py](../../app/services/access_service.py), [inventory_repo.py](../../app/repositories/inventory_repo.py), [schemas/stock.py](../../app/schemas/stock.py) |
 | **Tabel terkait** | `inventory_balances`, `stock_movements`, `stock_transfers`, `stock_transfer_lines`, `items`, `categories`, `uoms`, `warehouses`, `storage_locations`, `users` |
 | **Modul terkait** | [Goods Receipt](goods-receipts.md), [Transfer Stok](stock-transfers.md), [Stock Opname](stock-opnames.md), [Gudang & Lokasi](warehouses.md) |
 
-Modul ini hanya menyediakan pembacaan saldo dan ledger. Saldo aktual dibaca dari `inventory_balances`; barang dalam perjalanan dihitung dari baris Transfer berstatus `SHIPPED` dan dihitung pada gudang/lokasi tujuan. Perubahan saldo dilakukan oleh aksi operasional GR, Transfer, dan Opname, lalu dicatat sebagai pergerakan ledger.
+---
 
-Kuantitas dikirim sebagai string desimal dengan empat tempat, misalnya `"12.5000"`. Semua endpoint memakai pagination dengan `limit` bawaan 50, maksimum 200, dan `offset` bawaan 0.
+## 2. Penjelasan Fitur
 
-## 2. Autentikasi, Permission, dan Warehouse Scoping
+### 2.1 Tujuan
 
-Semua endpoint memerlukan `Authorization: Bearer <access_token>`.
+Modul ini menyediakan endpoint **baca-saja (*read-only*)** untuk memantau posisi persediaan secara *real-time* beserta riwayat mutasi barang secara kronologis:
 
-| Permission | Endpoint | Peran bawaan menurut Matriks 3.1 |
-| --- | --- | --- |
-| `stock:read` | Pembacaan saldo | Super Admin, Warehouse Manager, Purchasing Staff, Warehouse Staff, Auditor |
-| `ledger:read` | Pembacaan ledger | Super Admin, Warehouse Manager, Warehouse Staff, Auditor |
+1. **Tampilan Saldo Stok (`inventory_balances` + *In-Transit* — FR-03):**
+   * **Per Lokasi (`/balances` & `/by-location`):** Saldo aktual (`qty_on_hand`) dan stok dalam perjalanan (`qty_in_transit`) pada setiap kombinasi `(warehouse_id, location_id, item_id)`.
+   * **Per Gudang (`/by-warehouse`):** Agregasi `qty_on_hand` dan `qty_in_transit` per `(warehouse_id, item_id)`.
+   * **Ringkasan Lintas Gudang (`/summary`):** Agregasi `qty_on_hand` dan `qty_in_transit` per `item_id` di seluruh gudang.
+2. **Buku Besar Pergerakan Stok (`/movements` & `/ledger` — FR-08):**
+   * Catatan kronologis *append-only* atas seluruh penambahan dan pengurangan stok dari transaksi GR, Transfer Stok, dan Stock Opname.
 
-Warehouse Staff hanya melihat saldo dan ledger di gudang yang ditugaskan. Tanpa `warehouse_id`, hasil dibatasi otomatis ke gudang tugasnya. Bila meminta `warehouse_id` di luar penugasan, API mengembalikan `403 WAREHOUSE_NOT_ASSIGNED`. Peran baca lain tidak dibatasi gudang. Permission diperiksa pada route, sedangkan scoping diterapkan service.
+### 2.2 Alur Bisnis & Invarian Inti Persediaan
 
-## 3. Ringkasan Endpoint
+* **Pintu Tunggal Perubahan Stok (`inventory_service.apply_movement` — AGENTS.MD Invarian 1):**
+  * Tidak ada endpoint yang mengubah `inventory_balances` secara langsung. Seluruh perubahan saldo hanya terjadi melalui fungsi internal `inventory_service.apply_movement()` saat GR diposting (`IN_PURCHASE`), Transfer dikirim (`OUT_TRANSFER`), Transfer diterima (`IN_TRANSFER`), atau Stock Opname disetujui (`ADJUSTMENT_PLUS` / `ADJUSTMENT_MINUS`).
+  * Setiap perubahan saldo wajib menghasilkan baris baru pada `stock_movements` dengan invarian `qty_after = qty_before + qty_change`, di mana `qty_after` baris terakhir untuk suatu `(warehouse_id, location_id, item_id)` selalu sama dengan `inventory_balances.qty_on_hand`.
+* **Perhitungan Stok Dalam Perjalanan (`qty_in_transit` — FR-03):**
+  * Dihitung secara dinamis dari jumlah `stock_transfer_lines.qty` pada dokumen Transfer yang berstatus **`SHIPPED`** (belum `RECEIVED`), dialokasikan pada gudang dan lokasi **tujuan** (`destination_warehouse_id`, `destination_location_id`).
+* **Imutabilitas Buku Besar (`stock_movements` — PRD 6.4 & AC-08):**
+  * Tabel `stock_movements` dilindungi oleh *trigger* PostgreSQL `trg_stock_movements_immutable` (`007_append_only_guards.sql`) yang menolak `UPDATE` dan `DELETE`, serta pencabutan hak `UPDATE, DELETE, TRUNCATE` dari role database aplikasi `wms_app`.
 
-| Method | Endpoint | Fungsi | Permission |
+### 2.3 Jenis Pergerakan Stok (*Movement Types* — PRD 5.3)
+
+| `movement_type` | Pemicu | Tanda `qty_change` | `reference_type` |
 | --- | --- | --- | --- |
-| GET | `/api/v1/stock/balances` | Saldo per lokasi (alias `/by-location`) | `stock:read` |
-| GET | `/api/v1/stock/by-location` | Saldo per lokasi | `stock:read` |
-| GET | `/api/v1/stock/by-warehouse` | Saldo diagregasi per gudang dan barang | `stock:read` |
-| GET | `/api/v1/stock/summary` | Saldo diagregasi lintas gudang per barang | `stock:read` |
-| GET | `/api/v1/stock/movements` | Daftar pergerakan stok (alias `/ledger`) | `ledger:read` |
-| GET | `/api/v1/stock/ledger` | Daftar ledger | `ledger:read` |
+| `IN_PURCHASE` | Goods Receipt → `POSTED` | Positif (`+`) | `GOODS_RECEIPT` |
+| `OUT_TRANSFER` | Stock Transfer → `SHIPPED` | Negatif (`-`) | `STOCK_TRANSFER` |
+| `IN_TRANSFER` | Stock Transfer → `RECEIVED` (`qty_received > 0`) | Positif (`+`) | `STOCK_TRANSFER` |
+| `ADJUSTMENT_PLUS` | Stock Opname → `COMPLETED` (`qty_variance > 0`) | Positif (`+`) | `STOCK_OPNAME` |
+| `ADJUSTMENT_MINUS` | Stock Opname → `COMPLETED` (`qty_variance < 0`) | Negatif (`-`) | `STOCK_OPNAME` |
 
-Alias pada baris pertama dan terakhir mengembalikan response dan menerima parameter yang sama.
+---
 
-## 4. Endpoint Saldo Stok
+## 3. Autentikasi dan Otorisasi
 
-Ketiga bentuk tampilan saldo mengembalikan `200 OK` dengan format pagination:
+* **Autentikasi:** Wajib menyertakan header `Authorization: Bearer <access_token>`.
+* **Permission & Warehouse Scoping (Matriks 3.1 & PRD 3.2):**
+
+| Permission | Endpoint | Peran Bawaan (Matriks 3.1) | Warehouse Scoping `(g)` |
+| --- | --- | --- | --- |
+| `stock:read` | `/balances`, `/by-location`, `/by-warehouse`, `/summary` | *Super Admin*, *Warehouse Manager*, *Purchasing Staff*, *Warehouse Staff*, *Auditor* | **Ya untuk Warehouse Staff** (otomatis difilter ke gudang yang ditugaskan; meminta `warehouse_id` di luar penugasan → `403 WAREHOUSE_NOT_ASSIGNED`). Peran lain tidak dibatasi. |
+| `ledger:read` | `/movements`, `/ledger` | *Super Admin*, *Warehouse Manager*, *Warehouse Staff*, *Auditor* | **Ya untuk Warehouse Staff** (otomatis difilter ke gudang yang ditugaskan; meminta `warehouse_id` di luar penugasan → `403 WAREHOUSE_NOT_ASSIGNED`). Peran lain tidak dibatasi. |
+
+---
+
+## 4. Ringkasan Endpoint
+
+| # | Method | Endpoint | Fungsi | Auth | Permission |
+| :-: | --- | --- | --- | --- | --- |
+| 1 | GET | `/api/v1/stock/balances` | Daftar saldo stok & *in-transit* per lokasi penyimpanan (alias `/by-location`) | Bearer | `stock:read` `(g)` |
+| 2 | GET | `/api/v1/stock/by-location` | Daftar saldo stok & *in-transit* per lokasi penyimpanan | Bearer | `stock:read` `(g)` |
+| 3 | GET | `/api/v1/stock/by-warehouse` | Daftar saldo stok & *in-transit* diagregasi per gudang dan barang | Bearer | `stock:read` `(g)` |
+| 4 | GET | `/api/v1/stock/summary` | Ringkasan saldo stok & *in-transit* diagregasi lintas gudang per barang | Bearer | `stock:read` `(g)` |
+| 5 | GET | `/api/v1/stock/movements` | Daftar buku besar pergerakan stok / *Stock Movement Ledger* (alias `/ledger`) | Bearer | `ledger:read` `(g)` |
+| 6 | GET | `/api/v1/stock/ledger` | Daftar buku besar pergerakan stok / *Stock Movement Ledger* | Bearer | `ledger:read` `(g)` |
+
+---
+
+## 5. Detail Setiap Endpoint
+
+### 5.1 GET `/api/v1/stock/balances` & GET `/api/v1/stock/by-location` — Saldo Stok per Lokasi
+
+Mengambil daftar saldo stok aktual (`qty_on_hand`) dan stok dalam perjalanan (`qty_in_transit`) pada tingkat `(warehouse_id, location_id, item_id)`. Kedua path memanggil handler yang sama.
+
+* **HTTP Method & URL:** `GET /api/v1/stock/balances` atau `GET /api/v1/stock/by-location`
+* **Autentikasi & Permission:** Bearer Token, `stock:read`
+
+**Query Parameter**
+
+| Parameter | Tipe | Wajib | Default | Aturan & Keterangan |
+| --- | --- | --- | --- | --- |
+| `limit` | integer | Tidak | `50` | Rentang `1..200`. |
+| `offset` | integer | Tidak | `0` | Minimal `0`. |
+| `warehouse_id` | integer | Tidak | `null` | Filter gudang (`403 WAREHOUSE_NOT_ASSIGNED` bila *Warehouse Staff* meminta gudang di luar penugasan). |
+| `location_id` | integer | Tidak | `null` | Filter lokasi penyimpanan. |
+| `item_id` | integer | Tidak | `null` | Filter ID barang. |
+| `category_id` | integer | Tidak | `null` | Filter ID kategori barang. |
+| `search` | string | Tidak | `null` | Pencarian `ILIKE` pada SKU atau nama barang. |
+| `sort_by` | string | Tidak | `"item_id"` | Whitelist: `"warehouse_id"`, `"warehouse_code"`, `"location_id"`, `"location_code"`, `"item_id"`, `"item_sku"`, `"item_name"`, `"qty_on_hand"`, `"qty_in_transit"`. |
+| `sort_dir` | string | Tidak | `"asc"` | `"asc"` atau `"desc"`. |
+
+**Contoh Response Berhasil (`200 OK` — `Page[StockLocationBalanceOut]`)**
 
 ```json
 {
-  "items": [],
-  "total": 0,
+  "items": [
+    {
+      "warehouse_id": 2,
+      "warehouse_code": "WH-JKT",
+      "warehouse_name": "Gudang Jakarta",
+      "location_id": 7,
+      "location_code": "A-01",
+      "location_name": "Rak A01",
+      "item_id": 17,
+      "item_sku": "BRG-017",
+      "item_name": "Kabel NYM",
+      "category_id": 4,
+      "category_name": "Kabel",
+      "uom_id": 2,
+      "uom_code": "MTR",
+      "qty_on_hand": "80.0000",
+      "qty_in_transit": "12.0000",
+      "updated_at": "2026-10-23T09:15:00+07:00"
+    }
+  ],
+  "total": 1,
   "limit": 50,
   "offset": 0
 }
 ```
 
-### 4.1 Parameter bersama
+* **Kemungkinan Error:** `401 AUTH_TOKEN_INVALID`, `403 PERMISSION_DENIED`, `403 WAREHOUSE_NOT_ASSIGNED`, `422 VALIDATION_ERROR`.
 
-| Parameter | Tipe | Wajib | Default | Keterangan |
-| --- | --- | --- | --- | --- |
-| `limit` | integer | Tidak | `50` | Rentang `1..200`. |
-| `offset` | integer | Tidak | `0` | Minimal `0`. |
-| `warehouse_id` | integer | Tidak | – | Filter gudang. Warehouse Staff harus ditugaskan ke gudang tersebut. |
-| `item_id` | integer | Tidak | – | Filter barang. |
-| `category_id` | integer | Tidak | – | Filter kategori barang. |
-| `search` | string | Tidak | – | Pencarian tidak peka huruf besar/kecil pada SKU atau nama barang. |
-| `sort_by` | string | Tidak | endpoint-specific | Kolom pengurutan diambil dari whitelist per endpoint. |
-| `sort_dir` | string | Tidak | `asc` | Arah `asc` atau `desc`. |
+---
 
-Jika `sort_by` tidak diberikan, urutan bawaan adalah ID barang menaik.
+### 5.2 GET `/api/v1/stock/by-warehouse` — Saldo Stok per Gudang
 
-### 4.2 `GET /api/v1/stock/balances` dan `GET /api/v1/stock/by-location`
+Mengambil saldo stok dan stok dalam perjalanan yang diagregasi per `(warehouse_id, item_id)` di seluruh lokasi dalam masing-masing gudang.
 
-Saldo per kombinasi gudang, lokasi, dan barang. Selain parameter bersama, tersedia `location_id` untuk membatasi hasil ke lokasi tertentu.
+* **HTTP Method & URL:** `GET /api/v1/stock/by-warehouse`
+* **Autentikasi & Permission:** Bearer Token, `stock:read`
+* **Query Parameter:** `limit` (`1..200`, default `50`), `offset` (`>= 0`, default `0`), `warehouse_id`, `item_id`, `category_id`, `search`, `sort_by` (Whitelist: `"warehouse_id"`, `"warehouse_code"`, `"item_id"`, `"item_sku"`, `"item_name"`, `"qty_on_hand"`, `"qty_in_transit"`), `sort_dir` (`"asc"` | `"desc"`).
 
-Whitelist `sort_by`: `warehouse_id`, `warehouse_code`, `location_id`, `location_code`, `item_id`, `item_sku`, `item_name`, `qty_on_hand`, `qty_in_transit`.
-
-Field setiap item (`StockLocationBalanceOut`):
-
-| Field | Tipe JSON | Keterangan |
-| --- | --- | --- |
-| `warehouse_id`, `location_id`, `item_id`, `category_id`, `uom_id` | integer | Identitas gudang, lokasi, barang, kategori, dan UoM. |
-| `warehouse_code`, `warehouse_name`, `location_code`, `location_name` | string | Identitas yang dapat dibaca untuk gudang dan lokasi. |
-| `item_sku`, `item_name`, `category_name`, `uom_code` | string | Identitas barang, kategori, dan satuan dasar. |
-| `qty_on_hand` | string desimal | Saldo aktual pada lokasi. |
-| `qty_in_transit` | string desimal | Kuantitas Transfer berstatus `SHIPPED` menuju lokasi ini. |
-| `updated_at` | datetime atau `null` | Waktu saldo terakhir berubah; dapat `null` bila baris hanya muncul karena barang dalam perjalanan. |
-
-Contoh item:
+**Contoh Response Berhasil (`200 OK` — `Page[StockWarehouseBalanceOut]`)**
 
 ```json
 {
-  "warehouse_id": 2,
-  "warehouse_code": "WH-JKT",
-  "warehouse_name": "Gudang Jakarta",
-  "location_id": 7,
-  "location_code": "A-01",
-  "location_name": "Rak A01",
-  "item_id": 17,
-  "item_sku": "BRG-017",
-  "item_name": "Kabel NYM",
-  "category_id": 4,
-  "category_name": "Kabel",
-  "uom_id": 2,
-  "uom_code": "MTR",
-  "qty_on_hand": "80.0000",
-  "qty_in_transit": "12.0000",
-  "updated_at": "2026-10-23T09:15:00+07:00"
+  "items": [
+    {
+      "warehouse_id": 2,
+      "warehouse_code": "WH-JKT",
+      "warehouse_name": "Gudang Jakarta",
+      "item_id": 17,
+      "item_sku": "BRG-017",
+      "item_name": "Kabel NYM",
+      "category_id": 4,
+      "category_name": "Kabel",
+      "uom_id": 2,
+      "uom_code": "MTR",
+      "qty_on_hand": "80.0000",
+      "qty_in_transit": "12.0000"
+    }
+  ],
+  "total": 1,
+  "limit": 50,
+  "offset": 0
 }
 ```
 
-### 4.3 `GET /api/v1/stock/by-warehouse`
+* **Kemungkinan Error:** `401 AUTH_TOKEN_INVALID`, `403 PERMISSION_DENIED`, `403 WAREHOUSE_NOT_ASSIGNED`, `422 VALIDATION_ERROR`.
 
-Menggabungkan saldo dari seluruh lokasi dalam setiap gudang, per barang. `qty_in_transit` dijumlahkan untuk Transfer yang menuju gudang tersebut. Menerima parameter bersama kecuali `location_id`.
+---
 
-Whitelist `sort_by`: `warehouse_id`, `warehouse_code`, `item_id`, `item_sku`, `item_name`, `qty_on_hand`, `qty_in_transit`.
+### 5.3 GET `/api/v1/stock/summary` — Ringkasan Saldo Stok Lintas Gudang
 
-Setiap item (`StockWarehouseBalanceOut`) memuat `warehouse_id`, `warehouse_code`, `warehouse_name`, `item_id`, `item_sku`, `item_name`, `category_id`, `category_name`, `uom_id`, `uom_code`, `qty_on_hand`, dan `qty_in_transit`.
+Mengambil total saldo stok (`qty_on_hand`) dan stok dalam perjalanan (`qty_in_transit`) yang diagregasi lintas gudang per `item_id`.
 
-### 4.4 `GET /api/v1/stock/summary`
+* **HTTP Method & URL:** `GET /api/v1/stock/summary`
+* **Autentikasi & Permission:** Bearer Token, `stock:read`
+* **Query Parameter:** `limit` (`1..200`, default `50`), `offset` (`>= 0`, default `0`), `warehouse_id` (opsional — membatasi agregasi pada gudang tertentu), `item_id`, `category_id`, `search`, `sort_by` (Whitelist: `"item_id"`, `"item_sku"`, `"item_name"`, `"qty_on_hand"`, `"qty_in_transit"`), `sort_dir` (`"asc"` | `"desc"`).
 
-Menjumlahkan saldo dan barang dalam perjalanan lintas gudang per barang. Bila `warehouse_id` dikirim, kedua jumlah dibatasi pada gudang tersebut. Menerima parameter bersama kecuali `location_id`.
+**Contoh Response Berhasil (`200 OK` — `Page[StockSummaryOut]`)**
 
-Whitelist `sort_by`: `item_id`, `item_sku`, `item_name`, `qty_on_hand`, `qty_in_transit`.
-
-Setiap item (`StockSummaryOut`) memuat `item_id`, `item_sku`, `item_name`, `category_id`, `category_name`, `uom_id`, `uom_code`, `qty_on_hand`, dan `qty_in_transit`.
-
-Contoh pemanggilan:
-
-```http
-GET /api/v1/stock/by-warehouse?warehouse_id=2&category_id=4&limit=25&sort_by=qty_on_hand&sort_dir=desc
-Authorization: Bearer <ACCESS_TOKEN>
+```json
+{
+  "items": [
+    {
+      "item_id": 17,
+      "item_sku": "BRG-017",
+      "item_name": "Kabel NYM",
+      "category_id": 4,
+      "category_name": "Kabel",
+      "uom_id": 2,
+      "uom_code": "MTR",
+      "qty_on_hand": "120.0000",
+      "qty_in_transit": "12.0000"
+    }
+  ],
+  "total": 1,
+  "limit": 50,
+  "offset": 0
+}
 ```
 
-Baris hasil berasal dari saldo yang tersedia atau Transfer aktif berstatus `SHIPPED`; barang tanpa saldo dan tanpa barang dalam perjalanan tidak muncul sebagai baris nol.
+* **Kemungkinan Error:** `401 AUTH_TOKEN_INVALID`, `403 PERMISSION_DENIED`, `403 WAREHOUSE_NOT_ASSIGNED`, `422 VALIDATION_ERROR`.
 
-## 5. Buku Besar Pergerakan Stok
+---
 
-### `GET /api/v1/stock/ledger` dan `GET /api/v1/stock/movements`
+### 5.4 GET `/api/v1/stock/ledger` & GET `/api/v1/stock/movements` — Buku Besar Pergerakan Stok
 
-Kedua path adalah alias untuk daftar ledger yang sama. Endpoint memerlukan `ledger:read` dan mengembalikan `200 OK` dalam format pagination. Filter waktu mendukung rentang; `date_from` tidak boleh lebih besar dari `date_to`. Pagination tetap berlaku, dengan maksimum 200 baris per halaman.
+Mengambil daftar riwayat mutasi stok (`stock_movements`) secara kronologis dengan dukungan filter rentang waktu dan pagination (FR-08 & FR-11). Kedua path adalah alias untuk handler yang sama.
 
-| Parameter | Tipe | Wajib | Default | Keterangan |
+* **HTTP Method & URL:** `GET /api/v1/stock/ledger` atau `GET /api/v1/stock/movements`
+* **Autentikasi & Permission:** Bearer Token, `ledger:read`
+
+**Query Parameter**
+
+| Parameter | Tipe | Wajib | Default | Aturan & Keterangan |
 | --- | --- | --- | --- | --- |
 | `limit` | integer | Tidak | `50` | Rentang `1..200`. |
 | `offset` | integer | Tidak | `0` | Minimal `0`. |
-| `warehouse_id` | integer | Tidak | – | Filter gudang; diterapkan juga untuk warehouse scoping. |
-| `location_id` | integer | Tidak | – | Filter lokasi. |
-| `item_id` | integer | Tidak | – | Filter barang. |
-| `movement_type` | string | Tidak | – | Salah satu tipe pada Bagian 6. |
-| `reference_type` | string | Tidak | – | Salah satu tipe referensi pada Bagian 6. |
-| `reference_id` | integer | Tidak | – | ID dokumen sumber. |
-| `date_from` | datetime | Tidak | – | Batas awal inklusif, `created_at >= date_from`; kirim ISO 8601 dengan zona waktu. |
-| `date_to` | datetime | Tidak | – | Batas akhir inklusif, `created_at <= date_to`; kirim ISO 8601 dengan zona waktu. |
-| `sort_by` | string | Tidak | `id` | Whitelist: `id`, `created_at`, `movement_type`, `warehouse_id`, `item_id`. |
-| `sort_dir` | string | Tidak | `desc` | Arah `asc` atau `desc`. |
+| `warehouse_id` | integer | Tidak | `null` | Filter gudang (`403 WAREHOUSE_NOT_ASSIGNED` bila *Warehouse Staff* meminta gudang di luar penugasan). |
+| `location_id` | integer | Tidak | `null` | Filter lokasi penyimpanan. |
+| `item_id` | integer | Tidak | `null` | Filter ID barang. |
+| `movement_type` | string | Tidak | `null` | Salah satu dari: `IN_PURCHASE`, `OUT_TRANSFER`, `IN_TRANSFER`, `ADJUSTMENT_PLUS`, `ADJUSTMENT_MINUS`. |
+| `reference_type` | string | Tidak | `null` | Salah satu dari: `GOODS_RECEIPT`, `STOCK_TRANSFER`, `STOCK_OPNAME`. |
+| `reference_id` | integer | Tidak | `null` | Filter ID dokumen sumber. |
+| `date_from` | datetime (ISO 8601) | Tidak | `null` | Batas awal waktu mutasi (`created_at >= date_from`). |
+| `date_to` | datetime (ISO 8601) | Tidak | `null` | Batas akhir waktu mutasi (`created_at <= date_to`). Tidak boleh `< date_from`. |
+| `sort_by` | string | Tidak | `"id"` | Whitelist: `"id"`, `"created_at"`, `"movement_type"`, `"warehouse_id"`, `"item_id"`. |
+| `sort_dir` | string | Tidak | `"desc"` | `"asc"` atau `"desc"`. |
 
-Urutan bawaan adalah `id DESC`. Tipe pergerakan yang diterima: `IN_PURCHASE`, `OUT_TRANSFER`, `IN_TRANSFER`, `ADJUSTMENT_PLUS`, `ADJUSTMENT_MINUS`. Tipe referensi: `GOODS_RECEIPT`, `STOCK_TRANSFER`, `STOCK_OPNAME`.
-
-Setiap item (`StockMovementOut`) memuat `id`, `movement_type`, `warehouse_id`, `warehouse_code`, `warehouse_name`, `location_id`, `location_code`, `location_name`, `item_id`, `item_sku`, `item_name`, `uom_code`, `qty_before`, `qty_change`, `qty_after`, `reference_type`, `reference_id`, `notes`, `created_by`, `created_by_username`, dan `created_at`.
-
-Contoh request:
-
-```http
-GET /api/v1/stock/ledger?warehouse_id=2&item_id=17&date_from=2026-10-01T00:00:00%2B07:00&date_to=2026-10-31T23:59:59%2B07:00&limit=50
-Authorization: Bearer <ACCESS_TOKEN>
-```
-
-Contoh response:
+**Contoh Response Berhasil (`200 OK` — `Page[StockMovementOut]`)**
 
 ```json
 {
@@ -200,33 +263,49 @@ Contoh response:
 }
 ```
 
-Ledger adalah append-only dan hanya dibaca melalui endpoint ini. Pergerakan mengikuti invariant `qty_after = qty_before + qty_change`; jumlah positif menambah saldo dan jumlah negatif mengurangi saldo. Endpoint ini tidak menyediakan operasi penulisan, pembaruan, atau penghapusan.
+* **Kemungkinan Error:** `401 AUTH_TOKEN_INVALID`, `403 PERMISSION_DENIED`, `403 WAREHOUSE_NOT_ASSIGNED`, `422 VALIDATION_ERROR`.
 
-## 6. Jenis Pergerakan
+---
 
-| `movement_type` | Pemicu | Arah `qty_change` | `reference_type` |
-| --- | --- | --- | --- |
-| `IN_PURCHASE` | GR diposting | Positif | `GOODS_RECEIPT` |
-| `OUT_TRANSFER` | Transfer dikirim (`SHIPPED`) | Negatif | `STOCK_TRANSFER` |
-| `IN_TRANSFER` | Transfer diterima (`RECEIVED`) | Positif | `STOCK_TRANSFER` |
-| `ADJUSTMENT_PLUS` | Opname selesai, selisih positif | Positif | `STOCK_OPNAME` |
-| `ADJUSTMENT_MINUS` | Opname selesai, selisih negatif | Negatif | `STOCK_OPNAME` |
+## 6. Relasi dan Ketergantungan
 
-Penerimaan Transfer dengan selisih hanya menambah stok tujuan sebesar kuantitas yang diterima; selisih tidak menghasilkan baris ledger tambahan. Lihat dokumentasi atau endpoint Transfer untuk detail siklusnya.
+| Objek / Tabel | Kunci, Constraint & Indeks Utama (`003_create_inventory_tables.sql`) | Relasi & Dampak |
+| --- | --- | --- |
+| `inventory_balances` | `pk_inventory_balances (id)`, `uq_inventory_balances_warehouse_location_item (warehouse_id, location_id, item_id)`, `fk_inventory_balances_location_warehouse (location_id, warehouse_id)`, `ix_inventory_balances_warehouse_item`, `ix_inventory_balances_item_id` | Dibuat otomatis (`INSERT ... ON CONFLICT DO NOTHING`) dan dikunci (`SELECT ... FOR UPDATE`) oleh `inventory_service.apply_movement()`. Tidak memasang `CHECK (qty_on_hand >= 0)` di tabel karena kebijakan `allow_negative_stock` bersifat per gudang (PRD 6.1). |
+| `stock_movements` | `pk_stock_movements (id)`, `fk_stock_movements_location_warehouse (location_id, warehouse_id)`, `ck_stock_movements_qty_balance (qty_after = qty_before + qty_change)`, `ck_stock_movements_direction`, `ix_stock_movements_warehouse_item_created`, `ix_stock_movements_created_at` | Bersifat *append-only* (dilindungi trigger `trg_stock_movements_immutable` pada `007_append_only_guards.sql`). Indeks komposit mendukung pembacaan cepat dengan filter gudang, barang, dan rentang tanggal (PRD 7.3). |
 
-## 7. Error
+Alur lapisan pembacaan: `routes/stock.py` → `stock_service.py` (`access_service.resolve_read_warehouse_scope`) → `inventory_repo.py` → PostgreSQL.
 
-Error memakai format umum `{ "error": { "code", "message", "details" } }`.
+---
 
-| HTTP | Kode | Kondisi umum |
-| ---: | --- | --- |
-| `401` | `AUTH_TOKEN_INVALID` | Token tidak ada atau tidak valid. |
-| `403` | `PERMISSION_DENIED` | Tidak memiliki `stock:read` atau `ledger:read`. |
-| `403` | `WAREHOUSE_NOT_ASSIGNED` | Warehouse Staff meminta gudang di luar penugasan. |
-| `422` | `VALIDATION_ERROR` | Pagination/sorting salah, tanggal tidak valid/terbalik, atau tipe pergerakan/referensi tidak dikenal. |
+## 7. Contoh Penggunaan (cURL)
 
-## 8. Catatan Implementasi & Verifikasi
+```bash
+BASE=http://localhost:8000/api/v1
 
-Tipe kuantitas response menggunakan `DecimalStr` agar presisi tetap terjaga pada JSON. Query ledger menggunakan pagination dan filter tanggal sesuai FR-11. Indeks stok dan ledger dibuat pada migrasi `003_create_inventory_tables.sql`; pemeriksaan M8 pada data benchmark 10.000 saldo dan 1.000.000 baris ledger dicatat di [ringkasan dokumentasi API](README.md#4-ringkasan-status-verifikasi--perbaikan-temuan).
+# 1. Baca saldo stok per lokasi pada Gudang 2
+curl -s "$BASE/stock/by-location?warehouse_id=2&limit=50" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>"
 
-Pembacaan dan scoping saldo/ledger diuji oleh `test_m4_inventory_apply_movement_concurrency_stock_views_and_ledger` di `tests/test_rbac_scoping.py`. Perilaku mutasi dan konsistensi ledger juga diliputi test AC GR, Transfer, Opname, dan imutabilitas.
+# 2. Baca saldo stok diagregasi per gudang untuk kategori tertentu
+curl -s "$BASE/stock/by-warehouse?warehouse_id=2&category_id=4&sort_by=qty_on_hand&sort_dir=desc" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>"
+
+# 3. Baca ringkasan stok lintas gudang dengan pencarian SKU/nama barang
+curl -s "$BASE/stock/summary?search=BRG-017" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>"
+
+# 4. Baca Stock Movement Ledger dengan filter gudang dan rentang tanggal
+curl -s "$BASE/stock/ledger?warehouse_id=2&date_from=2026-10-01T00:00:00Z&date_to=2026-10-31T23:59:59Z&limit=50" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>"
+```
+
+---
+
+## 8. Catatan dan Status Verifikasi
+
+| # | Status | Catatan |
+| --- | --- | --- |
+| 1 | ✅ Terverifikasi | Konkurensi penguncian baris pada `inventory_service.apply_movement()`, tampilan saldo per lokasi/gudang/summary, perhitungan `qty_in_transit`, pembacaan ledger, serta *Warehouse Scoping* untuk *Warehouse Staff* telah diuji di `test_m4_inventory_apply_movement_concurrency_stock_views_and_ledger` (`tests/test_rbac_scoping.py`). |
+| 2 | ✅ Terverifikasi | Imutabilitas tabel `stock_movements` terhadap operasi `UPDATE` dan `DELETE` (baik oleh role aplikasi `wms_app` maupun pemilik tabel) telah diuji di `test_ac08_immutability_stock_movements_and_audit_logs` (`tests/test_immutability.py` — **AC-08**). |
+| 3 | ✅ Terverifikasi | Benchmark lokal M8 menggunakan `EXPLAIN ANALYZE` pada 10.000 baris saldo/barang dan 1.000.000 baris `stock_movements` mencatat waktu eksekusi di bawah target 200 ms (`5,550 ms` untuk halaman saldo per lokasi, `0,105 ms` untuk halaman ledger 50 baris, dan `122,527 ms` untuk hitung ledger rentang 30 hari setelah `VACUUM (ANALYZE)`). |

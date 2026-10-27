@@ -211,6 +211,6 @@ Invoke-Item .\htmlcov\index.html
 * [**Struktur Proyek**](docs/CORE/FOLDER_STRUCTURE.MD) — Arsitektur, transaksi, locking, serta urutan milestone.
 * [**Skema Database**](docs/CORE/SCHEMA_DATABASE.MD) — Entitas, relasi, migrasi, dan trigger.
 * [**Aturan Dokumentasi API**](docs/CORE/RULE_CREATE_API_DOKUMENTATION.MD) — Standar dokumentasi endpoint.
-* [**Rencana QA**](docs/QA/QA.MD) · [**Spesifikasi Test Plan**](docs/QA/DOKUMENT_RENCANA_PENGUJIAN.MD) — Cakupan uji otomatis dan skenario penerimaan.
+* [**Panduan QA**](docs/QA/QA.MD) — Cakupan backend saat ini dan rencana QA frontend bila klien terpisah dibangun.
 * [**AGENTS.md**](AGENTS.MD) — Aturan kerja dan batasan invarian bisnis.
 

@@ -86,7 +86,7 @@ Pemeriksaan *permission* dilakukan di lapisan route melalui `Depends(require_per
 
 * Terdapat **5 peran** dan **24 kode permission** yang di-*seed* oleh migrasi `008_seed_roles_permissions.sql` sesuai Matriks 3.1 PRD.
 * Daftar peran beserta permission-nya dapat dibaca melalui [`GET /api/v1/users/roles`](users.md#get-apiv1usersroles--daftar-peran).
-* Matriks lengkap per peran tercantum di [users.md — Matriks Peran & Permission](users.md#6-matriks-peran--permission-hasil-seed).
+* Matriks lengkap per peran tercantum di [users.md — Relasi dan Ketergantungan](users.md#6-relasi-dan-ketergantungan).
 
 ### 3.4 Warehouse Scoping
 
@@ -114,7 +114,7 @@ Pemeriksaan penugasan gudang dilakukan di lapisan **service** oleh [`access_serv
 
 ---
 
-## 5. Detail Endpoint
+## 5. Detail Setiap Endpoint
 
 ### POST `/api/v1/auth/login` — Login
 

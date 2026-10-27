@@ -535,7 +535,19 @@ Mengembalikan daftar detail gudang yang baru ditugaskan (format sama dengan `GET
 
 ---
 
-## 6. Matriks Peran & Permission (Hasil Seed)
+## 6. Relasi dan Ketergantungan
+
+### 6.1 Tabel Database & Constraint Utama (`001_create_auth_tables.sql`, `002_create_master_tables.sql`)
+
+| Tabel | Kunci & Constraint Utama | Relasi & Dampak |
+| --- | --- | --- |
+| `users` | `pk_users (id)`, `uq_users_username (username)`, `uq_users_email (email)`, `fk_users_role_id (role_id -> roles.id ON DELETE RESTRICT)` | Menyimpan profil pengguna, status aktif (`is_active`), serta penghitung gagal login (`failed_login_count`, `locked_until`). Penonaktifan pengguna mencabut seluruh `refresh_tokens` aktif milik pengguna tersebut. |
+| `roles` & `permissions` | `pk_roles (id)`, `uq_roles_name (name)`, `pk_permissions (id)`, `uq_permissions_code (code)` | Dipetakan secara *many-to-many* melalui tabel `role_permissions (role_id, permission_id)`. |
+| `user_warehouses` | `pk_user_warehouses (user_id, warehouse_id)` | Menentukan daftar gudang yang ditugaskan kepada pengguna untuk pemeriksaan `access_service.ensure_warehouse_access()` dan `resolve_read_warehouse_scope()`. |
+
+Alur lapisan: `routes/users.py` → `user_service.py` (`with conn.transaction():` + `audit_service.record()`) → `user_repo.py` & `permission_repo.py` → PostgreSQL.
+
+### 6.2 Matriks Peran & Permission (Hasil Seed)
 
 Tabel berikut merangkum 24 kode *permission* yang di-*seed* oleh `008_seed_roles_permissions.sql` sesuai Matriks 3.1 PRD:
 

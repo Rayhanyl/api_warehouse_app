@@ -4,77 +4,116 @@
 
 | Atribut | Keterangan |
 | --- | --- |
-| **Modul** | Purchase Order / Pesanan Pembelian |
+| **Modul** | Purchase Order (*Pesanan Pembelian ke Pemasok*) |
 | **Base path** | `/api/v1/purchase-orders` |
-| **Rujukan PRD** | FR-04, FR-10, FR-11, Bagian 3.1, 5.1, 6.2, 6.3, 6.9, 8 (AC-01, AC-05, AC-12), Lampiran A & B |
-| **Status** | Sudah diimplementasikan; siklus PO diuji di `tests/test_goods_receipt.py`, penerimaan parsial diuji pada AC-01. |
-| **Kode sumber** | [purchase_orders.py](../../app/api/routes/purchase_orders.py), [po_service.py](../../app/services/po_service.py), [po_repo.py](../../app/repositories/po_repo.py), [purchase_order.py](../../app/schemas/purchase_order.py) |
-| **Tabel terkait** | `purchase_orders`, `po_lines`, `suppliers`, `warehouses`, `items`, `uoms`, `goods_receipts`, `audit_logs`, `document_sequences` |
+| **Rujukan PRD** | FR-04, FR-09, FR-10, FR-11, Bagian 3.1 (Matriks Permission), 3.2 (*Warehouse Scoping*), 5.1 (*State Machine*), 6.2 (*Over-Receipt*), 6.3 (Validasi Gudang/Barang/Pemasok), 6.9 (Presisi Kuantitas), AC-01, AC-05, AC-12, Lampiran A & B |
+| **Status implementasi** | ✅ Sudah diimplementasikan dan diuji (`tests/test_goods_receipt.py`, `tests/test_rbac_scoping.py`) |
+| **Kode sumber** | [routes/purchase_orders.py](../../app/api/routes/purchase_orders.py), [po_service.py](../../app/services/po_service.py), [numbering_service.py](../../app/services/numbering_service.py), [access_service.py](../../app/services/access_service.py), [po_repo.py](../../app/repositories/po_repo.py), [schemas/purchase_order.py](../../app/schemas/purchase_order.py) |
+| **Tabel terkait** | `purchase_orders`, `po_lines`, `suppliers`, `warehouses`, `items`, `uoms`, `goods_receipts`, `document_sequences`, `audit_logs` |
 | **Modul terkait** | [Goods Receipt](goods-receipts.md), [Master Data](master-data.md), [Gudang & Lokasi](warehouses.md), [Audit Log](audit-logs.md) |
 
-PO mencatat pemasok, gudang tujuan, tanggal pemesanan, catatan, dan baris barang. PO dibuat sebagai `DRAFT`; setelah diterbitkan, barang dapat diterima melalui Goods Receipt (GR). Posting GR memperbarui `qty_received` dan status PO secara otomatis.
+---
 
-## 2. Autentikasi dan Otorisasi
+## 2. Penjelasan Fitur
 
-Semua endpoint memerlukan `Authorization: Bearer <access_token>`.
+### 2.1 Tujuan
 
-| Permission | Aksi | Peran bawaan menurut Matriks 3.1 |
-| --- | --- | --- |
-| `po:read` | Daftar dan baca detail PO | Super Admin, Warehouse Manager, Purchasing Staff, Warehouse Staff, Auditor |
-| `po:create` | Buat/revisi PO `DRAFT`; batalkan PO `DRAFT` | Super Admin, Purchasing Staff |
-| `po:issue` | Terbitkan PO | Super Admin, Purchasing Staff |
-| `po:cancel` | Batalkan PO `ISSUED` | Super Admin, Purchasing Staff |
-| `po:close` | Tutup PO | Super Admin, Warehouse Manager, Purchasing Staff |
+Modul Purchase Order (PO) mengelola siklus pengadaan barang ke pemasok untuk satu gudang tujuan (`warehouse_id`). Setiap dokumen PO menjadi acuan resmi penerimaan barang melalui modul [Goods Receipt (GR)](goods-receipts.md), baik secara bertahap (parsial) maupun sekaligus (penuh).
 
-Warehouse Staff hanya dapat membaca PO pada gudang yang ditugaskan. Daftar otomatis dibatasi; detail PO di gudang lain ditolak dengan `403 WAREHOUSE_NOT_ASSIGNED`. Pembacaan oleh peran lain tidak dibatasi penugasan. Aksi tulis PO tidak memakai warehouse scoping pada Matriks 3.1.
+### 2.2 Alur Bisnis & Siklus Status (*State Machine* — PRD 5.1)
 
-Endpoint pembatalan menerima `po:create` untuk PO `DRAFT` atau `po:cancel` untuk PO `ISSUED`. Service memeriksa permission yang sesuai status dokumen.
+```mermaid
+stateDiagram-v2
+    [*] --> DRAFT: POST /purchase-orders (po:create)
+    DRAFT --> DRAFT: PATCH /purchase-orders/{id} (po:create)
+    DRAFT --> ISSUED: POST /{id}/issue (po:issue)
+    DRAFT --> CANCELLED: POST /{id}/cancel (po:create)
+    ISSUED --> CANCELLED: POST /{id}/cancel (po:cancel, tanpa GR DRAFT/POSTED)
+    ISSUED --> PARTIALLY_RECEIVED: Sistem (saat GR POSTED, sebagian diterima)
+    ISSUED --> RECEIVED: Sistem (saat GR POSTED, seluruh baris penuh)
+    PARTIALLY_RECEIVED --> PARTIALLY_RECEIVED: Sistem (GR POSTED berikutnya, masih bersisa)
+    PARTIALLY_RECEIVED --> RECEIVED: Sistem (saat GR POSTED, seluruh baris penuh)
+    ISSUED --> CLOSED: POST /{id}/close (po:close, tanpa GR DRAFT)
+    PARTIALLY_RECEIVED --> CLOSED: POST /{id}/close (po:close, tanpa GR DRAFT)
+```
 
-## 3. Siklus Status
-
-| Status saat ini | Pemicu | Status berikutnya | Ketentuan |
+| Status Saat Ini | Pemicu | Status Berikutnya | Syarat & Efek |
 | --- | --- | --- | --- |
-| Baru | Buat PO | `DRAFT` | Pemasok dan gudang tujuan aktif. Baris boleh kosong saat penyusunan. |
-| `DRAFT` | Terbitkan PO | `ISSUED` | Minimal satu baris; barang aktif dan kuantitas valid. |
-| `DRAFT` | Batalkan PO | `CANCELLED` | Permission `po:create`. |
-| `ISSUED` | Posting GR | `PARTIALLY_RECEIVED` | Sebagian kuantitas diterima dan masih ada sisa. |
-| `ISSUED` atau `PARTIALLY_RECEIVED` | Posting GR | `RECEIVED` | Seluruh kuantitas PO telah diterima. |
-| `ISSUED` | Batalkan PO | `CANCELLED` | Permission `po:cancel`; tidak boleh ada GR `DRAFT` atau `POSTED`. |
-| `ISSUED` atau `PARTIALLY_RECEIVED` | Tutup PO | `CLOSED` | Permission `po:close`; tidak boleh ada GR `DRAFT`; alasan wajib. |
+| *(Baru)* | `POST /api/v1/purchase-orders` | `DRAFT` | Pemasok dan gudang tujuan aktif; nomor `PO-YYYYMM-NNNN` dibuat otomatis. Baris boleh kosong saat penyusunan. |
+| `DRAFT` | `PATCH /api/v1/purchase-orders/{id}` | `DRAFT` | Revisi header atau penggantian daftar baris. |
+| `DRAFT` | `POST /api/v1/purchase-orders/{id}/issue` | `ISSUED` | Minimal 1 baris; seluruh barang aktif dan `qty_ordered > 0`. Baris PO dikunci dari revisi dan siap menerima GR. |
+| `DRAFT` | `POST /api/v1/purchase-orders/{id}/cancel` | `CANCELLED` | Membutuhkan `po:create`. |
+| `ISSUED` | `POST /api/v1/purchase-orders/{id}/cancel` | `CANCELLED` | Membutuhkan `po:cancel`; belum ada GR `POSTED` dan tidak ada GR `DRAFT` pada PO tersebut. |
+| `ISSUED` | Sistem (saat GR `POSTED`) | `PARTIALLY_RECEIVED` | Total `qty_received > 0` dan masih ada baris dengan `qty_received < qty_ordered`. |
+| `ISSUED` / `PARTIALLY_RECEIVED` | Sistem (saat GR `POSTED`) | `RECEIVED` | Seluruh baris PO memiliki `qty_received == qty_ordered`. Status final. |
+| `ISSUED` / `PARTIALLY_RECEIVED` | `POST /api/v1/purchase-orders/{id}/close` | `CLOSED` | Membutuhkan `po:close`; tidak ada GR `DRAFT` yang menggantung; `closed_reason` wajib diisi. Status final. |
 
-Status tidak dapat diubah melalui `PATCH`. Transisi yang tidak diizinkan menghasilkan `409 INVALID_STATE_TRANSITION`. `RECEIVED`, `CLOSED`, dan `CANCELLED` adalah status akhir. PO `PARTIALLY_RECEIVED` tidak dapat dibatalkan, tetapi dapat ditutup bila sisa pesanan tidak dilanjutkan.
+### 2.3 Aturan Integritas Utama
 
-Penerimaan barang dan aturan *over-receipt* dilakukan melalui endpoint GR. Hanya GR `POSTED` yang menambah `qty_received`; jumlah kumulatif tidak boleh melampaui `qty_ordered`.
+* **Penomoran Otomatis (FR-10):** Nomor dokumen berformat `PO-YYYYMM-NNNN` (mengikuti bulan dari `order_date`), di-*reset* tiap periode `YYYYMM` secara aman terhadap konkurensi melalui `numbering_service.generate_document_number()`. Nomor dari PO yang dibatalkan tidak digunakan ulang.
+* **Keunikan Barang per PO (FR-04 & PRD 6.3):** Satu `item_id` hanya boleh muncul paling banyak satu kali dalam satu PO (`UNIQUE (po_id, item_id)`).
+* **Presisi Kuantitas & Satuan Ukur (PRD 6.9 & 7.4):** `qty_ordered` bertipe `NUMERIC(18, 4)` (`> 0`, maks 4 angka desimal, tipe `float` pada JSON ditolak). Jika UoM barang memiliki `allow_decimal = false`, `qty_ordered` wajib bilangan bulat.
+* **Perubahan Status Hanya lewat Endpoint Aksi (Invarian 8):** Kolom `status` tidak dapat diubah melalui `PATCH`. Transisi yang tidak sah ditolak dengan `409 INVALID_STATE_TRANSITION`.
+
+---
+
+## 3. Autentikasi dan Otorisasi
+
+* **Autentikasi:** Wajib menyertakan header `Authorization: Bearer <access_token>`.
+* **Permission & Warehouse Scoping (Matriks 3.1 & PRD 3.2):**
+
+| Permission | Aksi | Peran Bawaan (Matriks 3.1) | Warehouse Scoping |
+| --- | --- | --- | --- |
+| `po:read` | Daftar & detail PO | *Super Admin*, *Warehouse Manager*, *Purchasing Staff*, *Warehouse Staff*, *Auditor* | Hanya untuk peran **Warehouse Staff** (hanya melihat PO pada gudang yang ditugaskan; gudang lain → `403 WAREHOUSE_NOT_ASSIGNED`). Peran lain tidak dibatasi. |
+| `po:create` | Buat PO `DRAFT`, revisi PO `DRAFT`, batalkan PO `DRAFT` | *Super Admin*, *Purchasing Staff* | Tidak |
+| `po:issue` | Terbitkan PO (`DRAFT → ISSUED`) | *Super Admin*, *Purchasing Staff* | Tidak |
+| `po:cancel` | Batalkan PO `ISSUED` (`ISSUED → CANCELLED`) | *Super Admin*, *Purchasing Staff* | Tidak |
+| `po:close` | Tutup PO (`ISSUED`/`PARTIALLY_RECEIVED → CLOSED`) | *Super Admin*, *Warehouse Manager*, *Purchasing Staff* | Tidak |
+
+> [!NOTE]
+> Endpoint `POST /api/v1/purchase-orders/{po_id}/cancel` di lapisan route mengizinkan pemanggil yang memiliki `po:create` **atau** `po:cancel`, lalu di dalam `po_service.cancel_purchase_order()` setelah baris PO dikunci (`FOR UPDATE`), sistem memverifikasi izin spesifik sesuai status aktual dokumen (`po:create` untuk `DRAFT`, `po:cancel` untuk `ISSUED`).
+
+---
 
 ## 4. Ringkasan Endpoint
 
-| Method | Endpoint | Fungsi | Permission |
-| --- | --- | --- | --- |
-| GET | `/api/v1/purchase-orders` | Daftar dan filter PO | `po:read` |
-| POST | `/api/v1/purchase-orders` | Buat PO `DRAFT` | `po:create` |
-| GET | `/api/v1/purchase-orders/{po_id}` | Baca PO dan barisnya | `po:read` |
-| PATCH | `/api/v1/purchase-orders/{po_id}` | Revisi PO `DRAFT` | `po:create` |
-| POST | `/api/v1/purchase-orders/{po_id}/issue` | Terbitkan PO | `po:issue` |
-| POST | `/api/v1/purchase-orders/{po_id}/cancel` | Batalkan PO sesuai status | `po:create` atau `po:cancel` |
-| POST | `/api/v1/purchase-orders/{po_id}/close` | Tutup PO | `po:close` |
+| # | Method | Endpoint | Fungsi | Auth | Permission |
+| :-: | --- | --- | --- | --- | --- |
+| 1 | GET | `/api/v1/purchase-orders` | Daftar PO (paginasi, filter gudang/pemasok/status/tanggal, pencarian, urut) | Bearer | `po:read` |
+| 2 | POST | `/api/v1/purchase-orders` | Buat PO baru berstatus `DRAFT` | Bearer | `po:create` |
+| 3 | GET | `/api/v1/purchase-orders/{po_id}` | Detail PO beserta daftar barisnya (`lines`) | Bearer | `po:read` |
+| 4 | PATCH | `/api/v1/purchase-orders/{po_id}` | Revisi header dan/atau baris PO berstatus `DRAFT` | Bearer | `po:create` |
+| 5 | POST | `/api/v1/purchase-orders/{po_id}/issue` | Terbitkan PO (`DRAFT → ISSUED`) | Bearer | `po:issue` |
+| 6 | POST | `/api/v1/purchase-orders/{po_id}/cancel` | Batalkan PO (`DRAFT` atau `ISSUED → CANCELLED`) | Bearer | `po:create` / `po:cancel` |
+| 7 | POST | `/api/v1/purchase-orders/{po_id}/close` | Tutup PO dengan alasan wajib (`ISSUED`/`PARTIALLY_RECEIVED → CLOSED`) | Bearer | `po:close` |
 
-## 5. Detail Endpoint
+---
 
-### 5.1 `GET /api/v1/purchase-orders` — Daftar PO
+## 5. Detail Setiap Endpoint
 
-| Parameter | Tipe | Wajib | Default | Aturan |
+### 5.1 GET `/api/v1/purchase-orders` — Daftar PO
+
+Mengambil daftar ringkasan Purchase Order dengan dukungan pagination, filter, pencarian, dan pengurutan.
+
+* **HTTP Method & URL:** `GET /api/v1/purchase-orders`
+* **Autentikasi & Permission:** Bearer Token, `po:read`
+
+**Query Parameter**
+
+| Parameter | Tipe | Wajib | Default | Aturan & Keterangan |
 | --- | --- | --- | --- | --- |
-| `limit` | integer | Tidak | `50` | `1..200`. |
+| `limit` | integer | Tidak | `50` | Rentang `1..200`. |
 | `offset` | integer | Tidak | `0` | Minimal `0`. |
-| `warehouse_id` | integer | Tidak | – | Filter gudang tujuan; Warehouse Staff hanya dapat meminta gudang yang ditugaskan. |
-| `supplier_id` | integer | Tidak | – | Filter pemasok. |
-| `status` | string | Tidak | – | Salah satu status pada Bagian 3. |
-| `date_from`, `date_to` | date | Tidak | – | Filter tanggal pemesanan dalam format `YYYY-MM-DD`; tanggal awal tidak boleh melewati tanggal akhir. |
-| `search` | string | Tidak | – | Pencarian pada nomor PO, kode/nama pemasok, atau catatan. |
-| `sort_by` | string | Tidak | `id` | Whitelist: `id`, `po_number`, `order_date`, `status`, `created_at`. |
-| `sort_dir` | string | Tidak | `desc` | `asc` atau `desc`. |
+| `warehouse_id` | integer | Tidak | `null` | Filter gudang tujuan. Untuk *Warehouse Staff*, wajib termasuk gudang yang ditugaskan (`403 WAREHOUSE_NOT_ASSIGNED` bila di luar cakupan). |
+| `supplier_id` | integer | Tidak | `null` | Filter ID pemasok. |
+| `status` | string | Tidak | `null` | Salah satu dari: `DRAFT`, `ISSUED`, `PARTIALLY_RECEIVED`, `RECEIVED`, `CLOSED`, `CANCELLED`. |
+| `date_from` | date (`YYYY-MM-DD`) | Tidak | `null` | Batas awal tanggal pesanan (`order_date >= date_from`). |
+| `date_to` | date (`YYYY-MM-DD`) | Tidak | `null` | Batas akhir tanggal pesanan (`order_date <= date_to`). Tidak boleh `< date_from`. |
+| `search` | string | Tidak | `null` | Pencarian `ILIKE` pada `po_number`, `supplier_code`, `supplier_name`, atau `notes`. |
+| `sort_by` | string | Tidak | `"id"` | Whitelist: `"id"`, `"po_number"`, `"order_date"`, `"status"`, `"created_at"`. |
+| `sort_dir` | string | Tidak | `"desc"` | `"asc"` atau `"desc"`. |
 
-Urutan bawaan adalah `id DESC`. Response berbentuk `Page[PurchaseOrderSummaryOut]`; item daftar tidak menyertakan `lines`.
+**Contoh Response Berhasil (`200 OK` — `Page[PurchaseOrderSummaryOut]`)**
 
 ```json
 {
@@ -91,7 +130,7 @@ Urutan bawaan adalah `id DESC`. Response berbentuk `Page[PurchaseOrderSummaryOut
       "status": "ISSUED",
       "order_date": "2026-10-23",
       "notes": "Pengadaan Oktober",
-      "line_count": 1,
+      "line_count": 2,
       "issued_at": "2026-10-23T09:15:00+07:00",
       "issued_by": 8,
       "closed_reason": null,
@@ -108,27 +147,28 @@ Urutan bawaan adalah `id DESC`. Response berbentuk `Page[PurchaseOrderSummaryOut
 }
 ```
 
-### 5.2 `POST /api/v1/purchase-orders` — Buat PO
+* **Kemungkinan Error:** `401 AUTH_TOKEN_INVALID`, `403 PERMISSION_DENIED`, `403 WAREHOUSE_NOT_ASSIGNED`, `422 VALIDATION_ERROR`.
 
-Body:
+---
 
-| Field | Tipe | Wajib | Aturan |
+### 5.2 POST `/api/v1/purchase-orders` — Buat PO
+
+Membuat dokumen Purchase Order baru dengan status awal `DRAFT`.
+
+* **HTTP Method & URL:** `POST /api/v1/purchase-orders`
+* **Autentikasi & Permission:** Bearer Token, `po:create`
+
+**Request Body (`PurchaseOrderCreate`)**
+
+| Field | Tipe | Wajib | Aturan Validasi |
 | --- | --- | --- | --- |
-| `supplier_id` | integer | Ya | Pemasok harus ada dan aktif. |
-| `warehouse_id` | integer | Ya | Gudang tujuan harus ada dan aktif. |
-| `order_date` | date | Ya | Format `YYYY-MM-DD`; bulan tanggal ini dipakai pada nomor PO. |
-| `notes` | string atau `null` | Tidak | Catatan header; string kosong dinormalisasi menjadi `null`. |
-| `lines` | array | Tidak | Bawaan `[]`; PO kosong dapat disimpan sebagai `DRAFT`, tetapi tidak dapat diterbitkan. |
+| `supplier_id` | integer (`> 0`) | Ya | Pemasok harus ada (`404 NOT_FOUND`) dan berstatus aktif (`422 INACTIVE_REFERENCE`). |
+| `warehouse_id` | integer (`> 0`) | Ya | Gudang tujuan harus ada (`404 NOT_FOUND`) dan berstatus aktif (`422 INACTIVE_REFERENCE`). |
+| `order_date` | date (`YYYY-MM-DD`) | Ya | Tanggal pemesanan; menentukan periode `YYYYMM` pada `po_number`. |
+| `notes` | string \| `null` | Tidak | Catatan header; string kosong dinormalisasi menjadi `null`. |
+| `lines` | array of `POLineCreate` | Tidak | Default `[]`. Setiap elemen memuat `item_id` (int `> 0`, unik dalam PO), `qty_ordered` (string desimal / int `> 0`, maks 4 desimal, bukan float, patuh `allow_decimal` UoM), dan `notes` (string \| `null`). |
 
-Setiap baris menerima `item_id` (integer), `qty_ordered` (string desimal atau integer), dan `notes` (string/null). Barang harus ada dan aktif; barang yang sama tidak boleh muncul lebih dari sekali pada satu PO. Kuantitas harus lebih dari nol dan maksimal empat tempat desimal. Float JSON ditolak. Bila UoM barang memiliki `allow_decimal: false`, kuantitas harus bilangan bulat.
-
-Contoh:
-
-```http
-POST /api/v1/purchase-orders
-Authorization: Bearer <ACCESS_TOKEN>
-Content-Type: application/json
-```
+**Contoh Request**
 
 ```json
 {
@@ -137,66 +177,228 @@ Content-Type: application/json
   "order_date": "2026-10-23",
   "notes": "Pengadaan Oktober",
   "lines": [
-    {"item_id": 17, "qty_ordered": "25", "notes": "Kirim utuh bila tersedia"},
-    {"item_id": 21, "qty_ordered": "12.5000"}
+    {
+      "item_id": 17,
+      "qty_ordered": "25.0000",
+      "notes": "Kirim utuh bila tersedia"
+    },
+    {
+      "item_id": 21,
+      "qty_ordered": "12.5000"
+    }
   ]
 }
 ```
 
-Response `201 Created`, tipe `PurchaseOrderOut`, status awal `DRAFT`. Nomor dibuat server dengan format `PO-YYYYMM-NNNN`, unik, dan tidak digunakan ulang setelah pembatalan. Nilai kuantitas response berupa string desimal empat tempat, misalnya `"25.0000"`.
-
-### 5.3 `GET /api/v1/purchase-orders/{po_id}` — Detail PO
-
-Response `200 OK`, tipe `PurchaseOrderOut`: field ringkasan ditambah array `lines`. Setiap baris memuat `id`, `po_id`, `item_id`, `item_sku`, `item_name`, `uom_id`, `uom_code`, `allow_decimal`, `qty_ordered`, `qty_received`, `notes`, `created_by`, `created_at`, dan `updated_at`. ID yang tidak ditemukan menghasilkan `404 NOT_FOUND`; Warehouse Staff yang tidak ditugaskan menghasilkan `403 WAREHOUSE_NOT_ASSIGNED`.
-
-### 5.4 `PATCH /api/v1/purchase-orders/{po_id}` — Revisi PO
-
-Semua field berikut opsional: `supplier_id`, `warehouse_id`, `order_date`, `notes`, dan `lines`. Field yang dihilangkan tidak berubah. Jika `lines` dikirim, seluruh baris diganti dengan array tersebut; `[]` menghapus semua baris selama PO masih `DRAFT`. Gunakan string kosong untuk mengosongkan catatan; nilai `null` berarti tidak mengubahnya.
-
-Referensi aktif, duplikasi barang, presisi kuantitas, dan aturan UoM divalidasi seperti pada pembuatan. Berhasil menghasilkan `200 OK` dengan detail PO terbaru. PO selain `DRAFT` ditolak dengan `409 INVALID_STATE_TRANSITION`.
-
-### 5.5 `POST /api/v1/purchase-orders/{po_id}/issue` — Terbitkan PO
-
-Tanpa body. Hanya `DRAFT → ISSUED`. Sistem memvalidasi kembali pemasok dan gudang aktif, minimal satu baris, status aktif barang, kuantitas, serta aturan UoM. Berhasil menghasilkan `200 OK` dengan `issued_at`, `issued_by`, dan status `ISSUED`. PO kosong atau baris tidak valid menghasilkan `422 VALIDATION_ERROR`; referensi tidak aktif menghasilkan `422 INACTIVE_REFERENCE`.
-
-### 5.6 `POST /api/v1/purchase-orders/{po_id}/cancel` — Batalkan PO
-
-Tanpa body. PO `DRAFT` dibatalkan dengan `po:create`. PO `ISSUED` dibatalkan dengan `po:cancel` hanya bila tidak memiliki GR `DRAFT` maupun `POSTED`. Status lain atau GR penghalang menghasilkan `409 INVALID_STATE_TRANSITION`. Berhasil menghasilkan `200 OK` dengan status `CANCELLED`.
-
-### 5.7 `POST /api/v1/purchase-orders/{po_id}/close` — Tutup PO
-
-Wajib permission `po:close`. Hanya PO `ISSUED` atau `PARTIALLY_RECEIVED` tanpa GR `DRAFT` yang dapat ditutup. GR `POSTED` tidak menghalangi penutupan. Alasan wajib tidak kosong setelah spasi tepi dihapus.
+**Contoh Response Berhasil (`201 Created` — `PurchaseOrderOut`)**
 
 ```json
-{"closed_reason": "Sisa pesanan tidak dilanjutkan sesuai kesepakatan pemasok"}
+{
+  "id": 14,
+  "po_number": "PO-202610-0014",
+  "supplier_id": 3,
+  "supplier_code": "SUP-001",
+  "supplier_name": "PT Sumber Jaya",
+  "warehouse_id": 2,
+  "warehouse_code": "WH-JKT",
+  "warehouse_name": "Gudang Jakarta",
+  "status": "DRAFT",
+  "order_date": "2026-10-23",
+  "notes": "Pengadaan Oktober",
+  "line_count": 2,
+  "issued_at": null,
+  "issued_by": null,
+  "closed_reason": null,
+  "closed_at": null,
+  "closed_by": null,
+  "created_by": 8,
+  "created_at": "2026-10-23T09:00:00+07:00",
+  "updated_at": "2026-10-23T09:00:00+07:00",
+  "lines": [
+    {
+      "id": 31,
+      "po_id": 14,
+      "item_id": 17,
+      "item_sku": "BRG-017",
+      "item_name": "Kabel NYM",
+      "uom_id": 1,
+      "uom_code": "ROLL",
+      "allow_decimal": false,
+      "qty_ordered": "25.0000",
+      "qty_received": "0.0000",
+      "notes": "Kirim utuh bila tersedia",
+      "created_by": 8,
+      "created_at": "2026-10-23T09:00:00+07:00",
+      "updated_at": "2026-10-23T09:00:00+07:00"
+    },
+    {
+      "id": 32,
+      "po_id": 14,
+      "item_id": 21,
+      "item_sku": "BRG-021",
+      "item_name": "Pipa PVC",
+      "uom_id": 2,
+      "uom_code": "MTR",
+      "allow_decimal": true,
+      "qty_ordered": "12.5000",
+      "qty_received": "0.0000",
+      "notes": null,
+      "created_by": 8,
+      "created_at": "2026-10-23T09:00:00+07:00",
+      "updated_at": "2026-10-23T09:00:00+07:00"
+    }
+  ]
+}
 ```
 
-Berhasil menghasilkan `200 OK` dengan status `CLOSED`, `closed_reason`, `closed_at`, dan `closed_by`.
+* **Aturan Bisnis & Audit:** Mencatat `PO_CREATED` pada `audit_logs` dalam transaksi yang sama.
+* **Kemungkinan Error:** `401 AUTH_TOKEN_INVALID`, `403 PERMISSION_DENIED`, `404 NOT_FOUND`, `422 INACTIVE_REFERENCE`, `422 VALIDATION_ERROR`.
 
-## 6. Field Response
+---
 
-### `PurchaseOrderSummaryOut`
+### 5.3 GET `/api/v1/purchase-orders/{po_id}` — Detail PO
 
-Mencakup `id`, `po_number`, `supplier_id`, `supplier_code`, `supplier_name`, `warehouse_id`, `warehouse_code`, `warehouse_name`, `status`, `order_date`, `notes`, `line_count`, `issued_at`, `issued_by`, `closed_reason`, `closed_at`, `closed_by`, `created_by`, `created_at`, dan `updated_at`. Field waktu bertipe ISO 8601 dengan zona waktu; field yang belum berlaku bernilai `null`.
+Mengambil detail lengkap satu Purchase Order beserta seluruh baris (`lines`).
 
-### `POLineOut`
+* **HTTP Method & URL:** `GET /api/v1/purchase-orders/{po_id}`
+* **Autentikasi & Permission:** Bearer Token, `po:read`
+* **Path Parameter:** `po_id` (integer, wajib).
+* **Response Berhasil:** `200 OK` (`PurchaseOrderOut`).
+* **Kemungkinan Error:** `401 AUTH_TOKEN_INVALID`, `403 PERMISSION_DENIED`, `403 WAREHOUSE_NOT_ASSIGNED` (jika pemanggil adalah *Warehouse Staff* yang tidak ditugaskan ke `warehouse_id` PO), `404 NOT_FOUND`.
 
-Mencakup `id`, `po_id`, `item_id`, `item_sku`, `item_name`, `uom_id`, `uom_code`, `allow_decimal`, `qty_ordered`, `qty_received`, `notes`, `created_by`, `created_at`, dan `updated_at`. Kuantitas diserialisasi sebagai string desimal empat tempat.
+---
 
-## 7. Error
+### 5.4 PATCH `/api/v1/purchase-orders/{po_id}` — Revisi PO
 
-Error mengikuti format umum `{ "error": { "code", "message", "details" } }`.
+Memperbarui informasi header dan/atau mengganti daftar baris PO selama berstatus `DRAFT`.
 
-| HTTP | Kode | Kondisi umum |
-| ---: | --- | --- |
-| `401` | `AUTH_TOKEN_INVALID` | Token tidak ada atau tidak valid. |
-| `403` | `PERMISSION_DENIED` | Permission tidak cukup; termasuk permission yang salah untuk membatalkan sesuai status PO. |
-| `403` | `WAREHOUSE_NOT_ASSIGNED` | Warehouse Staff membaca PO di luar penugasan. |
-| `404` | `NOT_FOUND` | PO, pemasok, gudang, atau barang tidak ditemukan. |
-| `409` | `INVALID_STATE_TRANSITION` | Revisi/aksi status tidak sesuai status PO atau terhalang GR. |
-| `422` | `INACTIVE_REFERENCE` | Pemasok, gudang, atau barang tidak aktif. |
-| `422` | `VALIDATION_ERROR` | Payload/filter/pagination tidak valid, duplikasi barang, kuantitas tidak valid, PO tanpa baris diterbitkan, atau alasan tutup kosong. |
+* **HTTP Method & URL:** `PATCH /api/v1/purchase-orders/{po_id}`
+* **Autentikasi & Permission:** Bearer Token, `po:create`
+* **Request Body (`PurchaseOrderUpdate`):** Seluruh field opsional (`supplier_id`, `warehouse_id`, `order_date`, `notes`, `lines`).
+  * Jika `lines` disertakan, daftar baris lama diganti seluruhnya dengan isi `lines` yang baru (`[]` mengosongkan baris).
+  * Jika `notes` dikirim `""` (string kosong), catatan dikosongkan menjadi `null`; jika `notes` tidak dikirim (`null`), catatan lama dipertahankan.
+* **Aturan Bisnis & Audit:**
+  * Baris PO dikunci dengan `SELECT ... FOR UPDATE`.
+  * Jika status PO bukan `DRAFT`, ditolak dengan `409 INVALID_STATE_TRANSITION`.
+  * Mencatat `PO_UPDATED` pada `audit_logs`.
+* **Response Berhasil:** `200 OK` (`PurchaseOrderOut`).
+* **Kemungkinan Error:** `401 AUTH_TOKEN_INVALID`, `403 PERMISSION_DENIED`, `404 NOT_FOUND`, `409 INVALID_STATE_TRANSITION`, `422 INACTIVE_REFERENCE`, `422 VALIDATION_ERROR`.
 
-## 8. Audit dan Pengujian
+---
 
-Pembuatan, revisi, penerbitan, pembatalan, dan penutupan dicatat pada `audit_logs` dengan aksi `PO_CREATED`, `PO_UPDATED`, `PO_ISSUED`, `PO_CANCELLED`, dan `PO_CLOSED`. Siklus PO, validasi, hak akses, warehouse scoping baca, serta audit diuji oleh `test_purchase_order_lifecycle_validations_rbac_and_audit`. Penerimaan parsial, over-receipt, dan pemenuhan PO diuji oleh `test_ac01_partial_receipt_over_receipt_and_po_fulfillment` (**AC-01**).
+### 5.5 POST `/api/v1/purchase-orders/{po_id}/issue` — Terbitkan PO
+
+Menerbitkan PO dari status `DRAFT` menjadi `ISSUED` sehingga siap digunakan untuk penerimaan barang (GR).
+
+* **HTTP Method & URL:** `POST /api/v1/purchase-orders/{po_id}/issue`
+* **Autentikasi & Permission:** Bearer Token, `po:issue`
+* **Request Body:** Tidak ada.
+* **Aturan Bisnis & Audit:**
+  * Mengunci header PO (`FOR UPDATE`), memastikan status saat ini adalah `DRAFT` (`409 INVALID_STATE_TRANSITION` bila bukan).
+  * Memvalidasi ulang bahwa pemasok dan gudang tujuan masih aktif (`422 INACTIVE_REFERENCE`), PO memiliki **minimal 1 baris** (`422 VALIDATION_ERROR` bila kosong), serta seluruh barang pada baris masih aktif dan memenuhi aturan kuantitas UoM.
+  * Mengisi `issued_at` dan `issued_by`, serta mencatat `PO_ISSUED` pada `audit_logs`.
+* **Response Berhasil:** `200 OK` (`PurchaseOrderOut` dengan `status: "ISSUED"`).
+* **Kemungkinan Error:** `401 AUTH_TOKEN_INVALID`, `403 PERMISSION_DENIED`, `404 NOT_FOUND`, `409 INVALID_STATE_TRANSITION`, `422 INACTIVE_REFERENCE`, `422 VALIDATION_ERROR`.
+
+---
+
+### 5.6 POST `/api/v1/purchase-orders/{po_id}/cancel` — Batalkan PO
+
+Membatalkan PO berstatus `DRAFT` atau `ISSUED` menjadi `CANCELLED`.
+
+* **HTTP Method & URL:** `POST /api/v1/purchase-orders/{po_id}/cancel`
+* **Autentikasi & Permission:** Bearer Token; membutuhkan `po:create` (untuk PO `DRAFT`) atau `po:cancel` (untuk PO `ISSUED`).
+* **Request Body:** Tidak ada.
+* **Aturan Bisnis & Audit:**
+  * Mengunci header PO (`FOR UPDATE`).
+  * Bila status `DRAFT`: wajib memiliki izin `po:create` (`403 PERMISSION_DENIED` bila tidak).
+  * Bila status `ISSUED`: wajib memiliki izin `po:cancel` dan tidak boleh memiliki dokumen GR berstatus `DRAFT` maupun `POSTED` (`409 INVALID_STATE_TRANSITION` bila sudah ada GR).
+  * Bila status selain `DRAFT`/`ISSUED`: ditolak dengan `409 INVALID_STATE_TRANSITION`.
+  * Mencatat `PO_CANCELLED` pada `audit_logs`.
+* **Response Berhasil:** `200 OK` (`PurchaseOrderOut` dengan `status: "CANCELLED"`).
+* **Kemungkinan Error:** `401 AUTH_TOKEN_INVALID`, `403 PERMISSION_DENIED`, `404 NOT_FOUND`, `409 INVALID_STATE_TRANSITION`.
+
+---
+
+### 5.7 POST `/api/v1/purchase-orders/{po_id}/close` — Tutup PO
+
+Menutup PO berstatus `ISSUED` atau `PARTIALLY_RECEIVED` menjadi `CLOSED` apabila sisa pesanan disepakati tidak dilanjutkan.
+
+* **HTTP Method & URL:** `POST /api/v1/purchase-orders/{po_id}/close`
+* **Autentikasi & Permission:** Bearer Token, `po:close`
+* **Request Body (`PurchaseOrderCloseRequest`):**
+  * `closed_reason` (string, wajib, tidak boleh kosong setelah *trim*).
+
+**Contoh Request**
+
+```json
+{
+  "closed_reason": "Sisa pesanan tidak dilanjutkan sesuai kesepakatan pemasok"
+}
+```
+
+* **Aturan Bisnis & Audit:**
+  * Mengunci header PO (`FOR UPDATE`).
+  * Hanya diizinkan dari status `ISSUED` atau `PARTIALLY_RECEIVED` (`409 INVALID_STATE_TRANSITION` untuk status lain).
+  * Ditolak dengan `409 INVALID_STATE_TRANSITION` apabila masih ada dokumen GR berstatus `DRAFT` yang merujuk pada PO ini (GR `POSTED` diperbolehkan).
+  * Menyimpan `closed_reason`, `closed_at`, `closed_by`, dan mencatat `PO_CLOSED` pada `audit_logs`.
+* **Response Berhasil:** `200 OK` (`PurchaseOrderOut` dengan `status: "CLOSED"`).
+* **Kemungkinan Error:** `401 AUTH_TOKEN_INVALID`, `403 PERMISSION_DENIED`, `404 NOT_FOUND`, `409 INVALID_STATE_TRANSITION`, `422 VALIDATION_ERROR`.
+
+---
+
+## 6. Relasi dan Ketergantungan
+
+| Objek / Tabel | Kunci & Constraint Utama (`004_create_purchasing_tables.sql`) | Relasi & Dampak |
+| --- | --- | --- |
+| `purchase_orders` | `pk_purchase_orders (id)`, `uq_purchase_orders_po_number (po_number)`, `uq_purchase_orders_id_warehouse (id, warehouse_id)`, `ck_purchase_orders_status` | Merujuk ke `suppliers (id)` dan `warehouses (id)` (`ON DELETE RESTRICT`). Constraint unik `(id, warehouse_id)` menjadi target *Composite Foreign Key* dari `goods_receipts (po_id, warehouse_id)` agar GR dijamin selalu menuju gudang yang sama dengan PO. |
+| `po_lines` | `pk_po_lines (id)`, `uq_po_lines_po_item (po_id, item_id)`, `uq_po_lines_id_po (id, po_id)`, `ck_po_lines_qty_ordered_positive`, `ck_po_lines_qty_received_bounds` | Constraint `CHECK (qty_received >= 0 AND qty_received <= qty_ordered)` menjaga batas penerimaan di level database selain pemeriksaan terkunci di `gr_service.post_goods_receipt()`. |
+| `document_sequences` | `pk_document_sequences (doc_type, period)` | Dikunci secara atomik (`INSERT ... ON CONFLICT DO UPDATE`) oleh `numbering_service.generate_document_number()` untuk menghasilkan `PO-YYYYMM-NNNN`. |
+
+Alur lapisan: `routes/purchase_orders.py` → `po_service.py` (`with conn.transaction():` + `numbering_service` + `access_service` + `audit_service`) → `po_repo.py` → PostgreSQL.
+
+---
+
+## 7. Contoh Penggunaan (cURL)
+
+```bash
+BASE=http://localhost:8000/api/v1
+
+# 1. Buat Purchase Order baru (DRAFT)
+curl -s -X POST "$BASE/purchase-orders" \
+  -H "Authorization: Bearer <PURCHASING_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "supplier_id": 1,
+    "warehouse_id": 1,
+    "order_date": "2026-10-23",
+    "notes": "Pengadaan rutin Oktober",
+    "lines": [
+      {"item_id": 1, "qty_ordered": "50.0000", "notes": "Kirim bertahap"}
+    ]
+  }'
+
+# 2. Terbitkan Purchase Order (DRAFT -> ISSUED)
+curl -s -X POST "$BASE/purchase-orders/1/issue" \
+  -H "Authorization: Bearer <PURCHASING_TOKEN>"
+
+# 3. Ambil daftar Purchase Order dengan filter status ISSUED
+curl -s "$BASE/purchase-orders?status=ISSUED&limit=20" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>"
+
+# 4. Tutup Purchase Order dengan alasan wajib (ISSUED/PARTIALLY_RECEIVED -> CLOSED)
+curl -s -X POST "$BASE/purchase-orders/1/close" \
+  -H "Authorization: Bearer <MANAGER_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"closed_reason": "Sisa pesanan dibatalkan oleh pemasok"}'
+```
+
+---
+
+## 8. Catatan dan Status Verifikasi
+
+| # | Status | Catatan |
+| --- | --- | --- |
+| 1 | ✅ Terverifikasi | Siklus hidup PO (`DRAFT → ISSUED → CANCELLED / CLOSED`), validasi referensi aktif, duplikasi item, aturan `allow_decimal` UoM, *Warehouse Scoping* pembacaan bagi *Warehouse Staff*, dan pencatatan `audit_logs` telah diuji di `test_purchase_order_lifecycle_validations_rbac_and_audit` (`tests/test_goods_receipt.py`). |
+| 2 | ✅ Terverifikasi | Pembaruan otomatis `qty_received` serta transisi status PO menjadi `PARTIALLY_RECEIVED` dan `RECEIVED` saat GR diposting telah diuji di `test_ac01_partial_receipt_over_receipt_and_po_fulfillment` (**AC-01**). |
+| 3 | ✅ Terverifikasi | Penolakan penerbitan PO oleh peran yang tidak berwenang (*Warehouse Staff*) dengan `403 PERMISSION_DENIED` telah diuji di `test_ac05_rbac_enforcement_and_audit_log_recording` (**AC-05**). |

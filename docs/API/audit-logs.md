@@ -27,7 +27,7 @@ Sesuai PRD 6.4 dan AGENTS.MD Invarian 2:
 
 ### 2.2 Daftar `action` yang Dihasilkan Saat Ini
 
-Berdasarkan kode layanan yang telah diimplementasikan saat ini (`auth_service.py`, `user_service.py`, `master_service.py`, `warehouse_service.py`, dan `scripts/create_superadmin.py`), nilai `action` dan `entity_type` yang tercatat di `audit_logs` meliputi:
+Berdasarkan seluruh kode layanan yang telah diimplementasikan (`auth_service.py`, `user_service.py`, `master_service.py`, `warehouse_service.py`, `po_service.py`, `gr_service.py`, `transfer_service.py`, `opname_service.py`, dan `scripts/create_superadmin.py`), nilai `action` dan `entity_type` yang tercatat di `audit_logs` meliputi:
 
 | `action` | `entity_type` | Pemicu | `user_id` |
 | --- | --- | --- | --- |
@@ -51,6 +51,10 @@ Berdasarkan kode layanan yang telah diimplementasikan saat ini (`auth_service.py
 | `ITEM_CREATED` / `ITEM_UPDATED` / `ITEM_DEACTIVATED` | `items` | Pembuatan, pembaruan, atau penonaktifan barang (`/api/v1/items`) | ID pemanggil |
 | `WAREHOUSE_CREATED` / `WAREHOUSE_UPDATED` / `WAREHOUSE_DEACTIVATED` | `warehouses` | Pembuatan, pembaruan (termasuk `allow_negative_stock`), atau penonaktifan gudang (`/api/v1/warehouses`) | ID pemanggil |
 | `LOCATION_CREATED` / `LOCATION_UPDATED` / `LOCATION_DEACTIVATED` | `storage_locations` | Pembuatan, pembaruan, atau penonaktifan lokasi penyimpanan (`/api/v1/locations` & `/api/v1/warehouses/{id}/locations`) | ID pemanggil |
+| `PO_CREATED` / `PO_UPDATED` / `PO_ISSUED` / `PO_CANCELLED` / `PO_CLOSED` | `purchase_orders` | Pembuatan, revisi `DRAFT`, penerbitan, pembatalan, penutupan, atau pembaruan pemenuhan PO (`/api/v1/purchase-orders`) | ID pemanggil |
+| `GR_CREATED` / `GR_UPDATED` / `GR_POSTED` / `GR_CANCELLED` | `goods_receipts` | Pembuatan, revisi `DRAFT`, posting, atau pembatalan Goods Receipt (`/api/v1/goods-receipts`) | ID pemanggil |
+| `TRANSFER_CREATED` / `TRANSFER_UPDATED` / `TRANSFER_APPROVED` / `TRANSFER_SHIPPED` / `TRANSFER_RECEIVED` / `TRANSFER_CANCELLED` | `stock_transfers` | Pembuatan, revisi `DRAFT`, persetujuan, pengiriman, penerimaan, atau pembatalan Transfer Stok (`/api/v1/stock-transfers`) | ID pemanggil |
+| `OPNAME_CREATED` / `OPNAME_UPDATED` / `OPNAME_STARTED` / `OPNAME_COUNTED` / `OPNAME_SUBMITTED` / `OPNAME_APPROVED` / `OPNAME_REJECTED` / `OPNAME_CANCELLED` | `stock_opnames` | Pembuatan, revisi `DRAFT`, mulai (*snapshot*), input hitung fisik, ajukan, setujui, tolak, atau batalkan sesi Stock Opname (`/api/v1/stock-opnames`) | ID pemanggil |
 
 ---
 
