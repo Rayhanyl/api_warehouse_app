@@ -58,8 +58,10 @@ class MenuTreeOut(BaseModel):
     parent_id: int | None = None
     sort_order: int
     permission_code: str | None = None
+    is_active: bool
+    is_visible: bool
+    menu_type: str
     children: list[MenuTreeOut] = Field(default_factory=list)
 
 
 MenuTreeOut.model_rebuild()
-

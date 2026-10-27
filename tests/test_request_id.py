@@ -35,6 +35,26 @@ def test_cors_allows_frontend_origin_and_required_headers(client):
 
     assert response.status_code == 200
     assert response.headers["Access-Control-Allow-Origin"] == "http://localhost:5173"
-    assert response.headers["Access-Control-Allow-Credentials"] == "false"
+    assert "Access-Control-Allow-Credentials" not in response.headers
     assert "X-Request-ID" in response.headers["Access-Control-Allow-Headers"]
-    assert response.headers["Access-Control-Expose-Headers"] == "X-Request-ID"
+
+    actual_response = client.get(
+        "/api/v1/health",
+        headers={"Origin": "http://localhost:5173"},
+    )
+    assert actual_response.status_code == 200
+    assert actual_response.headers["Access-Control-Expose-Headers"] == "X-Request-ID"
+
+
+def test_cors_allows_loopback_frontend_origin(client):
+    response = client.options(
+        "/api/v1/auth/refresh",
+        headers={
+            "Origin": "http://127.0.0.1:5173",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "Authorization, Content-Type",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["Access-Control-Allow-Origin"] == "http://127.0.0.1:5173"

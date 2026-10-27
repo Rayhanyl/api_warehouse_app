@@ -83,7 +83,8 @@ warehouse_app/
 │   ├── CORE/                       # Dokumen acuan utama (PRD, FOLDER_STRUCTURE, SCHEMA_DATABASE, aturan dokumentasi)
 │   └── QA/                         # Rencana dan spesifikasi pengujian
 ├── scripts/
-│   └── create_superadmin.py        # Bootstrap akun Super Admin pertama
+│   ├── create_superadmin.py        # Bootstrap akun Super Admin pertama
+│   └── seed_users.py               # Membuat akun pengembangan untuk setiap role
 ├── tests/                          # Pengujian otomatis berbasis pytest terhadap database wms_test
 ├── htmlcov/                        # Hasil generate laporan web Code Coverage (diabaikan oleh Git)
 ├── .env.example                    # Template variabel lingkungan umum
@@ -93,6 +94,29 @@ warehouse_app/
 ├── pyproject.toml                  # Konfigurasi proyek, dependensi, pytest, dan coverage
 └── AGENTS.MD                       # Aturan kerja dan batasan invarian bisnis
 ```
+
+### Membuat User Pengembangan untuk Setiap Role
+
+Setelah migrasi selesai, jalankan seeder berikut:
+
+```powershell
+python scripts/seed_users.py
+```
+
+Seeder membuat satu akun untuk setiap role RBAC. Password diminta melalui
+prompt tersembunyi. Untuk penggunaan non-interaktif, isi environment berikut
+sebelum menjalankan script:
+
+```powershell
+$env:SEED_SUPER_ADMIN_PASSWORD = "ubah-password-ini"
+$env:SEED_WAREHOUSE_MANAGER_PASSWORD = "ubah-password-ini"
+$env:SEED_PURCHASING_STAFF_PASSWORD = "ubah-password-ini"
+$env:SEED_WAREHOUSE_STAFF_PASSWORD = "ubah-password-ini"
+$env:SEED_AUDITOR_PASSWORD = "ubah-password-ini"
+python scripts/seed_users.py
+```
+
+Seeder tidak mengubah akun yang sudah ada dan tidak pernah mencetak password.
 
 ---
 
@@ -213,4 +237,3 @@ Invoke-Item .\htmlcov\index.html
 * [**Aturan Dokumentasi API**](docs/CORE/RULE_CREATE_API_DOKUMENTATION.MD) — Standar dokumentasi endpoint.
 * [**Panduan QA**](docs/QA/QA.MD) — Cakupan backend saat ini dan rencana QA frontend bila klien terpisah dibangun.
 * [**AGENTS.md**](AGENTS.MD) — Aturan kerja dan batasan invarian bisnis.
-

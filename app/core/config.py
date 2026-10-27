@@ -22,7 +22,10 @@ class Settings(BaseSettings):
     login_lock_minutes: int = 15
 
     frontend_origins: list[str] = Field(
-        default_factory=lambda: ["http://localhost:5173"],
+        default_factory=lambda: [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+        ],
         description="Daftar origin frontend yang diizinkan oleh CORS",
     )
     trusted_proxy_ips: list[str] = Field(default_factory=list)

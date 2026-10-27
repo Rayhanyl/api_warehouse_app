@@ -98,6 +98,10 @@ def test_ac14_menu_tree_filters_permissions_and_keeps_visible_parents(
         "ac14_menu_earlier",
         "ac14_menu_allowed",
     ]
+    assert visible_parent["menu_type"] == "group"
+    assert visible_parent["is_active"] is True
+    assert visible_parent["is_visible"] is True
+    assert visible_parent["children"][0]["menu_type"] == "item"
     assert _find_menu(purchasing_tree, "ac14_menu_hidden") is None
     assert _find_menu(purchasing_tree, "dashboard") is not None
 

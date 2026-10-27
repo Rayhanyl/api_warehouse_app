@@ -86,6 +86,9 @@ def get_my_menu_tree(
                     "parent_id": node["parent_id"],
                     "sort_order": int(node["sort_order"]),
                     "permission_code": req_perm,
+                    "is_active": True,
+                    "is_visible": True,
+                    "menu_type": "group" if node_id in has_db_children else "item",
                     "children": visible_children,
                 }
             )
@@ -402,4 +405,3 @@ def update_menu(
             ip_address=ip_address,
         )
         return updated
-
