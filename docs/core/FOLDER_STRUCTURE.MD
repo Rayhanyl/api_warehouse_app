@@ -29,6 +29,7 @@ warehouse_api/
 │   │   ├── common.py               # Page[T], ErrorResponse, tipe Decimal -> string
 │   │   ├── auth.py
 │   │   ├── user.py
+│   │   ├── menu.py                 # menu navigasi & pohon menu (my-menu)
 │   │   ├── master.py               # category, uom, item, supplier
 │   │   ├── warehouse.py            # warehouse, storage_location
 │   │   ├── stock.py                # saldo stok, in-transit, ledger
@@ -44,6 +45,7 @@ warehouse_api/
 │   │       ├── health.py
 │   │       ├── auth.py             # login, refresh, logout, me, change-password
 │   │       ├── users.py            # user, role/permission, penugasan gudang
+│   │       ├── menus.py            # pohon menu frontend (my-menu) & CRUD menu
 │   │       ├── master.py           # category, uom, item, supplier
 │   │       ├── warehouses.py       # warehouse + storage_location
 │   │       ├── stock.py            # saldo stok & ledger (read-only)
@@ -56,6 +58,7 @@ warehouse_api/
 │   ├── services/                   # use case + aturan bisnis; pemilik batas transaksi
 │   │   ├── auth_service.py
 │   │   ├── user_service.py
+│   │   ├── menu_service.py         # pohon menu terfilter permission & CRUD menu
 │   │   ├── access_service.py       # ensure_warehouse_access(): cek penugasan gudang (3.2 PRD)
 │   │   ├── master_service.py
 │   │   ├── warehouse_service.py
@@ -72,6 +75,7 @@ warehouse_api/
 │   │   ├── user_repo.py
 │   │   ├── token_repo.py           # refresh_tokens
 │   │   ├── permission_repo.py      # roles, permissions, role_permissions, user_warehouses
+│   │   ├── menu_repo.py            # menus
 │   │   ├── master_repo.py
 │   │   ├── warehouse_repo.py
 │   │   ├── inventory_repo.py       # ensure row, lock balance, update balance, insert ledger, query stok
@@ -97,7 +101,8 @@ warehouse_api/
 │   │   ├── 005_create_transfer_opname.sql  # stock_transfers(+lines), stock_opnames(+lines)
 │   │   ├── 006_create_audit_sequences.sql  # audit_logs, document_sequences
 │   │   ├── 007_append_only_guards.sql      # trigger tolak UPDATE/DELETE + REVOKE hak wms_app (AC-08)
-│   │   └── 008_seed_roles_permissions.sql  # 5 role, kode permission, pemetaan (Matriks 3.1 PRD)
+│   │   ├── 008_seed_roles_permissions.sql  # 5 role, kode permission, pemetaan (Matriks 3.1 PRD)
+│   │   └── 009_create_menu_tables.sql      # tabel menus + seed menu awal modul WMS
 │   ├── seeds/
 │   │   └── dev_seed.sql                    # data contoh untuk pengembangan lokal
 │   └── migrate.py                          # runner: jalankan .sql berurutan, catat di schema_migrations
@@ -109,6 +114,7 @@ warehouse_api/
 │   ├── conftest.py                 # DB test, migrasi, reset data antar test, fixture user per role
 │   ├── factories.py                # helper insert data (gudang, lokasi, item, PO, saldo)
 │   ├── test_auth.py                # AC-11
+│   ├── test_menus.py               # AC-14
 │   ├── test_rbac_scoping.py        # AC-05, AC-12
 │   ├── test_goods_receipt.py       # AC-01, AC-07, AC-13
 │   ├── test_stock_transfer.py      # AC-02, AC-03, AC-06, AC-09
@@ -233,6 +239,7 @@ Pola yang sama dipakai oleh `ship_transfer`, `receive_transfer`, dan `complete_o
 | --- | --- | --- | --- | --- | --- |
 | Autentikasi (FR-01) | `auth.py` | `auth_service` | `user_repo`, `token_repo` | `auth` | 001 |
 | Pengguna, role, penugasan gudang | `users.py` | `user_service`, `access_service` | `user_repo`, `permission_repo` | `user` | 001, 008 |
+| Menu navigasi (FR-01) | `menus.py` | `menu_service` | `menu_repo` | `menu` | 009 |
 | Master data (FR-02) | `master.py`, `warehouses.py` | `master_service`, `warehouse_service` | `master_repo`, `warehouse_repo` | `master`, `warehouse` | 002 |
 | Stok & in-transit (FR-03) | `stock.py` | `stock_service` | `inventory_repo` | `stock` | 003 |
 | Purchase Order (FR-04) | `purchase_orders.py` | `po_service` | `po_repo` | `purchase_order` | 004 |
@@ -287,11 +294,11 @@ TEST_DATABASE_URL=postgresql://wms_owner:...@localhost:5432/wms_test
 | Tahap | Isi | Selesai bila |
 | --- | --- | --- |
 | **M0 Fondasi** | Kerangka proyek, `config.py`, pool, middleware *request id*, `health`, `migrate.py`, docker-compose Postgres. | `GET /health` hidup dan migrasi kosong berjalan. |
-| **M1 Skema** | Migrasi 001–008 ditulis tangan: tabel, FK komposit, `UNIQUE`, `CHECK`, indeks, *trigger* append-only, seed role/permission. | Coba `UPDATE stock_movements` lewat `psql` dengan role `wms_app` → ditolak. |
+| **M1 Skema** | Migrasi 001–009 ditulis tangan: tabel, FK komposit, `UNIQUE`, `CHECK`, indeks, *trigger* append-only, seed role/permission, dan seed menu. | Coba `UPDATE stock_movements` lewat `psql` dengan role `wms_app` → ditolak; menu awal tersedia. |
 | **M2 Auth & Audit dasar** | Login, rotasi *refresh token*, `require_permission`, `audit_service`, `create_superadmin.py`. | AC-11 lulus. |
 | **M3 Master & penugasan** | CRUD master, aturan penonaktifan, `access_service`. | AC-12 (bagian akses) lulus. |
 | **M4 Inti stok** | `inventory_service.apply_movement`, `stock_service`, penomoran dokumen. | Uji langsung `apply_movement` dengan dua *thread* menunjukkan penguncian bekerja. |
 | **M5 PO & GR** | PO lengkap, GR, posting atomik. | AC-01, AC-07, AC-13 lulus. |
 | **M6 Transfer** | Alur `DRAFT → APPROVED → SHIPPED → RECEIVED`, selisih penerimaan. | AC-02, AC-03, AC-06, AC-09 lulus. |
 | **M7 Opname** | *Snapshot*, pembekuan lokasi, persetujuan/penolakan, penyesuaian. | AC-04, AC-10 lulus. |
-| **M8 Pengerasan** | Tinjau seluruh AC, `EXPLAIN ANALYZE` pada query stok & ledger, periksa indeks, log dan *request id*. | Seluruh AC-01 s.d. AC-13 hijau; baca stok < 200 ms pada data uji. |
+| **M8 Pengerasan** | Tinjau seluruh AC, `EXPLAIN ANALYZE` pada query stok & ledger, periksa indeks, log dan *request id*. | Seluruh AC-01 s.d. AC-14 hijau; baca stok < 200 ms pada data uji. |

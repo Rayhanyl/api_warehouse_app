@@ -13,7 +13,7 @@ Dokumen ini menggabungkan rencana dan spesifikasi QA WMS dalam satu tempat. Caku
 
 ## 1. Tujuan dan cara menggunakan
 
-Panduan ini membantu menentukan apa yang perlu diuji, urutan prioritas, dan bukti yang perlu dicatat. PRD dan acceptance criteria (AC-01 s.d. AC-13) tetap menjadi sumber kebenaran untuk perilaku sistem. Isi dokumen QA lama yang digabungkan di sini adalah bahan rujukan; daftar alat atau skenario yang berstatus rencana bukan berarti alat tersebut sudah dipasang atau dijalankan.
+Panduan ini membantu menentukan apa yang perlu diuji, urutan prioritas, dan bukti yang perlu dicatat. PRD dan acceptance criteria (AC-01 s.d. AC-14) tetap menjadi sumber kebenaran untuk perilaku sistem. Isi dokumen QA lama yang digabungkan di sini adalah bahan rujukan; daftar alat atau skenario yang berstatus rencana bukan berarti alat tersebut sudah dipasang atau dijalankan.
 
 Jalankan pengujian backend hanya pada database khusus `wms_test`. Jangan arahkan test/reset fixture ke database pengembangan atau produksi. Test database menggunakan PostgreSQL sungguhan; mock boleh digunakan untuk menguji bagian frontend secara terisolasi bila frontend kelak tersedia, tetapi tidak menggantikan verifikasi backend terhadap PostgreSQL.
 
@@ -36,6 +36,7 @@ Prioritaskan kebenaran transaksi stok, hak akses, dan integritas ledger. Test ot
 | --- | --- |
 | Autentikasi dan refresh token | `tests/test_auth.py` |
 | RBAC, warehouse scoping, master data | `tests/test_rbac_scoping.py` |
+| Menu navigasi dinamis | `tests/test_menus.py` |
 | Goods Receipt dan posting PO | `tests/test_goods_receipt.py` |
 | Transfer stok | `tests/test_stock_transfer.py` |
 | Stock Opname | `tests/test_stock_opname.py` |
@@ -61,6 +62,7 @@ Gunakan matriks ini sebagai daftar regresi wajib. Nama test ditulis sesuai imple
 | AC-11 | Rotasi refresh token, deteksi pemakaian ulang, dan logout | `test_ac11_refresh_token_rotation_reuse_detection_and_logout` |
 | AC-12 | Penugasan gudang dan penolakan akses di luar cakupan | `test_ac12_warehouse_scoping_assignment_and_access_enforcement` |
 | AC-13 | Dua posting GR bersamaan tidak mem-posting dokumen dua kali | `test_ac13_concurrent_gr_post_prevents_double_posting` |
+| AC-14 | Pohon menu terfilter permission, akses administrasi, audit, validasi parent, dan penonaktifan tanpa hard delete | `test_ac14_menu_tree_filters_permissions_and_keeps_visible_parents`; `test_ac14_menu_admin_permission_crud_and_audit_log`; `test_ac14_menu_parent_validation_and_soft_deactivation` |
 
 Test AC-06 dan AC-13 harus tetap diuji dengan konkurensi nyata: koneksi database terpisah dan sinkronisasi dua request. Jangan menggantinya dengan test berurutan atau mock, karena itu tidak menguji perlombaan transaksi.
 
@@ -96,7 +98,9 @@ Catatan M8 di `docs/API/README.md` memuat benchmark lokal yang pernah dilakukan.
 
 ### 2.5. Kriteria selesai QA backend
 
-- Seluruh AC yang terdampak perubahan lulus; sebelum rilis, suite AC-01 s.d. AC-13 lulus.
+- Seluruh AC yang terdampak perubahan lulus; sebelum rilis, suite AC-01 s.d. AC-14 lulus.
+- AC-14 menguji menu pada PostgreSQL nyata; permission menu hanya menyaring navigasi dan tidak menggantikan otorisasi endpoint backend.
+- Status run terbaru saat pembaruan dokumentasi: 21 tes lulus di `wms_test`, termasuk ketiga tes AC-14.
 - Tidak ada temuan terbuka yang mengancam integritas saldo/ledger, autentikasi, atau pembatasan akses.
 - Pemeriksaan saldo, ledger, audit, dan rollback konsisten dengan PRD.
 - Kinerja dilaporkan dengan lingkungan, ukuran data, metode, dan hasil p95; klaim target hanya dibuat bila hasilnya memang terukur.
@@ -120,7 +124,7 @@ Ketika frontend tersedia, uji tiap alur dengan akun sesuai peran dan penugasan g
 | Transfer | Gudang/lokasi asal dan tujuan, persetujuan, pengiriman, status in-transit, penerimaan penuh/kurang, dan alasan selisih wajib |
 | Stock Opname | Mulai sesi, lokasi beku, input hasil hitung, pengajuan, persetujuan/penolakan, dan selisih yang menghasilkan penyesuaian |
 | Saldo dan ledger | Filter lokasi/gudang/barang, pagination, urutan waktu, kuantitas desimal, serta navigasi ke dokumen referensi |
-| Akses per peran | Menu/tindakan relevan ditampilkan sesuai peran; respons 403 dari API tetap ditangani dengan benar |
+| Akses per peran | Pohon menu dari `GET /api/v1/menus/my-menu` sesuai permission; respons 403 dari API tetap ditangani dengan benar. Penyaringan menu tidak menggantikan kontrol permission API. |
 
 ### 3.3. Pengalaman, aksesibilitas, dan ketahanan
 
@@ -154,7 +158,7 @@ Untuk setiap temuan, catat:
 
 ## 5. Referensi
 
-- `docs/core/PRODUCT_REQUIREMENTS_DOCUMENT.md` — FR, aturan bisnis, AC-01 s.d. AC-13, dan target kinerja.
-- `docs/core/FOLDER_STRUCTURE.md` — struktur aplikasi dan urutan tahap implementasi.
+- `docs/CORE/PRODUCT_REQUIREMENTS_DOCUMENT.MD` — FR, aturan bisnis, AC-01 s.d. AC-14, dan target kinerja.
+- `docs/CORE/FOLDER_STRUCTURE.MD` — struktur aplikasi dan urutan tahap implementasi.
 - `docs/API/README.md` — indeks dokumentasi endpoint dan catatan penyelesaian implementasi.
 - `tests/` — implementasi skenario otomatis backend.

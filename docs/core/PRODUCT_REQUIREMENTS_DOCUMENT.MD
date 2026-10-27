@@ -33,7 +33,7 @@ Sistem Manajemen Gudang (*Warehouse Management System* / WMS) berbasis Python da
 6. **Stock Opname:** Pencatatan hasil hitung fisik, komparasi otomatis dengan stok sistem, pembekuan lokasi selama penghitungan, serta pembuatan penyesuaian stok (*stock adjustment*) setelah disetujui. Stock Opname juga menjadi mekanisme input **saldo awal** stok.
 7. **Buku Besar Pergerakan Stok (*Stock Movement Ledger*):** Pencatatan kronologis atas seluruh transaksi penambah dan pengurang stok.
 8. **Audit Log:** Pencatatan jejak audit perubahan data penting (siapa, kapan, aksi apa, nilai sebelum, dan nilai sesudah).
-9. **Autentikasi, Otorisasi & Manajemen Pengguna:** Pengamanan akses berbasis JWT (*Access Token* & *Refresh Token*), *Role-Based Access Control* (RBAC), dan penugasan pengguna ke gudang (*Warehouse Scoping*).
+9. **Autentikasi, Otorisasi, Manajemen Pengguna & Menu Navigasi:** Pengamanan akses berbasis JWT (*Access Token* & *Refresh Token*), *Role-Based Access Control* (RBAC), penugasan pengguna ke gudang (*Warehouse Scoping*), serta penyediaan struktur menu navigasi dinamis dari database (`menus`) berbasis *permission* agar klien *frontend* cukup merender menu yang diizinkan.
 
 ### 2.2. Batasan & Fitur di Luar Ruang Lingkup (*Out of Scope*)
 
@@ -48,7 +48,7 @@ Untuk menjaga fokus pengembangan tahap awal (MVP), fitur berikut **dinyatakan se
 * **Konversi Satuan (UoM Conversion):** Setiap barang memiliki satu UoM dasar; seluruh PO, GR, Transfer, dan Opname memakai UoM tersebut.
 * **Penerimaan Transfer Bertahap:** Penerimaan Transfer Stok dilakukan satu kali (final) per dokumen.
 * **Persetujuan PO Multi-Level:** Penerbitan PO tidak memerlukan alur persetujuan berjenjang; penerbitan oleh pengguna berwenang dianggap sebagai persetujuan.
-* **Antarmuka Pengguna & Integrasi Eksternal:** Tidak ada UI, notifikasi (email/WhatsApp), maupun integrasi ERP/barcode.
+* **Antarmuka Pengguna & Integrasi Eksternal:** Tidak ada UI/frontend yang dibangun dalam MVP, notifikasi (email/WhatsApp), maupun integrasi ERP/barcode. Metadata navigasi untuk dikonsumsi frontend disediakan melalui API dan bukan merupakan UI.
 
 ---
 
@@ -70,7 +70,7 @@ Kode permission di bawah ini dipakai langsung sebagai identitas izin pada sistem
 
 | Permission | Keterangan | Super Admin | Warehouse Manager | Purchasing Staff | Warehouse Staff | Auditor |
 | --- | --- | :---: | :---: | :---: | :---: | :---: |
-| `user:manage` | Kelola pengguna, role/permission, penugasan gudang | ✓ | – | – | – | – |
+| `user:manage` | Kelola pengguna, role/permission, penugasan gudang, dan struktur menu | ✓ | – | – | – | – |
 | `warehouse:manage` | Kelola gudang & konfigurasinya | ✓ | – | – | – | – |
 | `location:manage` | Kelola lokasi penyimpanan | ✓ | ✓ (g) | – | – | – |
 | `master:manage` | Kelola kategori, UoM, barang, pemasok | ✓ | – | ✓ | – | – |
@@ -95,7 +95,7 @@ Kode permission di bawah ini dipakai langsung sebagai identitas izin pada sistem
 | `ledger:read` | Baca Stock Movement Ledger | ✓ | ✓ | – | ✓ (g) | ✓ |
 | `audit:read` | Baca Audit Log | ✓ | – | – | – | ✓ |
 
-Setiap pengguna terautentikasi dapat melihat profil sendiri dan mengganti kata sandinya sendiri tanpa permission khusus.
+Setiap pengguna terautentikasi dapat melihat profil sendiri, mengambil pohon menu navigasi sesuai hak aksesnya (`GET /menus/my-menu`), dan mengganti kata sandinya sendiri tanpa permission khusus.
 
 ### 3.2. Aturan Penugasan Gudang (*Warehouse Scoping*)
 
@@ -117,7 +117,9 @@ Setiap pengguna terautentikasi dapat melihat profil sendiri dan mengganti kata s
 * *Refresh Token* berupa string acak opak, hanya disimpan dalam bentuk *hash*, dan dirotasi pada setiap penggunaan (token lama otomatis berstatus *revoked*). Penggunaan ulang token yang sudah *revoked* dianggap indikasi pencurian: seluruh *Refresh Token* aktif milik pengguna tersebut dicabut dan kejadian dicatat pada *Audit Log*.
 * *Logout* mencabut *Refresh Token* yang dipakai. Penonaktifan pengguna dan penggantian kata sandi mencabut seluruh *Refresh Token* milik pengguna.
 * Lima kali kegagalan login berturut-turut mengunci akun selama 15 menit. Setiap kegagalan login tercatat pada *Audit Log*.
-* Seluruh endpoint selain `login`, `refresh`, dan `health` mewajibkan *Bearer Token* dan pemeriksaan permission sesuai Matriks 3.1.
+* Seluruh endpoint selain `login`, `refresh`, dan `health` mewajibkan *Bearer Token*. Endpoint operasional/admin juga memeriksa permission sesuai Matriks 3.1; endpoint profil sendiri dan menu milik pengguna hanya memerlukan autentikasi.
+* Struktur menu navigasi disimpan di tabel `menus` (hierarki `parent_id`, `sort_order`, `path`, `icon`, dan `permission_id` opsional ke `permissions`). Klien *frontend* mengambil pohon menu aktif yang diizinkan untuk pengguna melalui `GET /api/v1/menus/my-menu`. Menu dengan `permission_id` hanya ditampilkan bila pengguna memiliki permission tersebut. Menu induk tanpa permission ditampilkan bila memiliki anak yang terlihat; menu mandiri tanpa permission ditampilkan bagi setiap pengguna terautentikasi. Menu tidak aktif dan anak yang tidak diizinkan tidak dikembalikan.
+* Pengguna dengan `user:manage` dapat melihat daftar/detail menu, membuat menu, dan memperbarui atau menonaktifkan menu. Penghapusan permanen tidak tersedia. Perubahan menu dicatat pada *Audit Log*.
 
 ### FR-02 — Master Data
 
@@ -449,6 +451,11 @@ Koreksi atas GR `POSTED` tidak dilakukan lewat pembalikan dokumen, melainkan mel
     * *Given* sebuah GR berstatus `DRAFT` sebesar 10 unit,
     * *When* dua permintaan posting untuk GR yang sama dikirim bersamaan, *Then* tepat satu berhasil, saldo stok bertambah hanya 10 unit, `qty_received` PO bertambah hanya 10, dan permintaan lainnya ditolak dengan `INVALID_STATE_TRANSITION`.
 
+14. **AC-14 (Menu Dinamis Berbasis Permission):**
+    * *Given* menu aktif tersusun sebagai hierarki dan sebagian menu memiliki `permission_id`, *When* pengguna terautentikasi meminta `GET /api/v1/menus/my-menu`, *Then* API mengembalikan pohon berurutan `sort_order` lalu `id`, hanya berisi menu aktif yang permission-nya dimiliki pengguna; menu induk tanpa permission hanya muncul jika memiliki anak yang terlihat, sedangkan menu mandiri tanpa permission terlihat bagi pengguna terautentikasi.
+    * *Given* pengguna tidak memiliki `user:manage`, *When* ia meminta operasi administrasi menu, *Then* permintaan ditolak dengan HTTP 403 dan `PERMISSION_DENIED`.
+    * *Given* pengguna memiliki `user:manage`, *When* ia membuat atau memperbarui menu yang valid, *Then* perubahan tersimpan dan tercatat pada *Audit Log*; kode menu duplikat ditolak dengan `DUPLICATE`, referensi permission/parent yang tidak ada ditolak, siklus hierarki ditolak dengan `VALIDATION_ERROR`, dan menu induk dengan submenu aktif tidak dapat dinonaktifkan (`ENTITY_IN_USE`).
+
 ---
 
 ## Lampiran A — Entitas Data Utama
@@ -463,6 +470,7 @@ Daftar ini menjadi acuan penyusunan berkas migrasi. Kolom audit umum (`created_a
 | `users` | `username` (unik), `email`, `password_hash`, `full_name`, `role_id`, `is_active`, `failed_login_count`, `locked_until`. |
 | `user_warehouses` | `(user_id, warehouse_id)` sebagai kunci utama; penugasan gudang. |
 | `refresh_tokens` | `user_id`, `token_hash` (unik), `expires_at`, `revoked_at`, `replaced_by_id`. |
+| `menus` | `code` (unik), `name`, `path`, `icon`, `parent_id` (self-FK), `sort_order`, `permission_id` (FK opsional ke `permissions`), `is_active`. |
 | `categories` | `name` (unik), `is_active`. |
 | `uoms` | `code` (unik), `name`, `allow_decimal`, `is_active`. |
 | `items` | `sku` (unik), `name`, `category_id`, `uom_id`, `is_active`. |
@@ -489,6 +497,7 @@ Daftar ini menjadi acuan penyusunan berkas migrasi. Kolom audit umum (`created_a
 
 * **Base path:** `/api/v1`. Autentikasi dengan header `Authorization: Bearer <access_token>`.
 * **Endpoint aksi transisi:** `POST /purchase-orders/{id}/issue|cancel|close`, `POST /goods-receipts/{id}/post|cancel`, `POST /stock-transfers/{id}/approve|ship|receive|cancel`, `POST /stock-opnames/{id}/start|submit|approve|reject|cancel`.
+* **Menu navigasi:** `GET /menus/my-menu` mengembalikan pohon menu aktif terfilter untuk pengguna terautentikasi; `GET /menus` dan `GET /menus/{id}` membaca katalog menu untuk `user:manage`; `POST /menus` membuat menu; `PATCH /menus/{id}` memperbarui atau menonaktifkan menu. Body pembuatan menerima `code`, `name`, `path`, `icon`, `parent_id`, `sort_order`, `permission_id`, dan `is_active`; `PATCH` menerima subset field tersebut serta `clear_parent`/`clear_permission` untuk menghapus relasi opsional. Operasi administrasi menu memerlukan `user:manage`; tidak ada endpoint hard delete. Pembuatan mengembalikan HTTP 201.
 * **Format waktu:** ISO 8601 UTC. **Format kuantitas:** string desimal.
 * **Pagination:** `limit` (bawaan 50, maks 200) dan `offset`; respons berbentuk `{ "items": [...], "total": n, "limit": n, "offset": n }`.
 * **Format error:** `{ "error": { "code": "INSUFFICIENT_STOCK", "message": "...", "details": { ... } } }`.
@@ -535,5 +544,7 @@ Daftar ini menjadi acuan penyusunan berkas migrasi. Kolom audit umum (`created_a
 | 13 | Out of scope diperluas: Goods Issue, retur/reversal, konversi UoM, penerimaan Transfer bertahap, persetujuan PO multi-level, UI. | Dibuat eksplisit agar MVP tetap fokus. |
 | 14 | Kriteria penerimaan: AC-02 dan AC-03 disesuaikan alur `APPROVED`; ditambahkan AC-06 sampai AC-13. | Menguji konkurensi, atomisitas, imutabilitas, pembekuan, token, *scoping*, dan posting ganda. |
 | 15 | Ditambahkan Lampiran A (entitas data), Lampiran B (konvensi API & kode error). | Landasan penulisan skema SQL dan implementasi API. |
+| 16 | Ditambahkan tabel `menus` (`009_create_menu_tables.sql`) dan endpoint `/api/v1/menus` (termasuk `/menus/my-menu` berbasis `permission_id`). | Atas persetujuan pemilik proyek agar klien *frontend* dapat langsung menampilkan struktur menu navigasi dinamis dari database sesuai hak akses pengguna. |
+| 17 | Diperjelas penyaringan pohon menu, operasi administrasi tanpa hard delete, audit log, endpoint menu, serta AC-14. | Menentukan perilaku yang dapat diuji untuk menu dinamis berbasis permission yang disetujui pemilik proyek. |
 
 **Keputusan yang perlu dikonfirmasi pemilik produk:** (a) penambahan status `APPROVED` pada Transfer; (b) Goods Issue tetap di luar MVP sehingga stok hanya berkurang lewat Transfer dan Opname; (c) PO memiliki satu gudang tujuan per dokumen; (d) pembekuan lokasi selama Opname.

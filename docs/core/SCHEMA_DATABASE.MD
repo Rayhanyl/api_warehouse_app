@@ -12,7 +12,7 @@
 ## 1. Prinsip Desain & Konvensi Skema
 
 1. **Akses PostgreSQL Langsung & Migrasi SQL Murni (PRD 7.5):**
-   * Aplikasi tidak menggunakan ORM (SQLAlchemy/Alembic). Seluruh perubahan skema dikelola melalui berkas SQL bernomor urut pada folder `db/migrations/` (`001_...sql` s.d. `008_...sql`) yang dijalankan oleh *runner* `db/migrate.py` dan dicatat pada tabel `schema_migrations`.
+   * Aplikasi tidak menggunakan ORM (SQLAlchemy/Alembic). Seluruh perubahan skema dikelola melalui berkas SQL bernomor urut pada folder `db/migrations/` (`001_...sql` s.d. `009_...sql`) yang dijalankan oleh *runner* `db/migrate.py` dan dicatat pada tabel `schema_migrations`.
    * Database memisahkan **role pemilik skema** (`wms_owner`, digunakan saat migrasi) dan **role aplikasi** (`wms_app`, digunakan oleh layanan FastAPI sehari-hari).
 
 2. **Konvensi Penamaan *Constraint* & Indeks Eksplisit (PRD 7.5):**
@@ -50,6 +50,7 @@ Sesuai arsitektur pada `FOLDER_STRUCTURE.md`, definisi DDL dibagi ke dalam berka
 | `db/migrations/006_create_audit_sequences.sql` | `audit_logs`, `document_sequences`. |
 | `db/migrations/007_append_only_guards.sql` | Fungsi & *trigger* penolak `UPDATE`/`DELETE` pada `stock_movements` & `audit_logs`, serta `GRANT`/`REVOKE` untuk `wms_app` (AC-08). |
 | `db/migrations/008_seed_roles_permissions.sql` | Data awal 5 peran dan 24 kode *permission* beserta pemetaannya sesuai Matriks 3.1 PRD. |
+| `db/migrations/009_create_menu_tables.sql` | Tabel `menus` (hierarki menu navigasi frontend berbasis `permission_id`) beserta data awal (*seed*) menu modul WMS. |
 
 ---
 
@@ -64,6 +65,8 @@ Sesuai arsitektur pada `FOLDER_STRUCTURE.md`, definisi DDL dibagi ke dalam berka
 | `warehouses` | `user_warehouses` | 1 : N | `CASCADE` | Gudang yang ditugaskan kepada pengguna. |
 | `users` | `refresh_tokens` | 1 : N | `CASCADE` | Sesi *Refresh Token* milik pengguna. |
 | `refresh_tokens` | `refresh_tokens` | 1 : 1 | `SET NULL` | Pelacakan rotasi token melalui `replaced_by_id` (FR-01, AC-11). |
+| `menus` | `menus` | 1 : N | `RESTRICT` | Hierarki menu induk–anak (`parent_id`). |
+| `permissions` | `menus` | 1 : N | `SET NULL` | Kode izin opsional (`permission_id`) untuk menyaring menu per pengguna. |
 | `categories` | `items` | 1 : N | `RESTRICT` | Kategori barang. |
 | `uoms` | `items` | 1 : N | `RESTRICT` | Satuan ukur dasar untuk setiap barang (FR-02). |
 | `warehouses` | `storage_locations` | 1 : N | `RESTRICT` | Satu gudang memiliki banyak lokasi/rak penyimpanan (*bin*). |
@@ -90,6 +93,7 @@ Sesuai arsitektur pada `FOLDER_STRUCTURE.md`, definisi DDL dibagi ke dalam berka
 * **`role_permissions`**: Pemetaan peran ke izin (`role_id`, `permission_id`, `created_at`).
 * **`users`**: Akun pengguna (`id`, `username` unik, `email` unik, `password_hash`, `full_name`, `role_id`, `is_active`, `failed_login_count`, `locked_until`, `last_login_at`, `created_by`, `created_at`, `updated_at`). Kolom `failed_login_count` dan `locked_until` mendukung penguncian akun 15 menit setelah 5 kali gagal login berturut-turut (FR-01).
 * **`refresh_tokens`**: Menyimpan *hash* *Refresh Token* (`id`, `user_id`, `token_hash` unik, `expires_at`, `revoked_at`, `replaced_by_id`, `created_at`). Mendukung rotasi token dan deteksi penggunaan ulang token yang sudah dicabut (FR-01, AC-11).
+* **`menus`** (`009_create_menu_tables.sql`): Katalog navigasi frontend: `id BIGINT GENERATED ALWAYS AS IDENTITY`, `code VARCHAR(50)` unik, `name VARCHAR(100)`, `path VARCHAR(150)`, `icon VARCHAR(50)` nullable, `parent_id BIGINT` nullable self-FK (`ON DELETE RESTRICT`), `sort_order INTEGER NOT NULL DEFAULT 0`, `permission_id BIGINT` nullable FK ke `permissions` (`ON DELETE SET NULL`), `is_active BOOLEAN NOT NULL DEFAULT TRUE`, `created_by BIGINT` nullable, `created_at` dan `updated_at TIMESTAMPTZ`. Check constraint melarang menu menjadi parent bagi dirinya sendiri. Indeks tersedia untuk `parent_id`, `permission_id`, `(sort_order, id)`, dan `is_active`. Migrasi 009 juga men-seed struktur menu awal WMS.
 
 ### 4.2. Domain Master Data & Penugasan Gudang — `002_create_master_tables.sql`
 

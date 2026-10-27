@@ -7,6 +7,7 @@ import uuid
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.routes import (
@@ -15,6 +16,7 @@ from app.api.routes import (
     goods_receipts,
     health,
     master,
+    menus,
     purchase_orders,
     stock,
     stock_opnames,
@@ -48,6 +50,19 @@ def create_app() -> FastAPI:
         version=settings.app_version,
         description="Warehouse Management System (WMS) REST API — FastAPI + PostgreSQL (psycopg 3)",
         lifespan=lifespan,
+    )
+
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.frontend_origins,
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "PATCH", "PUT", "OPTIONS"],
+        allow_headers=[
+            "Authorization",
+            "Content-Type",
+            "X-Request-ID",
+        ],
+        expose_headers=["X-Request-ID"],
     )
 
     @application.middleware("http")
@@ -118,6 +133,7 @@ def create_app() -> FastAPI:
     # Daftarkan router domain di bawah prefix /api/v1
     application.include_router(auth.router, prefix=settings.api_v1_prefix)
     application.include_router(users.router, prefix=settings.api_v1_prefix)
+    application.include_router(menus.router, prefix=settings.api_v1_prefix)
     application.include_router(master.router, prefix=settings.api_v1_prefix)
     application.include_router(warehouses.router, prefix=settings.api_v1_prefix)
     application.include_router(stock.router, prefix=settings.api_v1_prefix)

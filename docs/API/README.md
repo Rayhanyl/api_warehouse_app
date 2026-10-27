@@ -1,6 +1,6 @@
 # Dokumentasi API — Warehouse Management System (WMS)
 
-Dokumentasi teknis REST API untuk aplikasi **Warehouse Management System (WMS)** berbasis **Python (FastAPI)** dan **PostgreSQL** (`psycopg` 3 tanpa ORM). Seluruh isi dokumentasi ini disusun berdasarkan **implementasi kode aktual**, **skema migrasi SQL (`001`–`008`)**, **pengujian otomatis (`pytest`)**, serta dokumen acuan [PRODUCT_REQUIREMENTS_DOCUMENT.MD](../core/PRODUCT_REQUIREMENTS_DOCUMENT.MD).
+Dokumentasi teknis REST API untuk aplikasi **Warehouse Management System (WMS)** berbasis **Python (FastAPI)** dan **PostgreSQL** (`psycopg` 3 tanpa ORM). Seluruh isi dokumentasi ini disusun berdasarkan **implementasi kode aktual**, **skema migrasi SQL (`001`–`009`)**, **pengujian otomatis (`pytest`)**, serta dokumen acuan [PRODUCT_REQUIREMENTS_DOCUMENT.MD](../CORE/PRODUCT_REQUIREMENTS_DOCUMENT.MD).
 
 ---
 
@@ -41,17 +41,17 @@ Seluruh error bisnis (`DomainError`), error validasi request (`RequestValidation
 | `AUTH_TOO_MANY_ATTEMPTS` | 429 | `AuthTooManyAttempts` | Aktif (`/auth/login` saat akun terkunci) |
 | `PERMISSION_DENIED` | 403 | `PermissionDenied` | Aktif (`require_permission`) |
 | `WAREHOUSE_NOT_ASSIGNED` | 403 | `WarehouseNotAssigned` | Aktif pada pengelolaan lokasi serta aksi/data gudang terlingkup PO, GR, Transfer, dan Opname |
-| `NOT_FOUND` | 404 | `NotFoundError` | Aktif pada master data, PO, GR, Transfer, dan Stock Opname |
-| `VALIDATION_ERROR` | 422 | `ValidationDomainError` & `RequestValidationError` | Aktif (payload, pagination, sorting, kuantitas, format email, dan aturan dokumen) |
+| `NOT_FOUND` | 404 | `NotFoundError` | Aktif pada master data, PO, GR, Transfer, Stock Opname, dan menu |
+| `VALIDATION_ERROR` | 422 | `ValidationDomainError` & `RequestValidationError` | Aktif (payload, pagination, sorting, kuantitas, format email, aturan dokumen, dan hierarki menu) |
 | `INVALID_LOCATION` | 422 | `InvalidLocationError` | Aktif (referensi lokasi tidak cocok, tidak ditemukan, atau tidak aktif pada operasi gudang) |
-| `INACTIVE_REFERENCE` | 422 | `InactiveReferenceError` | Aktif pada master data dan referensi dokumen PO, GR, Transfer, dan Opname yang tidak aktif |
-| `DUPLICATE` | 409 | `DuplicateError` | Aktif (`/users`, `/categories`, `/uoms`, `/suppliers`, `/items`, `/warehouses`, `/locations`) |
+| `INACTIVE_REFERENCE` | 422 | `InactiveReferenceError` | Aktif pada master data, referensi dokumen PO/GR/Transfer/Opname, dan parent menu yang tidak aktif |
+| `DUPLICATE` | 409 | `DuplicateError` | Aktif (`/users`, `/menus`, `/categories`, `/uoms`, `/suppliers`, `/items`, `/warehouses`, `/locations`) |
 | `INVALID_STATE_TRANSITION` | 409 | `InvalidStateTransition` | Aktif (PO, GR, Transfer, Opname; status dokumen tidak sesuai aksi) |
 | `INSUFFICIENT_STOCK` | 409 | `InsufficientStock` | Aktif (pengiriman Transfer saat stok tidak cukup dan stok negatif dilarang) |
 | `OVER_RECEIPT` | 409 | `OverReceipt` | Aktif (posting GR melebihi sisa kuantitas PO) |
 | `TRANSFER_QTY_EXCEEDS_SHIPPED` | 409 | `TransferQtyExceedsShipped` | Aktif (penerimaan Transfer melebihi jumlah dikirim) |
 | `LOCATION_FROZEN` | 409 | `LocationFrozen` | Aktif saat sesi Opname membekukan lokasi yang akan dimutasi atau memiliki sesi tumpang tindih |
-| `ENTITY_IN_USE` | 409 | `EntityInUse` | Aktif (`/categories/{id}`, `/uoms/{id}`, `/suppliers/{id}`, `/items/{id}`, `/warehouses/{id}`, `/locations/{id}` saat penonaktifan ditolak atau perubahan SKU/UoM barang yang sudah bertransaksi) |
+| `ENTITY_IN_USE` | 409 | `EntityInUse` | Aktif (`/menus/{id}` saat parent masih memiliki anak aktif; serta master data saat penonaktifan/perubahan ditolak karena masih digunakan) |
 | `INTERNAL_ERROR` | 500 | Handler `Exception` umum | Aktif (`app/main.py`) |
 
 ---
@@ -65,6 +65,7 @@ Sesuai pentahapan di [`docs/CORE/FOLDER_STRUCTURE.MD`](../CORE/FOLDER_STRUCTURE.
 | **Health Check** | [health.md](health.md) | ✅ **Aktif** (2 endpoint) | Pemeriksaan status layanan API dan konektivitas pool PostgreSQL. |
 | **Autentikasi & Otorisasi** | [authentication.md](authentication.md) | ✅ **Aktif** (5 endpoint) | Login JWT, rotasi & deteksi penggunaan ulang *Refresh Token*, penguncian akun, logout, profil `/me`, dan ganti kata sandi. |
 | **Pengguna, RBAC & Penugasan Gudang** | [users.md](users.md) | ✅ **Aktif** (9 endpoint) | CRUD pengguna, penonaktifan akun, daftar & pengaturan *role/permission*, serta penugasan gudang (*Warehouse Scoping*). |
+| **Menu Navigasi Dinamis** | [menus.md](menus.md) | ✅ **Aktif** (5 endpoint) | Pohon menu terfilter permission pengguna dan administrasi menu tanpa hard delete (FR-01, AC-14). |
 | **Master Data** (`master.py`) | [master-data.md](master-data.md) | ✅ **Aktif** (16 endpoint) | CRUD Kategori, Satuan Ukur (UoM + `allow_decimal`), Pemasok, dan Barang (SKU), beserta perlindungan `ENTITY_IN_USE` dan imutabilitas SKU/UoM dasar (FR-02). |
 | **Gudang & Lokasi** (`warehouses.py`) | [warehouses.md](warehouses.md) | ✅ **Aktif** (10 endpoint) | CRUD Gudang (`allow_negative_stock`) & Lokasi Penyimpanan (*Bin/Rack*) dengan penegakan *Warehouse Scoping* (`location:manage`) dan perlindungan `ENTITY_IN_USE` (FR-02). |
 | **Audit Log** | [audit-logs.md](audit-logs.md) | ✅ **Aktif** (1 endpoint) | Pembacaan jejak audit *append-only* dengan filter pengguna, aksi, entitas, dan rentang tanggal. |
@@ -78,7 +79,7 @@ Sesuai pentahapan di [`docs/CORE/FOLDER_STRUCTURE.MD`](../CORE/FOLDER_STRUCTURE.
 
 ---
 
-## 3. Ringkasan Endpoint Utama yang Didokumentasikan (82 entri)
+## 3. Ringkasan Endpoint Utama yang Didokumentasikan (87 entri)
 
 | # | Method | Endpoint | Fungsi | Auth | Permission | Dokumen |
 | :-: | --- | --- | --- | --- | --- | --- |
@@ -164,6 +165,11 @@ Sesuai pentahapan di [`docs/CORE/FOLDER_STRUCTURE.MD`](../CORE/FOLDER_STRUCTURE.
 | 80 | POST | `/api/v1/stock-opnames/{opname_id}/approve` | Setujui dan terapkan selisih | Bearer | `opname:approve` | [stock-opnames.md](stock-opnames.md#58-post-apiv1stock-opnamesopname_idapprove--setujui) |
 | 81 | POST | `/api/v1/stock-opnames/{opname_id}/reject` | Tolak dan minta hitung ulang | Bearer | `opname:approve` | [stock-opnames.md](stock-opnames.md#59-post-apiv1stock-opnamesopname_idreject--tolak) |
 | 82 | POST | `/api/v1/stock-opnames/{opname_id}/cancel` | Batalkan sesi `DRAFT`/`IN_PROGRESS` | Bearer | `opname:manage` | [stock-opnames.md](stock-opnames.md#510-post-apiv1stock-opnamesopname_idcancel--batalkan) |
+| 83 | GET | `/api/v1/menus/my-menu` | Ambil pohon menu aktif sesuai permission pengguna | Bearer | – (autentikasi saja) | [menus.md](menus.md#41-mengambil-pohon-menu-pengguna) |
+| 84 | GET | `/api/v1/menus` | Daftar katalog menu (pagination, filter, pencarian, sorting) | Bearer | `user:manage` | [menus.md](menus.md#42-membaca-katalog-menu) |
+| 85 | POST | `/api/v1/menus` | Buat menu navigasi | Bearer | `user:manage` | [menus.md](menus.md#43-membuat-menu) |
+| 86 | GET | `/api/v1/menus/{menu_id}` | Detail menu berdasarkan ID | Bearer | `user:manage` | [menus.md](menus.md#44-membaca-detail-menu) |
+| 87 | PATCH | `/api/v1/menus/{menu_id}` | Ubah atau nonaktifkan menu | Bearer | `user:manage` | [menus.md](menus.md#45-memperbarui-atau-menonaktifkan-menu) |
 
 ---
 
@@ -186,8 +192,9 @@ Seluruh temuan hasil tinjauan silang antara kode aktual, skema database, penguji
 6. **Master Data, Gudang, Lokasi Penyimpanan & Penegakan `ENTITY_IN_USE` / `WAREHOUSE_NOT_ASSIGNED` (Tahap M3)** — ✅ **Terverifikasi** ([master-data.md](master-data.md#8-catatan-dan-status-verifikasi), [warehouses.md](warehouses.md#8-catatan-dan-status-verifikasi)):
    * Seluruh 26 endpoint pada `master.py` dan `warehouses.py` telah diimplementasikan dan diuji di `tests/test_rbac_scoping.py` (`test_ac12_warehouse_scoping_assignment_and_access_enforcement` dan `test_master_data_and_warehouse_crud_deactivation_and_sku_immutability`).
    * Penonaktifan entitas yang masih bersaldo atau dipakai pada dokumen belum final ditolak dengan `409 ENTITY_IN_USE`, perubahan SKU/UoM barang setelah bertransaksi ditolak dengan `409 ENTITY_IN_USE`, dan pengelolaan lokasi pada gudang yang tidak ditugaskan ditolak dengan `403 WAREHOUSE_NOT_ASSIGNED`.
-7. **Verifikasi Akhir M8 — AC-01 sampai AC-13 & performa query** — ✅ **AC lulus; query di bawah 200 ms pada benchmark lokal**:
-   * Seluruh 18 test lulus dengan PostgreSQL sungguhan (`wms_test`), termasuk skenario AC-01 sampai AC-13 dan validasi `X-Request-ID`.
+7. **Verifikasi Akhir M8 — AC-01 sampai AC-14 & performa query** — ✅ **AC lulus; query di bawah 200 ms pada benchmark lokal**:
+   * Seluruh 21 test lulus dengan PostgreSQL sungguhan (`wms_test`), termasuk skenario AC-01 sampai AC-14 dan validasi `X-Request-ID`.
    * `EXPLAIN ANALYZE` pada data benchmark sementara 10.000 saldo/barang dan 1.000.000 baris ledger mencatat 5,550 ms untuk halaman saldo per lokasi, 0,105 ms untuk halaman ledger 50 baris, dan 122,527 ms untuk hitung ledger rentang 30 hari setelah `VACUUM (ANALYZE)`. Query hitung memakai index-only scan; indeks relevan sudah tersedia pada migrasi 003.
    * Tanpa `VACUUM`, query hitung pada pengukuran awal memakai parallel sequential scan dan memerlukan 271,429 ms. Pengukuran ini satu kali pada mesin lokal, bukan uji p95 API di bawah 20 pengguna bersamaan; performa produksi tetap perlu dikonfirmasi pada lingkungan dan pola pemeliharaan PostgreSQL produksi. Data benchmark telah dibersihkan dari `wms_test` setelah pengukuran.
 8. **Validasi `X-Request-ID` (PRD 7.6)** — ✅ **Terverifikasi** (`tests/test_request_id.py`): nilai aman hingga 128 karakter dipertahankan; nilai dengan karakter di luar whitelist atau panjang berlebih diganti dengan UUID agar tidak masuk ke log mentah.
+9. **Menu navigasi dinamis (FR-01, AC-14)** — ✅ **Terverifikasi** (`tests/test_menus.py`): pohon menu tersaring menurut permission, parent tanpa anak terlihat disembunyikan, operasi katalog dibatasi `user:manage`, audit log tercatat, dan parent aktif tidak dapat dinonaktifkan selama memiliki anak aktif.

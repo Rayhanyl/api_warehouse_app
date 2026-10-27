@@ -96,6 +96,11 @@ def reset_test_data(setup_test_database: str) -> Generator[None, None, None]:
             RESTART IDENTITY CASCADE
             """
         )
+        # Put test-created nodes at the root before deleting so self-FK RESTRICT
+        # does not depend on row deletion order.
+        conn.execute("UPDATE menus SET parent_id = NULL WHERE created_by IS NOT NULL")
+        conn.execute("DELETE FROM menus WHERE created_by IS NOT NULL")
+        conn.execute("UPDATE menus SET is_active = TRUE WHERE created_by IS NULL")
     yield
 
 
