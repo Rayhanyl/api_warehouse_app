@@ -13,10 +13,26 @@ env/
 .env.*
 !.env.example
 
+# Local documentation and generated notes
+docs/
+
 # Testing & coverage
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Runtime and local development artifacts
+*.log
+*.pid
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+*.bak
+
+# Operating system files
+.DS_Store
+Thumbs.db
 
 # IDE
 .vscode/
