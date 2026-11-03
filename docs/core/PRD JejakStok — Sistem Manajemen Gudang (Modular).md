@@ -21,7 +21,7 @@ Isinya merapikan PRD v2.0 (`PRODUCT_REQUIREMENTS_DOCUMENT.MD`) tanpa mengubah at
 | `SCHEMA_DATABASE.MD` | DDL dan migrasi PostgreSQL | Mengikuti PRD; pemilik tiap tabel ada di bagian Model Data |
 | `PRD_FRONTEND.md` | Kebutuhan antarmuka React | Merujuk ID modul dan aturan; tidak menambah aturan bisnis |
 | `FOLDER_STRUCTURE.md`, `FOLDER_STRUCTURE.MD` | Struktur folder dan arsitektur kode | Satu folder fitur per modul |
-| `RULE_CREATE_API_DOKUMENTATION.MD` | Aturan menulis `docs/api/` | Satu berkas API per modul; bila kode aktual berbeda dari PRD, kode menang dan selisihnya dicatat |
+| `docs/STANDARDS/DOCUMENTATION_STANDARDS.md` | Aturan penulisan dokumentasi | Satu informasi memiliki satu pemilik sumber kebenaran dan selisih implementasi dicatat |
 
 ## Visi, Tujuan, dan Ruang Lingkup
 
@@ -270,7 +270,7 @@ Versi modul memakai `MAJOR.MINOR`. MINOR naik bila fitur atau aturan ditambah ta
 2. **Telusuri dampak.** Lihat baris Dipakai oleh dan tabel kontrak, lalu jalankan daftar periksa dampak di bawah.
 3. **Ubah hanya di modul pemilik.** Modul terdampak cukup diberi rujukan ke ID, bukan salinan teks.
 4. **Catat.** Tambahkan baris di Change Log, perbarui Keterlacakan, dan naikkan versi modul.
-5. **Sinkronkan turunan.** Perbarui `SCHEMA_DATABASE.MD`, `docs/api/`, dan `PRD_FRONTEND.md`. Selisih antara PRD dan kode yang belum terselesaikan ditandai Perlu Ditinjau sesuai `RULE_CREATE_API_DOKUMENTATION.MD`.
+5. **Sinkronkan turunan.** Perbarui `SCHEMA_DATABASE.MD`, `docs/api/`, dan `PRD_FRONTEND.md`. Selisih antara PRD dan kode yang belum terselesaikan ditandai Perlu Ditinjau sesuai [Documentation Standards](../STANDARDS/DOCUMENTATION_STANDARDS.md).
 
 ### Daftar periksa dampak
 

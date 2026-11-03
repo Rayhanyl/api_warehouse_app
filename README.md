@@ -234,6 +234,5 @@ Invoke-Item .\htmlcov\index.html
 * [**PRD**](docs/CORE/PRODUCT_REQUIREMENTS_DOCUMENT.MD) — Kebutuhan fungsional, RBAC, status, validasi, error, dan AC-01–AC-13.
 * [**Struktur Proyek**](docs/CORE/FOLDER_STRUCTURE.MD) — Arsitektur, transaksi, locking, serta urutan milestone.
 * [**Skema Database**](docs/CORE/SCHEMA_DATABASE.MD) — Entitas, relasi, migrasi, dan trigger.
-* [**Aturan Dokumentasi API**](docs/CORE/RULE_CREATE_API_DOKUMENTATION.MD) — Standar dokumentasi endpoint.
 * [**Panduan QA**](docs/QA/QA.MD) — Cakupan backend saat ini dan rencana QA frontend bila klien terpisah dibangun.
 * [**AGENTS.md**](AGENTS.MD) — Aturan kerja dan batasan invarian bisnis.
