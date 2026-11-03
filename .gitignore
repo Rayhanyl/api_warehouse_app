@@ -13,8 +13,8 @@ env/
 .env.*
 !.env.example
 
-# Local documentation and generated notes
-docs/
+# Generated local notes (committed product documentation lives in docs/)
+docs/_local/
 
 # Testing & coverage
 .pytest_cache/

@@ -5,8 +5,8 @@ Dokumen ini menggabungkan rencana dan spesifikasi QA WMS dalam satu tempat. Caku
 | Informasi | Keterangan |
 | --- | --- |
 | Produk | Warehouse Management System (WMS) REST API |
-| Acuan utama | `docs/core/PRODUCT_REQUIREMENTS_DOCUMENT.md` (PRD v2.0) |
-| Acuan struktur | `docs/core/FOLDER_STRUCTURE.md` |
+| Acuan utama | [`docs/core/PRODUCT_REQUIREMENTS_DOCUMENT.MD`](../core/PRODUCT_REQUIREMENTS_DOCUMENT.MD) (PRD v2.0) |
+| Acuan struktur | [`docs/core/FOLDER_STRUCTURE.MD`](../core/FOLDER_STRUCTURE.MD) |
 | Backend saat ini | Python, FastAPI, PostgreSQL, `pytest` dan `httpx` |
 | Database pengujian | PostgreSQL `wms_test` |
 | Status frontend | Belum termasuk MVP; tidak ada aplikasi frontend di repository ini |
