@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ============================================================================
@@ -18,6 +18,12 @@ class CategoryUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     description: str | None = Field(default=None, max_length=1000)
     is_active: bool | None = None
+
+    @model_validator(mode="after")
+    def _ensure_non_empty_patch(self) -> "CategoryUpdate":
+        if not self.model_fields_set:
+            raise ValueError("Minimal satu field harus dikirim untuk pembaruan data.")
+        return self
 
 
 class CategoryOut(BaseModel):
@@ -45,6 +51,12 @@ class UomUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=60)
     allow_decimal: bool | None = None
     is_active: bool | None = None
+
+    @model_validator(mode="after")
+    def _ensure_non_empty_patch(self) -> "UomUpdate":
+        if not self.model_fields_set:
+            raise ValueError("Minimal satu field harus dikirim untuk pembaruan data.")
+        return self
 
 
 class UomOut(BaseModel):
@@ -80,6 +92,12 @@ class SupplierUpdate(BaseModel):
     address: str | None = Field(default=None, max_length=1000)
     is_active: bool | None = None
 
+    @model_validator(mode="after")
+    def _ensure_non_empty_patch(self) -> "SupplierUpdate":
+        if not self.model_fields_set:
+            raise ValueError("Minimal satu field harus dikirim untuk pembaruan data.")
+        return self
+
 
 class SupplierOut(BaseModel):
     id: int
@@ -102,8 +120,8 @@ class ItemCreate(BaseModel):
     sku: str = Field(..., min_length=1, max_length=64)
     name: str = Field(..., min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=1000)
-    category_id: int
-    uom_id: int
+    category_id: int = Field(..., gt=0)
+    uom_id: int = Field(..., gt=0)
     is_active: bool = True
 
 
@@ -111,9 +129,15 @@ class ItemUpdate(BaseModel):
     sku: str | None = Field(default=None, min_length=1, max_length=64)
     name: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=1000)
-    category_id: int | None = None
-    uom_id: int | None = None
+    category_id: int | None = Field(default=None, gt=0)
+    uom_id: int | None = Field(default=None, gt=0)
     is_active: bool | None = None
+
+    @model_validator(mode="after")
+    def _ensure_non_empty_patch(self) -> "ItemUpdate":
+        if not self.model_fields_set:
+            raise ValueError("Minimal satu field harus dikirim untuk pembaruan data.")
+        return self
 
 
 class ItemOut(BaseModel):

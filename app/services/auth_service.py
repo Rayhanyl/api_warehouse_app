@@ -312,9 +312,9 @@ def change_password(
     ip_address: str | None = None,
 ) -> None:
     """Mengganti kata sandi pengguna aktif dan mencabut seluruh Refresh Token miliknya (FR-01, PRD 7.2)."""
-    if len(new_password) < 8:
+    if len(new_password) < 8 or not new_password.strip():
         raise ValidationDomainError(
-            "Kata sandi baru minimal harus terdiri dari 8 karakter."
+            "Kata sandi baru minimal harus terdiri dari 8 karakter dan tidak boleh hanya berisi spasi."
         )
 
     actor_id = int(actor["id"])

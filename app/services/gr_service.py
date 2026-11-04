@@ -28,6 +28,7 @@ from app.utils.enums import DocType, GRStatus, MovementType, POStatus, Reference
 from app.utils.pagination import build_order_by, normalize_pagination
 
 FOUR_PLACES = Decimal("0.0001")
+MAX_QTY = Decimal("99999999999999.9999")
 
 GR_SORT_COLUMNS: dict[str, str] = {
     "id": "gr.id",
@@ -59,6 +60,11 @@ def _normalize_positive_qty(value: Decimal, *, field_name: str = "qty_received")
                 details={"field": field_name, "value": str(value)},
             ) from exc
 
+    if not value.is_finite():
+        raise ValidationDomainError(
+            f"Field '{field_name}' harus berupa angka yang valid.",
+            details={"field": field_name, "value": str(value)},
+        )
     quantized = value.quantize(FOUR_PLACES)
     if quantized != value:
         raise ValidationDomainError(
@@ -69,6 +75,11 @@ def _normalize_positive_qty(value: Decimal, *, field_name: str = "qty_received")
         raise ValidationDomainError(
             f"Field '{field_name}' harus lebih besar dari 0.",
             details={"field": field_name, "value": str(quantized)},
+        )
+    if quantized > MAX_QTY:
+        raise ValidationDomainError(
+            f"Field '{field_name}' melebihi batas maksimum NUMERIC(18,4) ({MAX_QTY}).",
+            details={"field": field_name, "value": str(quantized), "max_qty": str(MAX_QTY)},
         )
     return quantized
 
@@ -357,6 +368,18 @@ def create_goods_receipt(
                 details={"warehouse_id": warehouse_id},
             )
 
+        if received_date < po["order_date"]:
+            raise ValidationDomainError(
+                "Tanggal penerimaan (received_date) tidak boleh lebih awal dari tanggal pesanan PO (order_date).",
+                details={
+                    "po_id": po_id,
+                    "order_date": po["order_date"].isoformat()
+                    if isinstance(po["order_date"], date)
+                    else str(po["order_date"]),
+                    "received_date": received_date.isoformat(),
+                },
+            )
+
         po_lines_by_id = {int(ln["id"]): ln for ln in po["lines"]}
         normalized_lines = _validate_and_normalize_gr_lines(
             conn,
@@ -450,6 +473,20 @@ def update_goods_receipt(
         new_received_date = (
             received_date if received_date is not None else locked["received_date"]
         )
+        if new_received_date < po["order_date"]:
+            raise ValidationDomainError(
+                "Tanggal penerimaan (received_date) tidak boleh lebih awal dari tanggal pesanan PO (order_date).",
+                details={
+                    "gr_id": gr_id,
+                    "po_id": po_id,
+                    "order_date": po["order_date"].isoformat()
+                    if isinstance(po["order_date"], date)
+                    else str(po["order_date"]),
+                    "received_date": new_received_date.isoformat()
+                    if isinstance(new_received_date, date)
+                    else str(new_received_date),
+                },
+            )
         new_notes = (
             (notes.strip() if notes.strip() else None)
             if notes is not None

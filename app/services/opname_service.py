@@ -30,6 +30,7 @@ from app.utils.pagination import build_order_by, normalize_pagination
 
 FOUR_PLACES = Decimal("0.0001")
 ZERO = Decimal("0.0000")
+MAX_QTY = Decimal("99999999999999.9999")
 ENTITY_TYPE = "stock_opnames"
 
 OPNAME_SORT_COLUMNS: dict[str, str] = {
@@ -97,6 +98,11 @@ def _normalize_non_negative_qty(value: Any, *, field_name: str = "qty_physical")
         raise ValidationDomainError(
             f"Field '{field_name}' tidak boleh bernilai negatif (harus >= 0).",
             details={"field": field_name, "value": str(quantized)},
+        )
+    if quantized > MAX_QTY:
+        raise ValidationDomainError(
+            f"Field '{field_name}' melebihi batas maksimum NUMERIC(18,4) ({MAX_QTY}).",
+            details={"field": field_name, "value": str(quantized), "max_qty": str(MAX_QTY)},
         )
     return quantized
 

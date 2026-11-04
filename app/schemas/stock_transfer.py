@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.schemas.common import DecimalStr
 
@@ -16,7 +16,7 @@ def _reject_float(v: Any) -> Any:
 
 
 class StockTransferLineInput(BaseModel):
-    item_id: int
+    item_id: int = Field(..., gt=0)
     qty: Decimal
 
     @field_validator("qty", mode="before")
@@ -44,25 +44,31 @@ class StockTransferLineOut(BaseModel):
 
 
 class StockTransferCreate(BaseModel):
-    source_warehouse_id: int
-    source_location_id: int
-    destination_warehouse_id: int
-    destination_location_id: int
+    source_warehouse_id: int = Field(..., gt=0)
+    source_location_id: int = Field(..., gt=0)
+    destination_warehouse_id: int = Field(..., gt=0)
+    destination_location_id: int = Field(..., gt=0)
     notes: str | None = Field(default=None, max_length=1000)
     lines: list[StockTransferLineInput] = Field(default_factory=list)
 
 
 class StockTransferUpdate(BaseModel):
-    source_warehouse_id: int | None = None
-    source_location_id: int | None = None
-    destination_warehouse_id: int | None = None
-    destination_location_id: int | None = None
+    source_warehouse_id: int | None = Field(default=None, gt=0)
+    source_location_id: int | None = Field(default=None, gt=0)
+    destination_warehouse_id: int | None = Field(default=None, gt=0)
+    destination_location_id: int | None = Field(default=None, gt=0)
     notes: str | None = Field(default=None, max_length=1000)
     lines: list[StockTransferLineInput] | None = None
 
+    @model_validator(mode="after")
+    def _ensure_non_empty_patch(self) -> "StockTransferUpdate":
+        if not self.model_fields_set:
+            raise ValueError("Minimal satu field harus dikirim untuk pembaruan data.")
+        return self
+
 
 class StockTransferReceiveLine(BaseModel):
-    line_id: int
+    line_id: int = Field(..., gt=0)
     qty_received: Decimal
     variance_reason: str | None = Field(default=None, max_length=500)
 

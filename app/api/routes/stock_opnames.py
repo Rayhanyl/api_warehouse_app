@@ -38,7 +38,7 @@ def list_stock_opnames(
     status_filter: str | None = Query(default=None, alias="status"),
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
-    search: str | None = Query(default=None),
+    search: str | None = Query(default=None, max_length=100),
     sort_by: str | None = Query(default=None),
     sort_dir: str | None = Query(default=None),
     actor: dict[str, Any] = Depends(require_permission(OPNAME_READ)),

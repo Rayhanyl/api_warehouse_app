@@ -4,13 +4,13 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.schemas.common import DecimalStr
 
 
 class POLineInput(BaseModel):
-    item_id: int
+    item_id: int = Field(..., gt=0)
     qty_ordered: Decimal
     notes: str | None = Field(default=None, max_length=500)
 
@@ -40,19 +40,25 @@ class POLineOut(BaseModel):
 
 
 class PurchaseOrderCreate(BaseModel):
-    supplier_id: int
-    warehouse_id: int
+    supplier_id: int = Field(..., gt=0)
+    warehouse_id: int = Field(..., gt=0)
     order_date: date
     notes: str | None = Field(default=None, max_length=1000)
     lines: list[POLineInput] = Field(default_factory=list)
 
 
 class PurchaseOrderUpdate(BaseModel):
-    supplier_id: int | None = None
-    warehouse_id: int | None = None
+    supplier_id: int | None = Field(default=None, gt=0)
+    warehouse_id: int | None = Field(default=None, gt=0)
     order_date: date | None = None
     notes: str | None = Field(default=None, max_length=1000)
     lines: list[POLineInput] | None = None
+
+    @model_validator(mode="after")
+    def _ensure_non_empty_patch(self) -> "PurchaseOrderUpdate":
+        if not self.model_fields_set:
+            raise ValueError("Minimal satu field harus dikirim untuk pembaruan data.")
+        return self
 
 
 class PurchaseOrderCloseRequest(BaseModel):

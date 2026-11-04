@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ============================================================================
@@ -23,6 +23,12 @@ class WarehouseUpdate(BaseModel):
     allow_negative_stock: bool | None = None
     is_active: bool | None = None
 
+    @model_validator(mode="after")
+    def _ensure_non_empty_patch(self) -> "WarehouseUpdate":
+        if not self.model_fields_set:
+            raise ValueError("Minimal satu field harus dikirim untuk pembaruan data.")
+        return self
+
 
 class WarehouseOut(BaseModel):
     id: int
@@ -40,7 +46,7 @@ class WarehouseOut(BaseModel):
 # Storage Locations (Bins / Racks)
 # ============================================================================
 class StorageLocationCreate(BaseModel):
-    warehouse_id: int
+    warehouse_id: int = Field(..., gt=0)
     code: str = Field(..., min_length=1, max_length=50)
     name: str = Field(..., min_length=1, max_length=120)
     is_active: bool = True
@@ -56,6 +62,12 @@ class StorageLocationUpdate(BaseModel):
     code: str | None = Field(default=None, min_length=1, max_length=50)
     name: str | None = Field(default=None, min_length=1, max_length=120)
     is_active: bool | None = None
+
+    @model_validator(mode="after")
+    def _ensure_non_empty_patch(self) -> "StorageLocationUpdate":
+        if not self.model_fields_set:
+            raise ValueError("Minimal satu field harus dikirim untuk pembaruan data.")
+        return self
 
 
 class StorageLocationOut(BaseModel):

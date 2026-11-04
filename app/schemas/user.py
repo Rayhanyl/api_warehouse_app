@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class UserCreate(BaseModel):
@@ -10,7 +10,7 @@ class UserCreate(BaseModel):
     email: str = Field(..., min_length=3, max_length=255)
     password: str = Field(..., min_length=8, max_length=255)
     full_name: str = Field(..., min_length=1, max_length=150)
-    role_id: int
+    role_id: int = Field(..., gt=0)
     is_active: bool = True
     warehouse_ids: list[int] = Field(default_factory=list)
 
@@ -18,9 +18,15 @@ class UserCreate(BaseModel):
 class UserUpdate(BaseModel):
     email: str | None = Field(default=None, min_length=3, max_length=255)
     full_name: str | None = Field(default=None, min_length=1, max_length=150)
-    role_id: int | None = None
+    role_id: int | None = Field(default=None, gt=0)
     is_active: bool | None = None
     password: str | None = Field(default=None, min_length=8, max_length=255)
+
+    @model_validator(mode="after")
+    def _ensure_non_empty_patch(self) -> "UserUpdate":
+        if not self.model_fields_set:
+            raise ValueError("Minimal satu field harus dikirim untuk pembaruan data.")
+        return self
 
 
 class UserOut(BaseModel):

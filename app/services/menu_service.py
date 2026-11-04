@@ -17,6 +17,22 @@ from app.services import audit_service
 from app.utils.pagination import build_order_by, normalize_pagination
 
 CODE_REGEX = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
+ICON_REGEX = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+
+
+def _validate_icon_format(icon: str | None) -> str | None:
+    """Memvalidasi nama ikon agar sesuai format identifier kebab-case (mis. 'layout-dashboard', 'package-check')."""
+    if icon is None:
+        return None
+    clean = icon.strip()
+    if not clean:
+        return None
+    if not ICON_REGEX.match(clean):
+        raise ValidationDomainError(
+            "Format nama icon tidak valid; gunakan huruf kecil, angka, dan tanda hubung (kebab-case, mis. 'package-check').",
+            details={"field": "icon", "value": clean},
+        )
+    return clean
 
 MENU_SORT_COLUMNS: dict[str, str] = {
     "id": "m.id",
@@ -209,6 +225,19 @@ def _validate_parent_menu(
             ancestor = menu_repo.get_menu_by_id(conn, int(cursor_parent_id))
             cursor_parent_id = ancestor["parent_id"] if ancestor else None
 
+    # Batasi kedalaman hierarki maksimal 2 tingkat (Group -> Item)
+    if parent["parent_id"] is not None:
+        raise ValidationDomainError(
+            "Hierarki menu maksimal terdiri dari 2 tingkat (grup tingkat 1 dan submenu tingkat 2); menu induk yang dipilih sudah merupakan submenu.",
+            details={"parent_id": parent_id, "parent_of_parent_id": parent["parent_id"]},
+        )
+
+    if current_menu_id is not None and menu_repo.has_any_child_menus(conn, current_menu_id):
+        raise ValidationDomainError(
+            "Menu yang memiliki submenu tidak dapat dijadikan submenu di bawah menu lain (maksimal 2 tingkat hierarki).",
+            details={"menu_id": current_menu_id, "parent_id": parent_id},
+        )
+
 
 def create_menu(
     conn: Connection[dict[str, Any]],
@@ -227,7 +256,7 @@ def create_menu(
     clean_code = code.strip()
     clean_name = name.strip()
     clean_path = path.strip()
-    clean_icon = icon.strip() if icon and icon.strip() else None
+    clean_icon = _validate_icon_format(icon)
 
     if not clean_code:
         raise ValidationDomainError(
@@ -345,7 +374,7 @@ def update_menu(
                 details={"field": "path", "value": new_path},
             )
 
-        if new_code != locked["code"]:
+        if new_code.lower() != str(locked["code"]).lower():
             dup = menu_repo.get_menu_by_code(conn, new_code)
             if dup and int(dup["id"]) != menu_id:
                 raise DuplicateError(
@@ -354,7 +383,7 @@ def update_menu(
                 )
 
         if icon is not None:
-            new_icon = icon.strip() if icon.strip() else None
+            new_icon = _validate_icon_format(icon)
         else:
             new_icon = locked["icon"]
 

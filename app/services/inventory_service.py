@@ -25,6 +25,7 @@ from app.utils.enums import (
 )
 
 FOUR_PLACES = Decimal("0.0001")
+MAX_QTY = Decimal("99999999999999.9999")
 
 
 def _normalize_decimal_qty(value: Decimal) -> Decimal:
@@ -43,11 +44,21 @@ def _normalize_decimal_qty(value: Decimal) -> Decimal:
                 details={"value": str(value)},
             ) from exc
 
+    if not value.is_finite():
+        raise ValidationDomainError(
+            "Kuantitas harus berupa angka yang valid.",
+            details={"value": str(value)},
+        )
     quantized = value.quantize(FOUR_PLACES)
     if quantized != value:
         raise ValidationDomainError(
             "Kuantitas maksimal memiliki 4 angka di belakang koma.",
             details={"value": str(value)},
+        )
+    if abs(quantized) > MAX_QTY:
+        raise ValidationDomainError(
+            f"Kuantitas melebihi batas maksimum NUMERIC(18,4) ({MAX_QTY}).",
+            details={"value": str(quantized), "max_qty": str(MAX_QTY)},
         )
     return quantized
 

@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.schemas.common import DecimalStr
 
@@ -18,21 +18,27 @@ def _reject_float(v: Any) -> Any:
 
 
 class StockOpnameCreate(BaseModel):
-    warehouse_id: int
-    location_id: int | None = None
+    warehouse_id: int = Field(..., gt=0)
+    location_id: int | None = Field(default=None, gt=0)
     notes: str | None = Field(default=None, max_length=1000)
 
 
 class StockOpnameUpdate(BaseModel):
-    location_id: int | None = None
+    location_id: int | None = Field(default=None, gt=0)
     clear_location: bool = False
     notes: str | None = Field(default=None, max_length=1000)
 
+    @model_validator(mode="after")
+    def _ensure_non_empty_patch(self) -> "StockOpnameUpdate":
+        if not self.model_fields_set:
+            raise ValueError("Minimal satu field harus dikirim untuk pembaruan data.")
+        return self
+
 
 class StockOpnameCountLineInput(BaseModel):
-    line_id: int | None = None
-    location_id: int | None = None
-    item_id: int | None = None
+    line_id: int | None = Field(default=None, gt=0)
+    location_id: int | None = Field(default=None, gt=0)
+    item_id: int | None = Field(default=None, gt=0)
     qty_physical: Decimal
     notes: str | None = Field(default=None, max_length=500)
 

@@ -205,6 +205,29 @@ def test_ac14_menu_admin_permission_crud_and_audit_log(
     assert duplicate.status_code == 409
     assert duplicate.json()["error"]["code"] == "DUPLICATE"
 
+    # Case-insensitive duplicate check ('AC14_ADMIN_MENU' vs 'ac14_admin_menu') -> 409 DUPLICATE
+    duplicate_case = client.post(
+        "/api/v1/menus",
+        headers=superadmin_user["auth_headers"],
+        json={**payload, "code": "AC14_ADMIN_MENU"},
+    )
+    assert duplicate_case.status_code == 409
+    assert duplicate_case.json()["error"]["code"] == "DUPLICATE"
+
+    # Format icon tidak valid (mengandung spasi/simbol) -> 422 VALIDATION_ERROR
+    bad_icon = client.post(
+        "/api/v1/menus",
+        headers=superadmin_user["auth_headers"],
+        json={
+            "code": "ac14_bad_icon",
+            "name": "Bad Icon",
+            "path": "/ac14/bad-icon",
+            "icon": "Invalid Icon!",
+        },
+    )
+    assert bad_icon.status_code == 422
+    assert bad_icon.json()["error"]["code"] == "VALIDATION_ERROR"
+
     updated = client.patch(
         f"/api/v1/menus/{menu_id}",
         headers=superadmin_user["auth_headers"],
@@ -268,6 +291,20 @@ def test_ac14_menu_parent_validation_and_soft_deactivation(
     )
     assert cycle.status_code == 422
     assert cycle.json()["error"]["code"] == "VALIDATION_ERROR"
+
+    # Mencoba membuat menu tingkat ke-3 (grandchild di bawah child_id) -> ditolak 422 VALIDATION_ERROR
+    grandchild_res = client.post(
+        "/api/v1/menus",
+        headers=superadmin_user["auth_headers"],
+        json={
+            "code": "ac14_grandchild",
+            "name": "Grandchild",
+            "path": "/ac14/parent/child/grandchild",
+            "parent_id": child_id,
+        },
+    )
+    assert grandchild_res.status_code == 422
+    assert grandchild_res.json()["error"]["code"] == "VALIDATION_ERROR"
 
     deactivate_parent = client.patch(
         f"/api/v1/menus/{parent_id}",

@@ -300,6 +300,20 @@ def test_ac01_partial_receipt_over_receipt_and_po_fulfillment(
         json={"warehouse_ids": [wh_a["id"]]},
     )
 
+    # Validasi batas atas kuantitas NUMERIC(18,4) (< 10^14) -> ditolak 422 VALIDATION_ERROR
+    overflow_po = client.post(
+        "/api/v1/purchase-orders",
+        headers=purchasing_user["auth_headers"],
+        json={
+            "supplier_id": sup["id"],
+            "warehouse_id": wh_a["id"],
+            "order_date": "2026-10-23",
+            "lines": [{"item_id": item["id"], "qty_ordered": "100000000000000"}],
+        },
+    )
+    assert overflow_po.status_code == 422
+    assert overflow_po.json()["error"]["code"] == "VALIDATION_ERROR"
+
     # Buat PO di Gudang A dengan qty_ordered = 100 dan terbitkan (ISSUED)
     po_res = client.post(
         "/api/v1/purchase-orders",
@@ -340,6 +354,25 @@ def test_ac01_partial_receipt_over_receipt_and_po_fulfillment(
         headers=purchasing_user["auth_headers"],
     )
     assert issue_res.status_code == 200
+
+    # Tanggal penerimaan (received_date) lebih awal dari tanggal pesanan PO (order_date) -> 422 VALIDATION_ERROR
+    early_date_res = client.post(
+        "/api/v1/goods-receipts",
+        headers=staff_user["auth_headers"],
+        json={
+            "po_id": po["id"],
+            "received_date": "2026-10-22",
+            "lines": [
+                {
+                    "po_line_id": po_line_id,
+                    "location_id": loc_a1["id"],
+                    "qty_received": "10",
+                }
+            ],
+        },
+    )
+    assert early_date_res.status_code == 422
+    assert early_date_res.json()["error"]["code"] == "VALIDATION_ERROR"
 
     # Lokasi dari gudang berbeda (loc_b1 milik wh_b) ditolak -> 422 INVALID_LOCATION
     mismatch_res = client.post(

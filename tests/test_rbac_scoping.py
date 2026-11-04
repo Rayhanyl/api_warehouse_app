@@ -548,7 +548,8 @@ def test_master_data_and_warehouse_crud_deactivation_and_sku_immutability(
     assert loc2_upd.status_code == 200
     assert loc2_upd.json()["is_active"] is False
 
-    # 9. Validasi format kode/SKU (menolak simbol acak/spasi), format telepon pemasok, dan batas panjang alamat/deskripsi
+    # 9. Validasi format kode/SKU (menolak simbol acak/spasi), format telepon pemasok, batas panjang alamat/deskripsi,
+    #    serta penolakan body PATCH kosong ({}) dan ID kunci asing <= 0
     bad_sku_res = client.post(
         "/api/v1/items",
         headers=purchasing_user["auth_headers"],
@@ -561,6 +562,34 @@ def test_master_data_and_warehouse_crud_deactivation_and_sku_immutability(
     )
     assert bad_sku_res.status_code == 422
     assert bad_sku_res.json()["error"]["code"] == "VALIDATION_ERROR"
+
+    bad_fk_res = client.post(
+        "/api/v1/items",
+        headers=purchasing_user["auth_headers"],
+        json={
+            "sku": "SKU-FK-NEG",
+            "name": "Barang FK Negatif",
+            "category_id": 0,
+            "uom_id": -5,
+        },
+    )
+    assert bad_fk_res.status_code == 422
+    assert bad_fk_res.json()["error"]["code"] == "VALIDATION_ERROR"
+
+    empty_patch_res = client.patch(
+        f"/api/v1/warehouses/{wh2['id']}",
+        headers=superadmin_user["auth_headers"],
+        json={},
+    )
+    assert empty_patch_res.status_code == 422
+    assert empty_patch_res.json()["error"]["code"] == "VALIDATION_ERROR"
+
+    too_long_search_res = client.get(
+        f"/api/v1/items?search={'A' * 101}",
+        headers=auditor_user["auth_headers"],
+    )
+    assert too_long_search_res.status_code == 422
+    assert too_long_search_res.json()["error"]["code"] == "VALIDATION_ERROR"
 
     bad_phone_res = client.post(
         "/api/v1/suppliers",
@@ -777,17 +806,40 @@ def test_m4_inventory_apply_movement_concurrency_stock_views_and_ledger(
     assert Decimal(adj_mov["qty_after"]) == Decimal("5.0000")
 
     # Selesaikan Opname & buat 1 Transfer berstatus SHIPPED menuju Lokasi B1 untuk menguji perhitungan qty_in_transit
-    db_conn.execute("UPDATE stock_opnames SET status = 'COMPLETED' WHERE id = %s", (opn_row["id"],))
+    db_conn.execute(
+        """
+        UPDATE stock_opnames
+        SET status = 'COMPLETED',
+            submitted_at = CURRENT_TIMESTAMP,
+            submitted_by = %s,
+            approved_at = CURRENT_TIMESTAMP,
+            approved_by = %s
+        WHERE id = %s
+        """,
+        (superadmin_user["id"], superadmin_user["id"], opn_row["id"]),
+    )
     trf_row = db_conn.execute(
         """
         INSERT INTO stock_transfers (
             transfer_number, source_warehouse_id, source_location_id,
-            destination_warehouse_id, destination_location_id, status, created_by
+            destination_warehouse_id, destination_location_id, status,
+            approved_at, approved_by, shipped_at, shipped_by, created_by
         )
-        VALUES ('TRF-202610-0001', %s, %s, %s, %s, 'SHIPPED', %s)
+        VALUES (
+            'TRF-202610-0001', %s, %s, %s, %s, 'SHIPPED',
+            CURRENT_TIMESTAMP, %s, CURRENT_TIMESTAMP, %s, %s
+        )
         RETURNING id
         """,
-        (wh_a["id"], loc_a1["id"], wh_b["id"], loc_b1["id"], superadmin_user["id"]),
+        (
+            wh_a["id"],
+            loc_a1["id"],
+            wh_b["id"],
+            loc_b1["id"],
+            superadmin_user["id"],
+            superadmin_user["id"],
+            superadmin_user["id"],
+        ),
     ).fetchone()
     assert trf_row is not None
     db_conn.execute(

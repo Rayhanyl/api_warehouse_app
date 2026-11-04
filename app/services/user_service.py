@@ -102,8 +102,10 @@ def create_user(
     ip_address: str | None = None,
 ) -> dict[str, Any]:
     """Membuat akun pengguna baru, menetapkan penugasan gudang bila ada, dan menulis Audit Log."""
-    if len(password) < 8:
-        raise ValidationDomainError("Kata sandi minimal harus terdiri dari 8 karakter.")
+    if len(password) < 8 or not password.strip():
+        raise ValidationDomainError(
+            "Kata sandi minimal harus terdiri dari 8 karakter dan tidak boleh hanya berisi spasi."
+        )
 
     clean_username = username.strip()
     if not USERNAME_REGEX.match(clean_username):
@@ -138,8 +140,11 @@ def create_user(
                 details={"role_id": role_id},
             )
 
-        if warehouse_ids:
-            _validate_warehouses_exist_and_active(conn, warehouse_ids)
+        clean_warehouse_ids = (
+            sorted({int(wid) for wid in warehouse_ids}) if warehouse_ids else []
+        )
+        if clean_warehouse_ids:
+            _validate_warehouses_exist_and_active(conn, clean_warehouse_ids)
 
         pw_hash = hash_password(password)
         created = user_repo.insert_user(
@@ -153,11 +158,11 @@ def create_user(
             created_by=int(actor["id"]),
         )
 
-        if warehouse_ids:
+        if clean_warehouse_ids:
             permission_repo.update_user_warehouses(
                 conn,
                 user_id=int(created["id"]),
-                warehouse_ids=warehouse_ids,
+                warehouse_ids=clean_warehouse_ids,
                 actor_id=int(actor["id"]),
             )
             created = user_repo.get_user_auth_context(conn, int(created["id"]))
@@ -188,8 +193,10 @@ def update_user(
     ip_address: str | None = None,
 ) -> dict[str, Any]:
     """Memperbarui data pengguna; mencabut seluruh Refresh Token bila dinonaktifkan atau ganti password (FR-01)."""
-    if password is not None and len(password) < 8:
-        raise ValidationDomainError("Kata sandi minimal harus terdiri dari 8 karakter.")
+    if password is not None and (len(password) < 8 or not password.strip()):
+        raise ValidationDomainError(
+            "Kata sandi minimal harus terdiri dari 8 karakter dan tidak boleh hanya berisi spasi."
+        )
 
     now = datetime.now(timezone.utc)
     actor_id = int(actor["id"])
@@ -222,7 +229,7 @@ def update_user(
             if email is not None
             else before_ctx["email"]
         )
-        if new_email != before_ctx["email"]:
+        if new_email.lower() != str(before_ctx["email"]).lower():
             existing_email = user_repo.get_user_by_email(conn, new_email)
             if existing_email and int(existing_email["id"]) != user_id:
                 raise DuplicateError(

@@ -4,14 +4,14 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.schemas.common import DecimalStr
 
 
 class GRLineInput(BaseModel):
-    po_line_id: int
-    location_id: int
+    po_line_id: int = Field(..., gt=0)
+    location_id: int = Field(..., gt=0)
     qty_received: Decimal
     notes: str | None = Field(default=None, max_length=500)
 
@@ -46,7 +46,7 @@ class GRLineOut(BaseModel):
 
 
 class GoodsReceiptCreate(BaseModel):
-    po_id: int
+    po_id: int = Field(..., gt=0)
     received_date: date
     notes: str | None = Field(default=None, max_length=1000)
     lines: list[GRLineInput] = Field(default_factory=list)
@@ -56,6 +56,12 @@ class GoodsReceiptUpdate(BaseModel):
     received_date: date | None = None
     notes: str | None = Field(default=None, max_length=1000)
     lines: list[GRLineInput] | None = None
+
+    @model_validator(mode="after")
+    def _ensure_non_empty_patch(self) -> "GoodsReceiptUpdate":
+        if not self.model_fields_set:
+            raise ValueError("Minimal satu field harus dikirim untuk pembaruan data.")
+        return self
 
 
 class GoodsReceiptSummaryOut(BaseModel):

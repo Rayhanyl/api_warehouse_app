@@ -142,7 +142,7 @@ def get_menu_by_code(
         """
         SELECT id, code, name, is_active
         FROM menus
-        WHERE code = %s
+        WHERE LOWER(code) = LOWER(%s)
         """,
         (code,),
     ).fetchone()
@@ -165,6 +165,21 @@ def has_active_child_menus(
         SELECT 1 AS in_use
         FROM menus
         WHERE parent_id = %s AND is_active = TRUE
+        LIMIT 1
+        """,
+        (menu_id,),
+    ).fetchone()
+    return row is not None
+
+
+def has_any_child_menus(
+    conn: Connection[dict[str, Any]], menu_id: int
+) -> bool:
+    row = conn.execute(
+        """
+        SELECT 1 AS has_child
+        FROM menus
+        WHERE parent_id = %s
         LIMIT 1
         """,
         (menu_id,),
@@ -199,7 +214,7 @@ def insert_menu(
             created_by
         )
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON CONFLICT (code) DO NOTHING
+        ON CONFLICT DO NOTHING
         RETURNING id
         """,
         (
