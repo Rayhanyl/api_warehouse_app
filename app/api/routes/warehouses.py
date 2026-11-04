@@ -13,7 +13,7 @@ from app.core.permissions import (
     WAREHOUSE_MANAGE,
     require_permission,
 )
-from app.schemas.common import Page
+from app.schemas.common import OptBoolQuery, OptIntQuery, OptStrQuery, Page
 from app.schemas.warehouse import (
     StorageLocationCreate,
     StorageLocationOut,
@@ -35,10 +35,10 @@ router = APIRouter(tags=["Warehouses & Locations"])
 def list_warehouses(
     limit: int = Query(default=50),
     offset: int = Query(default=0),
-    is_active: bool | None = Query(default=None),
-    search: str | None = Query(default=None, max_length=100),
-    sort_by: str | None = Query(default=None),
-    sort_dir: str | None = Query(default=None),
+    is_active: OptBoolQuery = Query(default=None),
+    search: OptStrQuery = Query(default=None),
+    sort_by: OptStrQuery = Query(default=None),
+    sort_dir: OptStrQuery = Query(default=None),
     _actor: dict[str, Any] = Depends(require_permission(MASTER_READ)),
     conn: Connection[dict[str, Any]] = Depends(get_conn),
 ) -> Page[WarehouseOut]:
@@ -121,10 +121,10 @@ def list_warehouse_locations(
     warehouse_id: int,
     limit: int = Query(default=50),
     offset: int = Query(default=0),
-    is_active: bool | None = Query(default=None),
-    search: str | None = Query(default=None, max_length=100),
-    sort_by: str | None = Query(default=None),
-    sort_dir: str | None = Query(default=None),
+    is_active: OptBoolQuery = Query(default=None),
+    search: OptStrQuery = Query(default=None),
+    sort_by: OptStrQuery = Query(default=None),
+    sort_dir: OptStrQuery = Query(default=None),
     _actor: dict[str, Any] = Depends(require_permission(MASTER_READ)),
     conn: Connection[dict[str, Any]] = Depends(get_conn),
 ) -> Page[StorageLocationOut]:
@@ -170,11 +170,11 @@ def create_warehouse_location(
 def list_locations(
     limit: int = Query(default=50),
     offset: int = Query(default=0),
-    warehouse_id: int | None = Query(default=None),
-    is_active: bool | None = Query(default=None),
-    search: str | None = Query(default=None, max_length=100),
-    sort_by: str | None = Query(default=None),
-    sort_dir: str | None = Query(default=None),
+    warehouse_id: OptIntQuery = Query(default=None),
+    is_active: OptBoolQuery = Query(default=None),
+    search: OptStrQuery = Query(default=None),
+    sort_by: OptStrQuery = Query(default=None),
+    sort_dir: OptStrQuery = Query(default=None),
     _actor: dict[str, Any] = Depends(require_permission(MASTER_READ)),
     conn: Connection[dict[str, Any]] = Depends(get_conn),
 ) -> Page[StorageLocationOut]:

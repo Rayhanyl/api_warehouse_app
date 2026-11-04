@@ -1,6 +1,5 @@
 """Routes Stock Transfer dan aksi approve/ship/receive/cancel (FR-06, PRD 5.1, Lampiran B)."""
 
-from datetime import date
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Request, status
@@ -17,7 +16,7 @@ from app.core.permissions import (
     TRANSFER_SHIP,
     require_permission,
 )
-from app.schemas.common import Page
+from app.schemas.common import OptDateQuery, OptIntQuery, OptStrQuery, Page
 from app.schemas.stock_transfer import (
     StockTransferCreate,
     StockTransferOut,
@@ -50,15 +49,15 @@ def _require_transfer_create_or_approve(
 def list_stock_transfers(
     limit: int = Query(default=50),
     offset: int = Query(default=0),
-    warehouse_id: int | None = Query(default=None),
-    source_warehouse_id: int | None = Query(default=None),
-    destination_warehouse_id: int | None = Query(default=None),
-    status_filter: str | None = Query(default=None, alias="status"),
-    date_from: date | None = Query(default=None),
-    date_to: date | None = Query(default=None),
-    search: str | None = Query(default=None, max_length=100),
-    sort_by: str | None = Query(default=None),
-    sort_dir: str | None = Query(default=None),
+    warehouse_id: OptIntQuery = Query(default=None),
+    source_warehouse_id: OptIntQuery = Query(default=None),
+    destination_warehouse_id: OptIntQuery = Query(default=None),
+    status_filter: OptStrQuery = Query(default=None, alias="status"),
+    date_from: OptDateQuery = Query(default=None),
+    date_to: OptDateQuery = Query(default=None),
+    search: OptStrQuery = Query(default=None),
+    sort_by: OptStrQuery = Query(default=None),
+    sort_dir: OptStrQuery = Query(default=None),
     actor: dict[str, Any] = Depends(require_permission(TRANSFER_READ)),
     conn: Connection[dict[str, Any]] = Depends(get_conn),
 ) -> Page[StockTransferSummaryOut]:

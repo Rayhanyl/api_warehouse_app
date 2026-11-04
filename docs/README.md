@@ -29,6 +29,7 @@ perubahan yang terdokumentasi.
 
 - Kebutuhan atau batas fitur: mulai dari [core/README.md](core/README.md).
 - Endpoint, request, response, dan error: gunakan [API/README.md](API/README.md).
+- Acuan lengkap validasi form & UI di sisi Frontend: gunakan [FRONTEND_VALIDATION_GUIDE.md](FRONTEND_VALIDATION_GUIDE.md).
 - Transisi status atau aturan transaksi: gunakan
   [RULE_SYSTEM/README.md](RULE_SYSTEM/README.md), lalu PRD.
 - Test yang wajib dijalankan: gunakan [QA/README.md](QA/README.md).

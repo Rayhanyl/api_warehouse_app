@@ -1,6 +1,5 @@
 """Routes Goods Receipt (GR) dan aksi posting/pembatalannya (FR-05, PRD 5.1, Lampiran B)."""
 
-from datetime import date
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Request, status
@@ -9,7 +8,7 @@ from psycopg import Connection
 from app.api.deps import get_client_ip
 from app.core.database import get_conn
 from app.core.permissions import GR_MANAGE, GR_READ, require_permission
-from app.schemas.common import Page
+from app.schemas.common import OptDateQuery, OptIntQuery, OptStrQuery, Page
 from app.schemas.goods_receipt import (
     GoodsReceiptCreate,
     GoodsReceiptOut,
@@ -25,14 +24,14 @@ router = APIRouter(prefix="/goods-receipts", tags=["Goods Receipts"])
 def list_goods_receipts(
     limit: int = Query(default=50),
     offset: int = Query(default=0),
-    warehouse_id: int | None = Query(default=None),
-    po_id: int | None = Query(default=None),
-    status_filter: str | None = Query(default=None, alias="status"),
-    date_from: date | None = Query(default=None),
-    date_to: date | None = Query(default=None),
-    search: str | None = Query(default=None, max_length=100),
-    sort_by: str | None = Query(default=None),
-    sort_dir: str | None = Query(default=None),
+    warehouse_id: OptIntQuery = Query(default=None),
+    po_id: OptIntQuery = Query(default=None),
+    status_filter: OptStrQuery = Query(default=None, alias="status"),
+    date_from: OptDateQuery = Query(default=None),
+    date_to: OptDateQuery = Query(default=None),
+    search: OptStrQuery = Query(default=None),
+    sort_by: OptStrQuery = Query(default=None),
+    sort_dir: OptStrQuery = Query(default=None),
     actor: dict[str, Any] = Depends(require_permission(GR_READ)),
     conn: Connection[dict[str, Any]] = Depends(get_conn),
 ) -> Page[GoodsReceiptSummaryOut]:

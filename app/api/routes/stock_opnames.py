@@ -1,6 +1,5 @@
 """Routes Stock Opname dan aksi start/count/submit/approve/reject/cancel (FR-07, PRD 5.1, Lampiran B)."""
 
-from datetime import date
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Request, status
@@ -15,7 +14,7 @@ from app.core.permissions import (
     OPNAME_READ,
     require_permission,
 )
-from app.schemas.common import Page
+from app.schemas.common import OptDateQuery, OptIntQuery, OptStrQuery, Page
 from app.schemas.stock_opname import (
     StockOpnameCountRequest,
     StockOpnameCreate,
@@ -33,14 +32,14 @@ router = APIRouter(prefix="/stock-opnames", tags=["Stock Opnames"])
 def list_stock_opnames(
     limit: int = Query(default=50),
     offset: int = Query(default=0),
-    warehouse_id: int | None = Query(default=None),
-    location_id: int | None = Query(default=None),
-    status_filter: str | None = Query(default=None, alias="status"),
-    date_from: date | None = Query(default=None),
-    date_to: date | None = Query(default=None),
-    search: str | None = Query(default=None, max_length=100),
-    sort_by: str | None = Query(default=None),
-    sort_dir: str | None = Query(default=None),
+    warehouse_id: OptIntQuery = Query(default=None),
+    location_id: OptIntQuery = Query(default=None),
+    status_filter: OptStrQuery = Query(default=None, alias="status"),
+    date_from: OptDateQuery = Query(default=None),
+    date_to: OptDateQuery = Query(default=None),
+    search: OptStrQuery = Query(default=None),
+    sort_by: OptStrQuery = Query(default=None),
+    sort_dir: OptStrQuery = Query(default=None),
     actor: dict[str, Any] = Depends(require_permission(OPNAME_READ)),
     conn: Connection[dict[str, Any]] = Depends(get_conn),
 ) -> Page[StockOpnameSummaryOut]:

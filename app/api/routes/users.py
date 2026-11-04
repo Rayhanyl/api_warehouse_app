@@ -8,7 +8,7 @@ from psycopg import Connection
 from app.api.deps import get_client_ip
 from app.core.database import get_conn
 from app.core.permissions import USER_MANAGE, require_permission
-from app.schemas.common import Page
+from app.schemas.common import OptBoolQuery, OptIntQuery, OptStrQuery, Page
 from app.schemas.user import (
     PermissionOut,
     RoleOut,
@@ -28,11 +28,11 @@ router = APIRouter(prefix="/users", tags=["Users & RBAC"])
 def list_users(
     limit: int = Query(default=50),
     offset: int = Query(default=0),
-    role_id: int | None = Query(default=None),
-    is_active: bool | None = Query(default=None),
-    search: str | None = Query(default=None, max_length=100),
-    sort_by: str | None = Query(default=None),
-    sort_dir: str | None = Query(default=None),
+    role_id: OptIntQuery = Query(default=None),
+    is_active: OptBoolQuery = Query(default=None),
+    search: OptStrQuery = Query(default=None),
+    sort_by: OptStrQuery = Query(default=None),
+    sort_dir: OptStrQuery = Query(default=None),
     _actor: dict[str, Any] = Depends(require_permission(USER_MANAGE)),
     conn: Connection[dict[str, Any]] = Depends(get_conn),
 ) -> Page[UserOut]:

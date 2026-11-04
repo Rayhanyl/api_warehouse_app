@@ -444,7 +444,7 @@ def test_ac03_inter_warehouse_transfer_consistency_in_transit_and_scoping(
     assert cancel_ok.json()["status"] == "CANCELLED"
 
     list_b = client.get(
-        f"/api/v1/stock-transfers?destination_warehouse_id={wh_b['id']}",
+        f"/api/v1/stock-transfers?destination_warehouse_id={wh_b['id']}&date_from=&date_to=&status=&search=",
         headers=staff_b["auth_headers"],
     ).json()
     assert list_b["total"] == 2

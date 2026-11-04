@@ -8,7 +8,7 @@ from psycopg import Connection
 from app.api.deps import get_client_ip
 from app.core.database import get_conn
 from app.core.permissions import MASTER_MANAGE, MASTER_READ, require_permission
-from app.schemas.common import Page
+from app.schemas.common import OptBoolQuery, OptIntQuery, OptStrQuery, Page
 from app.schemas.master import (
     CategoryCreate,
     CategoryOut,
@@ -35,10 +35,10 @@ router = APIRouter(tags=["Master Data"])
 def list_categories(
     limit: int = Query(default=50),
     offset: int = Query(default=0),
-    is_active: bool | None = Query(default=None),
-    search: str | None = Query(default=None, max_length=100),
-    sort_by: str | None = Query(default=None),
-    sort_dir: str | None = Query(default=None),
+    is_active: OptBoolQuery = Query(default=None),
+    search: OptStrQuery = Query(default=None),
+    sort_by: OptStrQuery = Query(default=None),
+    sort_dir: OptStrQuery = Query(default=None),
     _actor: dict[str, Any] = Depends(require_permission(MASTER_READ)),
     conn: Connection[dict[str, Any]] = Depends(get_conn),
 ) -> Page[CategoryOut]:
@@ -113,10 +113,10 @@ def update_category(
 def list_uoms(
     limit: int = Query(default=50),
     offset: int = Query(default=0),
-    is_active: bool | None = Query(default=None),
-    search: str | None = Query(default=None, max_length=100),
-    sort_by: str | None = Query(default=None),
-    sort_dir: str | None = Query(default=None),
+    is_active: OptBoolQuery = Query(default=None),
+    search: OptStrQuery = Query(default=None),
+    sort_by: OptStrQuery = Query(default=None),
+    sort_dir: OptStrQuery = Query(default=None),
     _actor: dict[str, Any] = Depends(require_permission(MASTER_READ)),
     conn: Connection[dict[str, Any]] = Depends(get_conn),
 ) -> Page[UomOut]:
@@ -193,10 +193,10 @@ def update_uom(
 def list_suppliers(
     limit: int = Query(default=50),
     offset: int = Query(default=0),
-    is_active: bool | None = Query(default=None),
-    search: str | None = Query(default=None, max_length=100),
-    sort_by: str | None = Query(default=None),
-    sort_dir: str | None = Query(default=None),
+    is_active: OptBoolQuery = Query(default=None),
+    search: OptStrQuery = Query(default=None),
+    sort_by: OptStrQuery = Query(default=None),
+    sort_dir: OptStrQuery = Query(default=None),
     _actor: dict[str, Any] = Depends(require_permission(MASTER_READ)),
     conn: Connection[dict[str, Any]] = Depends(get_conn),
 ) -> Page[SupplierOut]:
@@ -279,12 +279,12 @@ def update_supplier(
 def list_items(
     limit: int = Query(default=50),
     offset: int = Query(default=0),
-    category_id: int | None = Query(default=None),
-    uom_id: int | None = Query(default=None),
-    is_active: bool | None = Query(default=None),
-    search: str | None = Query(default=None, max_length=100),
-    sort_by: str | None = Query(default=None),
-    sort_dir: str | None = Query(default=None),
+    category_id: OptIntQuery = Query(default=None),
+    uom_id: OptIntQuery = Query(default=None),
+    is_active: OptBoolQuery = Query(default=None),
+    search: OptStrQuery = Query(default=None),
+    sort_by: OptStrQuery = Query(default=None),
+    sort_dir: OptStrQuery = Query(default=None),
     _actor: dict[str, Any] = Depends(require_permission(MASTER_READ)),
     conn: Connection[dict[str, Any]] = Depends(get_conn),
 ) -> Page[ItemOut]:
