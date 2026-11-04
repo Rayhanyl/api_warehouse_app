@@ -19,6 +19,7 @@ from app.services import audit_service
 from app.utils.pagination import normalize_pagination
 
 EMAIL_REGEX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+USERNAME_REGEX = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$")
 
 
 def _validate_email_format(email: str) -> str:
@@ -105,8 +106,18 @@ def create_user(
         raise ValidationDomainError("Kata sandi minimal harus terdiri dari 8 karakter.")
 
     clean_username = username.strip()
+    if not USERNAME_REGEX.match(clean_username):
+        raise ValidationDomainError(
+            "Format username tidak valid (3-64 karakter huruf, angka, titik, garis bawah, atau tanda hubung tanpa spasi).",
+            details={"field": "username", "value": clean_username},
+        )
     clean_email = _validate_email_format(email)
     clean_name = full_name.strip()
+    if not clean_name:
+        raise ValidationDomainError(
+            "Nama lengkap pengguna tidak boleh kosong.",
+            details={"field": "full_name"},
+        )
 
     with conn.transaction():
         if user_repo.get_user_by_username(conn, clean_username):

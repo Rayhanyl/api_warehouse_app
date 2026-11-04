@@ -1,5 +1,6 @@
 """Service logika bisnis untuk Menu Navigasi Dinamis (FR-01, PRD Lampiran A & C)."""
 
+import re
 from typing import Any
 
 from psycopg import Connection
@@ -14,6 +15,8 @@ from app.core.exceptions import (
 from app.repositories import menu_repo
 from app.services import audit_service
 from app.utils.pagination import build_order_by, normalize_pagination
+
+CODE_REGEX = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
 
 MENU_SORT_COLUMNS: dict[str, str] = {
     "id": "m.id",
@@ -231,6 +234,11 @@ def create_menu(
             "Kode menu tidak boleh kosong.",
             details={"field": "code"},
         )
+    if not CODE_REGEX.match(clean_code):
+        raise ValidationDomainError(
+            "Format kode menu tidak valid; hanya boleh berisi huruf, angka, titik, garis bawah, garis miring, atau tanda hubung tanpa spasi.",
+            details={"field": "code", "value": clean_code},
+        )
     if not clean_name:
         raise ValidationDomainError(
             "Nama menu tidak boleh kosong.",
@@ -320,6 +328,11 @@ def update_menu(
             raise ValidationDomainError(
                 "Kode menu tidak boleh kosong.",
                 details={"field": "code"},
+            )
+        if not CODE_REGEX.match(new_code):
+            raise ValidationDomainError(
+                "Format kode menu tidak valid; hanya boleh berisi huruf, angka, titik, garis bawah, garis miring, atau tanda hubung tanpa spasi.",
+                details={"field": "code", "value": new_code},
             )
         if not new_name:
             raise ValidationDomainError(

@@ -1,5 +1,6 @@
 """Service logika bisnis untuk Gudang (warehouses) dan Lokasi Penyimpanan (storage_locations) (FR-02, PRD 3.2, 6.3, 6.8)."""
 
+import re
 from typing import Any
 
 from psycopg import Connection
@@ -8,12 +9,30 @@ from app.core.exceptions import (
     DuplicateError,
     EntityInUse,
     InactiveReferenceError,
+    InvalidLocationError,
     NotFoundError,
     ValidationDomainError,
 )
 from app.repositories import warehouse_repo
 from app.services import access_service, audit_service
 from app.utils.pagination import build_order_by, normalize_pagination
+
+CODE_REGEX = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
+
+
+def _validate_code_format(value: str, *, field_name: str, label: str) -> str:
+    clean = value.strip()
+    if not clean:
+        raise ValidationDomainError(
+            f"{label} tidak boleh kosong.",
+            details={"field": field_name},
+        )
+    if not CODE_REGEX.match(clean):
+        raise ValidationDomainError(
+            f"Format {label.lower()} tidak valid; hanya boleh diawali huruf/angka dan berisi huruf, angka, titik (.), garis bawah (_), garis miring (/), atau tanda hubung (-) tanpa spasi.",
+            details={"field": field_name, "value": clean},
+        )
+    return clean
 
 WAREHOUSE_SORT_COLUMNS: dict[str, str] = {
     "id": "w.id",
@@ -98,6 +117,9 @@ def create_warehouse(
             "Kode dan nama gudang tidak boleh kosong.",
             details={"code": clean_code, "name": clean_name},
         )
+    clean_code = _validate_code_format(
+        clean_code, field_name="code", label="Kode gudang"
+    )
 
     with conn.transaction():
         existing = warehouse_repo.get_warehouse_by_code(conn, clean_code)
@@ -157,12 +179,9 @@ def update_warehouse(
 
         new_code = existing["code"]
         if code is not None:
-            new_code = code.strip()
-            if not new_code:
-                raise ValidationDomainError(
-                    "Kode gudang tidak boleh kosong.",
-                    details={"field": "code"},
-                )
+            new_code = _validate_code_format(
+                code, field_name="code", label="Kode gudang"
+            )
             if new_code.lower() != str(existing["code"]).lower():
                 dup = warehouse_repo.get_warehouse_by_code(conn, new_code)
                 if dup and int(dup["id"]) != warehouse_id:
@@ -299,6 +318,39 @@ def get_location(
     return location
 
 
+def validate_location(
+    conn: Connection[dict[str, Any]],
+    *,
+    warehouse_id: int,
+    location_id: int,
+) -> dict[str, Any]:
+    """Contract WHS (`validate_location`): memastikan gudang aktif dan lokasi aktif serta milik gudang tersebut (PRD 4.3, 6.5)."""
+    warehouse = warehouse_repo.get_warehouse_by_id(conn, warehouse_id)
+    if not warehouse:
+        raise NotFoundError(
+            "Gudang tidak ditemukan.",
+            details={"warehouse_id": warehouse_id},
+        )
+    if not warehouse["is_active"]:
+        raise InactiveReferenceError(
+            f"Gudang '{warehouse['code']}' berstatus tidak aktif.",
+            details={"warehouse_id": warehouse_id},
+        )
+
+    location = warehouse_repo.get_location_by_id(conn, location_id)
+    if not location or int(location["warehouse_id"]) != int(warehouse_id):
+        raise InvalidLocationError(
+            "Lokasi penyimpanan tidak ditemukan atau bukan milik gudang yang direferensikan.",
+            details={"warehouse_id": warehouse_id, "location_id": location_id},
+        )
+    if not location["is_active"]:
+        raise InvalidLocationError(
+            f"Lokasi penyimpanan '{location['code']}' berstatus tidak aktif.",
+            details={"warehouse_id": warehouse_id, "location_id": location_id},
+        )
+    return location
+
+
 def create_location(
     conn: Connection[dict[str, Any]],
     *,
@@ -316,6 +368,9 @@ def create_location(
             "Kode dan nama lokasi penyimpanan tidak boleh kosong.",
             details={"code": clean_code, "name": clean_name},
         )
+    clean_code = _validate_code_format(
+        clean_code, field_name="code", label="Kode lokasi penyimpanan"
+    )
 
     with conn.transaction():
         warehouse = warehouse_repo.get_warehouse_by_id(conn, warehouse_id)
@@ -394,12 +449,9 @@ def update_location(
 
         new_code = existing["code"]
         if code is not None:
-            new_code = code.strip()
-            if not new_code:
-                raise ValidationDomainError(
-                    "Kode lokasi penyimpanan tidak boleh kosong.",
-                    details={"field": "code"},
-                )
+            new_code = _validate_code_format(
+                code, field_name="code", label="Kode lokasi penyimpanan"
+            )
             if new_code.lower() != str(existing["code"]).lower():
                 dup = warehouse_repo.get_location_by_warehouse_and_code(
                     conn, warehouse_id, new_code

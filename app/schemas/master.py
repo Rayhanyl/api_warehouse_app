@@ -10,13 +10,13 @@ from pydantic import BaseModel, Field
 # ============================================================================
 class CategoryCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=1000)
     is_active: bool = True
 
 
 class CategoryUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=1000)
     is_active: bool | None = None
 
 
@@ -67,7 +67,7 @@ class SupplierCreate(BaseModel):
     contact_person: str | None = Field(default=None, max_length=120)
     phone: str | None = Field(default=None, max_length=30)
     email: str | None = Field(default=None, max_length=255)
-    address: str | None = None
+    address: str | None = Field(default=None, max_length=1000)
     is_active: bool = True
 
 
@@ -77,7 +77,7 @@ class SupplierUpdate(BaseModel):
     contact_person: str | None = Field(default=None, max_length=120)
     phone: str | None = Field(default=None, max_length=30)
     email: str | None = Field(default=None, max_length=255)
-    address: str | None = None
+    address: str | None = Field(default=None, max_length=1000)
     is_active: bool | None = None
 
 
@@ -101,7 +101,7 @@ class SupplierOut(BaseModel):
 class ItemCreate(BaseModel):
     sku: str = Field(..., min_length=1, max_length=64)
     name: str = Field(..., min_length=1, max_length=200)
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=1000)
     category_id: int
     uom_id: int
     is_active: bool = True
@@ -110,7 +110,7 @@ class ItemCreate(BaseModel):
 class ItemUpdate(BaseModel):
     sku: str | None = Field(default=None, min_length=1, max_length=64)
     name: str | None = Field(default=None, min_length=1, max_length=200)
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=1000)
     category_id: int | None = None
     uom_id: int | None = None
     is_active: bool | None = None

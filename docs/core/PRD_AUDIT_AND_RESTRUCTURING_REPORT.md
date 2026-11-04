@@ -105,13 +105,13 @@ warehouse scoping, Decimal-only quantity, dan status transition melalui action e
 
 | ID | Temuan | Dampak | Tindakan pada PRD General |
 | --- | --- | --- | --- |
-| GAP-001 | Tidak semua fitur memiliki AC sendiri | QA tidak dapat menutup fitur secara langsung | Tambahkan AC untuk master, warehouse, platform, audit, numbering, dan query behavior berdasarkan requirement yang sudah ada |
-| GAP-002 | Status MVP dan draft v3.x bercampur | Scope creep dan perubahan skema prematur | Pisahkan MVP, Phase 2, Future Development, dan Out of Scope |
-| GAP-003 | Requirement ID lama belum konsisten dengan module ownership | Traceability sulit | Gunakan Feature ID stabil dan Requirement ID ber-prefix modul |
-| GAP-004 | RTM lama hanya berupa domain mapping | Tidak cukup untuk database/backend/frontend/API/QA | Tambahkan RTM per requirement dengan status evidence |
+| GAP-001 | Tidak semua fitur memiliki AC sendiri | QA tidak dapat menutup fitur secara langsung | Selesai: PRD General bagian 6, 10, 10.1, dan 11 menetapkan AC terpisah yang normatif untuk numbering (`AC-15`), query behavior (`AC-16`), platform error/request ID/health (`AC-17`), migration runner (`AC-18`), master data (`AC-19`), warehouse/location (`AC-20`), dan audit log (`AC-22`) |
+| GAP-002 | Status MVP dan draft v3.x bercampur | Scope creep dan perubahan skema prematur | Selesai: PRD General bagian 2.2, 2.3, 4.1, 11.3, dan 12 memisahkan secara tegas scope MVP, Phase 2 (`ISS`, `RPT`), Future Development (`TNT`, `CFG`), dan Out of Scope |
+| GAP-003 | Requirement ID lama belum konsisten dengan module ownership | Traceability sulit | Selesai: PRD General bagian 1.2, 6, dan 11.2 memakai Feature ID stabil (`<MODULE>-Fnn`) dan Requirement ID ber-prefix modul (`FR-<MODULE>-nnn`) untuk seluruh 47 requirement MVP |
+| GAP-004 | RTM lama hanya berupa domain mapping | Tidak cukup untuk database/backend/frontend/API/QA | Selesai: PRD General bagian 11.2 memetakan seluruh 47 `FR-<MODULE>-nnn` satu per satu ke entitas database, service/contract backend, target integrasi frontend, perilaku API, AC QA, dan status evidence |
 | GAP-005 | Dependensi lintas modul tersirat di workflow | Perubahan modul dapat menimbulkan regresi | Selesai: PRD General memiliki contract register normatif, owner/consumer, batas ownership, dan aturan perubahan contract |
-| GAP-006 | Beberapa acceptance criteria mengklaim behavior tanpa status bukti | Implemented/tested dapat disalahartikan | Gunakan status Not Mapped sampai Verified sesuai evidence |
-| GAP-007 | Data requirements belum seluruhnya dikaitkan dengan feature | Database design dapat menyimpang | Tambahkan conceptual data ownership dan relationship map |
+| GAP-006 | Beberapa acceptance criteria mengklaim behavior tanpa status bukti | Implemented/tested dapat disalahartikan | Selesai: PRD General bagian 1.1 dan 11.1 mendefinisikan syarat penggunaan status `Not Mapped` sampai `Verified` serta `Need Confirmation` tanpa klaim implementasi/test palsu |
+| GAP-007 | Data requirements belum seluruhnya dikaitkan dengan feature | Database design dapat menyimpang | Selesai: PRD General bagian 8.1 dan 8.2 menetapkan kepemilikan entitas konseptual per modul dan Feature ID, kunci bisnis, peta relasi lintas modul, serta invariant deaktivasi/imutabilitas |
 
 ### 2.2 Asumsi yang tidak boleh diperlakukan sebagai requirement
 
@@ -127,12 +127,12 @@ warehouse scoping, Decimal-only quantity, dan status transition melalui action e
 
 | ID | Keputusan yang dibutuhkan | Dampak |
 | --- | --- | --- |
-| CONF-001 | Apakah multi-tenant menjadi target produk, dan kapan? | Mengubah IAM, PLT, database isolation, onboarding, dan deployment |
+| CONF-001 | Selesai pada PRD General v2.1: Fase 1 (M0–M8 Single-Tenant) dipertahankan sebagai pondasi selesai, dan Multi-Tenant SaaS (`TNT`, `CFG`, `tenant_id` + RLS) ditetapkan sebagai Fase 2 (M9 — tahap langsung berikutnya sebelum `ISS`/`RPT`) | Mengunci arsitektur `TNT`, `CFG`, `PLT`, `IAM`, serta migrasi `010` & `011` |
 | CONF-002 | Apakah Goods Issue masuk Phase 2? Apa tujuan, approval, dan statusnya? | Menambah movement type, permission, workflow, dan audit |
 | CONF-003 | Laporan mana yang wajib dan kapan? | Menentukan RPT, query, export, dan acceptance criteria |
-| CONF-004 | Apakah satu item boleh muncul satu kali pada Transfer? | Constraint data dan TRF-BR01 |
-| CONF-005 | Apakah `INTERNAL_ERROR` merupakan kode error resmi? | API error catalog |
-| CONF-006 | Apakah master data, warehouse, location, numbering, dan search memerlukan AC terpisah? | QA scope dan release gate |
+| CONF-004 | Selesai pada PRD General: satu item hanya boleh muncul satu kali per dokumen Transfer (`uq_stock_transfer_lines_transfer_item` dan spesifikasi `TRF`) | Constraint data dan aturan bisnis `TRF` |
+| CONF-005 | Selesai pada PRD General: `INTERNAL_ERROR` (HTTP 500) terdaftar resmi pada katalog error di `PRD_BACKEND.md` dan `API_CONTRACT.md` | API error catalog |
+| CONF-006 | Selesai pada PRD General: AC terpisah untuk numbering (`AC-15`), query (`AC-16`), platform (`AC-17`, `AC-18`), master (`AC-19`), warehouse (`AC-20`), dan audit (`AC-22`) telah ditetapkan | QA scope dan release gate |
 | CONF-007 | Dataset dan environment benchmark final | NFR performance dan release evidence |
 | CONF-008 | Strategi penyimpanan refresh token pada consumer frontend | Security integration, bukan perubahan business requirement |
 
@@ -266,7 +266,7 @@ and Python layer constraints remain in their specialized specifications.
 | Feature ID unik dan stabil | PASS | Registry feature ID pada PRD General |
 | Requirement penting memiliki ID | PASS | FR, BR, NFR, AC pada PRD General |
 | Setiap modul memiliki format standar | PASS | Template dan spesifikasi modul |
-| Setiap feature memiliki AC atau status gap | PASS | AC module tables; gap diberi Need Confirmation |
+| Setiap feature memiliki AC atau status gap | PASS | Seluruh feature MVP dipetakan ke AC-01 sampai AC-22 pada PRD General |
 | Konflik tidak disembunyikan | PASS | CON-001 sampai CON-007 |
 | RTM tersedia tanpa klaim implementasi palsu | PASS | RTM memakai status evidence |
 | Database/backend/frontend/API/QA terhubung | PASS | Cross-Layer Validation |

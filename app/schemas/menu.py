@@ -13,7 +13,7 @@ class MenuCreate(BaseModel):
     path: str = Field(..., min_length=1, max_length=150)
     icon: str | None = Field(default=None, max_length=50)
     parent_id: int | None = None
-    sort_order: int = 0
+    sort_order: int = Field(default=0, ge=0, le=10000)
     permission_id: int | None = None
     is_active: bool = True
 
@@ -25,7 +25,7 @@ class MenuUpdate(BaseModel):
     icon: str | None = Field(default=None, max_length=50)
     parent_id: int | None = None
     clear_parent: bool = False
-    sort_order: int | None = None
+    sort_order: int | None = Field(default=None, ge=0, le=10000)
     permission_id: int | None = None
     clear_permission: bool = False
     is_active: bool | None = None

@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 class WarehouseCreate(BaseModel):
     code: str = Field(..., min_length=1, max_length=50)
     name: str = Field(..., min_length=1, max_length=150)
-    address: str | None = None
+    address: str | None = Field(default=None, max_length=1000)
     allow_negative_stock: bool = False
     is_active: bool = True
 
@@ -19,7 +19,7 @@ class WarehouseCreate(BaseModel):
 class WarehouseUpdate(BaseModel):
     code: str | None = Field(default=None, min_length=1, max_length=50)
     name: str | None = Field(default=None, min_length=1, max_length=150)
-    address: str | None = None
+    address: str | None = Field(default=None, max_length=1000)
     allow_negative_stock: bool | None = None
     is_active: bool | None = None
 

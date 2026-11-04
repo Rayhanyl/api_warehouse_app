@@ -71,6 +71,22 @@ Seluruh perubahan saldo melewati `inventory_service.apply_movement()`.
 - Akun dikunci setelah lima kegagalan login sesuai aturan produk.
 - Permission berasal dari role/database, bukan dipercaya dari claim token saja.
 
+### 5.1 Arsitektur konteks Multi-Tenant & RLS pada Fase 2 (M9)
+
+Karena `ConnectionPool` (`psycopg_pool`) berjalan dengan `autocommit=True` dan endpoint pembacaan (`GET`) tidak membuka blok `with conn.transaction():`, implementasi Fase 2 (M9) wajib mematuhi aturan propagasi konteks tenant berikut:
+
+1. **Pengaturan dan Pembersihan Variabel Sesi PostgreSQL (`app.current_tenant_id`):**
+   - Jangan menggunakan `SET LOCAL` di luar blok transaksi pada koneksi `autocommit=True` (karena nilai langsung hilang setelah statement `SET LOCAL` selesai).
+   - Gunakan `SELECT set_config('app.current_tenant_id', %s, false)` saat dependency autentikasi tenant mengaktifkan konteks request, **DAN wajib** mengeksekusi `RESET app.current_tenant_id; RESET app.current_scope;` pada blok `finally` di `get_db()` serta pada callback `reset` milik `ConnectionPool` sebelum koneksi dikembalikan ke pool (mencegah *session variable bleed* lintas request).
+2. **Resolusi Konteks Pra-Autentikasi (`login` dan `refresh`):**
+   - Pada `POST /api/v1/auth/login`: service membaca tabel `tenants` berdasarkan `tenant_slug` (tabel `tenants` tidak dibatasi RLS tenant), memverifikasi status tenant melalui `ensure_tenant_active`, lalu menyetel `app.current_tenant_id` sebelum melakukan query ke tabel `users`.
+   - Pada `POST /api/v1/auth/refresh`: resolusi `token_hash` pada `refresh_tokens` menetapkan `tenant_id` sesi terkait terlebih dahulu, memverifikasi `ensure_tenant_active`, lalu menyetel `app.current_tenant_id` sebelum memuat profil dan permission `users`.
+3. **Pemisahan Scope Token (`scope: "tenant"` vs `scope: "platform"`):**
+   - Dependency `get_current_user` menolak token dengan `scope != "tenant"`.
+   - Dependency `require_platform_admin` hanya menerima token dengan `scope == "platform"` yang diverifikasi terhadap tabel `platform_admins`.
+4. **Konvensi Penamaan File Modul Fase 2 (M9):**
+   - Mengikuti pola `FOLDER_STRUCTURE.MD`: route ditempatkan di `app/api/routes/tenants.py`, `app/api/routes/platform.py`, dan `app/api/routes/settings.py` (tanpa akhiran `_routes`); service di `app/services/tenant_service.py` dan `app/services/setting_service.py`; repository di `app/repositories/tenant_repo.py` dan `app/repositories/setting_repo.py`.
+
 ## 6. Error handling dan observability
 
 Gunakan `DomainError` dan kode katalog yang sudah ada: auth, permission,
@@ -87,15 +103,19 @@ Redis, queue, worker, atau integrasi eksternal dalam MVP.
 
 ## 8. Traceability backend
 
-| PRD General | Komponen backend |
-| --- | --- |
-| FR-01 | `auth_service`, auth routes, security, user dependencies |
-| FR-02 | master/warehouse services dan repositories |
-| FR-03/08 | stock, inventory service, ledger repository |
-| FR-04 | PO service/routes/repository |
-| FR-05 | GR service/routes/repository |
-| FR-06 | transfer service/routes/repository |
-| FR-07 | opname service/routes/repository |
-| FR-09/10/11 | audit/numbering services dan pagination utility |
+| Modul / Requirement PRD General | Feature ID | Komponen backend | AC terkait |
+| --- | --- | --- | --- |
+| `FR-PLT-001..005` | `PLT-F01..F05` | `numbering_service`, `utils/pagination`, `core/exceptions`, `core/middleware`, health route, `db/migrate` | `AC-15` s.d. `AC-18` |
+| `FR-IAM-001..009` | `IAM-F01..F09` | `auth_service`, `user_service`, `access_service`, `menu_service`, auth/user/menu routes & dependencies | `AC-05`, `AC-11`, `AC-12`, `AC-14` |
+| `FR-AUD-001..002` | `AUD-F01..F02` | `audit_service`, `audit_repo`, audit routes | `AC-05`, `AC-07`, `AC-08`, `AC-16`, `AC-22` |
+| `FR-MST-001..005` | `MST-F01..F05` | `master_service`, `master_repo`, category/uom/supplier/item routes | `AC-16`, `AC-19`, `AC-22` |
+| `FR-WHS-001..003` | `WHS-F01..F03` | `warehouse_service`, `warehouse_repo`, warehouse/location routes | `AC-12`, `AC-16`, `AC-20`, `AC-22` |
+| `FR-INV-001..006` | `INV-F01..F06` | `inventory_service` (`apply_movement`), `stock_service`, `inventory_repo`, stock routes | `AC-02`, `AC-03`, `AC-04`, `AC-06`, `AC-08`, `AC-13`, `AC-16` |
+| `FR-PUR-001..004` | `PUR-F01..F04` | `po_service` (`apply_receipt`), `po_repo`, PO routes | `AC-01`, `AC-13`, `AC-15`, `AC-16`, `AC-21`, `AC-22` |
+| `FR-RCV-001..004` | `RCV-F01..F04` | `gr_service`, `gr_repo`, GR routes | `AC-01`, `AC-07`, `AC-12`, `AC-13`, `AC-15`, `AC-16`, `AC-21`, `AC-22` |
+| `FR-TRF-001..005` | `TRF-F01..F05` | `transfer_service` (`in_transit`), `transfer_repo`, transfer routes | `AC-02`, `AC-03`, `AC-04`, `AC-06`, `AC-09`, `AC-12`, `AC-15`, `AC-16`, `AC-21`, `AC-22` |
+| `FR-OPN-001..006` | `OPN-F01..F06` | `opname_service` (`is_location_frozen`), `opname_repo`, opname routes | `AC-04`, `AC-10`, `AC-12`, `AC-15`, `AC-16`, `AC-21`, `AC-22` |
+| `FR-TNT-001..006` *(Fase 2 — M9)* | `TNT-F01..F06` | `tenant_service` (`ensure_tenant_active`, `check_quota`), `tenant_repo`, `routes/platform.py`, `routes/tenants.py`, context `current_tenant` | `AC-23`, `AC-24`, `AC-25`, `AC-27`, `AC-28`, `AC-29` |
+| `FR-CFG-001..004` *(Fase 2 — M9)* | `CFG-F01..F04` | `setting_service` (`get_setting`), `setting_repo`, `routes/settings.py` | `AC-22`, `AC-26` |
 
 Detail struktur file dan pola kode tetap berada di [FOLDER_STRUCTURE](FOLDER_STRUCTURE.MD).

@@ -259,7 +259,7 @@ Seluruh butir pada bagian ini merupakan hal-hal yang **belum memiliki informasi 
 | Dampak | Jika asumsi ini salah (misalnya pemilik proyek hanya ingin merapikan struktur PRD menjadi modular **tanpa** mengimplementasikan fitur Multi-Tenant `TNT`/`CFG` dalam waktu dekat), maka merombak skema database untuk menambahkan `tenant_id` sekarang akan membuang waktu dan menambah kompleksitas yang tidak diperlukan. Sebaliknya, jika Multi-Tenant memang wajib untuk rilis saat ini, maka seluruh modul perlu segera dimigrasikan ke `tenant_id`. |
 | Rekomendasi | **Pertanyaan Konfirmasi untuk Pemilik Proyek:**<br>1. Apakah modul Multi-Tenant (`TNT` dan `CFG` beserta penambahan `tenant_id` di seluruh tabel) memang ditetapkan sebagai target implementasi langsung berikutnya (Tahap M9), ataukah `TNT` & `CFG` sebaiknya dipindahkan dari kategori **MVP** ke kategori **Pasca-MVP (`P1`)** agar selaras dengan implementasi M0–M8 saat ini?<br>2. Apakah `AGENTS.MD` Bagian 1 diizinkan untuk diperbarui agar merujuk ke `PRD JejakStok - Sistem Manajemen Gudang (Modular).md` setelah seluruh pertanyaan terbuka (`OQ`) diselesaikan? |
 | Prioritas | **Critical** |
-| Status Validasi | **Need Confirmation** |
+| Status Validasi | **Confirmed & Locked in `PRD_GENERAL.md` v2.1 (Fase 2 — M9 Multi-Tenant SaaS)** |
 
 ---
 
@@ -274,7 +274,7 @@ Seluruh butir pada bagian ini merupakan hal-hal yang **belum memiliki informasi 
 | Dampak | Jika asumsi mekanisme login Platform Admin (`OQ-12`) atau relasi *multi-tenant user* (`OQ-14`) berbeda dengan keinginan bisnis (misalnya satu email pengguna harus bisa berpindah-pindah tenant tanpa login ulang seperti Slack/Notion), maka desain tabel `users` (apakah `tenant_id` berada di tabel `users` atau di tabel penghubung `tenant_memberships`) akan berubah secara fundamental. |
 | Rekomendasi | **Pertanyaan Konfirmasi untuk Pemilik Proyek:**<br>1. Apakah disetujui bahwa satu akun `users` terikat ke tepat satu `tenant_id` (`OQ-14`), dan Platform Admin login melalui endpoint terpisah `/api/v1/platform/auth/login` (`OQ-12`)?<br>2. Apa daftar paket awal (`plans`) beserta batas angka kuota `max_warehouses`, `max_active_users`, dan `max_active_items` yang harus di-seed pada migrasi `010` (`OQ-16`)?<br>3. Apakah Platform Admin memerlukan fitur *impersonation* (masuk sebagai Super Admin tenant untuk bantuan teknis) pada tahap ini (`OQ-17`), atau cukup mengelola status/kuota tenant saja? |
 | Prioritas | **High** |
-| Status Validasi | **Need Confirmation** |
+| Status Validasi | **Confirmed & Locked in `PRD_GENERAL.md` v2.1 (Fase 2 — M9 Multi-Tenant SaaS)** |
 
 ---
 
@@ -289,7 +289,7 @@ Seluruh butir pada bagian ini merupakan hal-hal yang **belum memiliki informasi 
 | Dampak | Jika `ISS` ternyata membutuhkan reservasi stok saat berstatus `APPROVED` (sebelum barang benar-benar dikeluarkan saat `ISSUED`), maka fitur `ISS` akan memiliki ketergantungan langsung pada fitur *Stock Reservation* (`P5`). Selain itu, jika `RPT` mewajibkan ekspor `.xlsx` atau `.pdf`, maka diperlukan penambahan dependensi baru (seperti `openpyxl` atau `reportlab`) yang saat ini dilarang oleh `AGENTS.MD` Bagian 2 tanpa persetujuan eksplisit. |
 | Rekomendasi | **Pertanyaan Konfirmasi untuk Pemilik Proyek:**<br>1. Untuk `ISS` (Goods Issue): apakah alur statusnya cukup `DRAFT -> POSTED / CANCELLED` (1 tahap tanpa reservasi stok) atau memerlukan tahap `APPROVED` oleh Warehouse Manager?<br>2. Untuk `ISS`: apakah tipe pergerakan stok di `stock_movements` cukup satu nilai baru `OUT_ISSUE` (dengan kolom `issue_type` disimpan di header `goods_issues`)?<br>3. Untuk `RPT` (Pelaporan): laporan spesifik apa saja yang dibutuhkan pada tahap pertama, dan apakah format keluarannya cukup JSON API (atau memerlukan ekspor CSV/XLSX)? |
 | Prioritas | **Medium** |
-| Status Validasi | **Need Confirmation** |
+| Status Validasi | **Deferred to Fase 3 (M10 — `ISS` & `RPT`) in `PRD_GENERAL.md` v2.1** |
 
 ---
 
@@ -304,7 +304,7 @@ Seluruh butir pada bagian ini merupakan hal-hal yang **belum memiliki informasi 
 | Dampak | Apabila frontend mengharapkan `HttpOnly Cookie` sementara backend (`app/main.py` dan `app/api/routes/auth.py`) menggunakan `allow_credentials=False` dan membaca `refresh_token` dari JSON body, maka pembaruan sesi saat *hard refresh* (F5) di browser akan selalu gagal. |
 | Rekomendasi | **Pertanyaan Konfirmasi untuk Pemilik Proyek:**<br>1. Apakah kontrak autentikasi `/api/v1/auth/login`, `/refresh`, dan `/logout` tetap dipertahankan menggunakan **JSON body** (Opsi B) untuk menjaga kompatibilitas dengan seluruh pengujian `AC-01`/`AC-02` yang sudah lulus?<br>2. Apakah dokumen `PRD_FRONTEND.md` berada di repositori frontend terpisah, dan apakah akan disatukan ke dalam folder `docs/CORE/` di repositori ini? |
 | Prioritas | **Medium** |
-| Status Validasi | **Need Confirmation** |
+| Status Validasi | **Confirmed & Locked in `PRD_FRONTEND.md` & `API_CONTRACT.md` (JSON Body contract)** |
 
 ---
 
@@ -319,7 +319,7 @@ Seluruh butir pada bagian ini merupakan hal-hal yang **belum memiliki informasi 
 | Dampak | Jika `OQ-01` diputuskan bahwa pencabutan satu gudang harus me-logout paksa pengguna dari seluruh gudang lainnya (mencabut semua `refresh_tokens`), maka perilaku ini akan mengganggu pengguna yang masih bekerja secara sah di gudang lain yang tidak dicabut. |
 | Rekomendasi | **Pertanyaan Konfirmasi untuk Pemilik Proyek:**<br>1. Apakah disetujui untuk menutup `OQ-01` dengan menetapkan bahwa perubahan penugasan gudang **tidak** perlu mencabut `refresh_tokens` (karena pemeriksaan akses gudang sudah dilakukan secara *real-time* ke database pada setiap request melalui `ensure_warehouse_access`)?<br>2. Apakah struktur `old_values` dan `new_values` pada `audit_service.py` saat ini sudah mencukupi untuk menutup `OQ-03`? |
 | Prioritas | **Low** |
-| Status Validasi | **Need Confirmation** |
+| Status Validasi | **Confirmed & Locked in `PRD_GENERAL.md` v2.1 (`ensure_warehouse_access` real-time DB check)** |
 
 ---
 

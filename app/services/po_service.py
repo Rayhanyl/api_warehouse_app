@@ -629,3 +629,53 @@ def close_purchase_order(
         )
         return updated
 
+
+def apply_receipt(
+    conn: Connection[dict[str, Any]],
+    *,
+    po_id: int,
+    old_po_status: str,
+    added_per_po_line: dict[int, Decimal],
+    gr_id: int,
+    gr_number: str,
+    actor_id: int,
+    ip_address: str | None = None,
+) -> str:
+    """Contract PUR (`apply_receipt`): memperbarui `qty_received` baris PO dan status fulfillment PO (`PARTIALLY_RECEIVED` / `RECEIVED`) dalam transaksi posting GR (PRD 4.3, 6.7)."""
+    for po_line_id in sorted(added_per_po_line.keys()):
+        po_repo.add_po_line_received_qty(
+            conn,
+            po_line_id=po_line_id,
+            qty_added=added_per_po_line[po_line_id],
+        )
+
+    updated_po_lines = po_repo.list_po_lines(conn, po_id)
+    all_fulfilled = all(
+        Decimal(ln["qty_received"]).quantize(FOUR_PLACES)
+        == Decimal(ln["qty_ordered"]).quantize(FOUR_PLACES)
+        for ln in updated_po_lines
+    )
+    new_po_status = (
+        POStatus.RECEIVED.value
+        if all_fulfilled
+        else POStatus.PARTIALLY_RECEIVED.value
+    )
+    if new_po_status != old_po_status:
+        po_repo.update_po_status(conn, po_id, status=new_po_status)
+
+    audit_service.record(
+        conn,
+        user_id=actor_id,
+        action="PO_RECEIPT_PROGRESS_UPDATED",
+        entity_type="purchase_orders",
+        entity_id=po_id,
+        old_values={"status": old_po_status},
+        new_values={
+            "status": new_po_status,
+            "gr_id": gr_id,
+            "gr_number": gr_number,
+        },
+        ip_address=ip_address,
+    )
+    return new_po_status
+

@@ -48,7 +48,7 @@ class StockTransferCreate(BaseModel):
     source_location_id: int
     destination_warehouse_id: int
     destination_location_id: int
-    notes: str | None = None
+    notes: str | None = Field(default=None, max_length=1000)
     lines: list[StockTransferLineInput] = Field(default_factory=list)
 
 
@@ -57,14 +57,14 @@ class StockTransferUpdate(BaseModel):
     source_location_id: int | None = None
     destination_warehouse_id: int | None = None
     destination_location_id: int | None = None
-    notes: str | None = None
+    notes: str | None = Field(default=None, max_length=1000)
     lines: list[StockTransferLineInput] | None = None
 
 
 class StockTransferReceiveLine(BaseModel):
     line_id: int
     qty_received: Decimal
-    variance_reason: str | None = None
+    variance_reason: str | None = Field(default=None, max_length=500)
 
     @field_validator("qty_received", mode="before")
     @classmethod

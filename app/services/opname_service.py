@@ -54,6 +54,18 @@ def _clean_text(value: str | None) -> str | None:
     return stripped or None
 
 
+def is_location_frozen(
+    conn: Connection[dict[str, Any]],
+    *,
+    warehouse_id: int,
+    location_id: int,
+) -> dict[str, Any] | None:
+    """Contract OPN (`is_location_frozen`): mengembalikan sesi opname aktif (`IN_PROGRESS`/`WAITING_APPROVAL`) yang membekukan lokasi bila ada (PRD 4.3, 6.10)."""
+    return opname_repo.get_active_opname_freezing_location(
+        conn, warehouse_id=warehouse_id, location_id=location_id
+    )
+
+
 def _normalize_non_negative_qty(value: Any, *, field_name: str = "qty_physical") -> Decimal:
     """Memastikan qty_physical bertipe Decimal >= 0 dengan maksimum 4 angka di belakang koma (FR-07, PRD 6.9)."""
     if isinstance(value, float):

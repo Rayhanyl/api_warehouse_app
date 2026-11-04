@@ -317,6 +317,22 @@ def is_uom_in_use(
     return bool(row and row["in_use"])
 
 
+def is_uom_referenced_by_any_item(
+    conn: Connection[dict[str, Any]], uom_id: int
+) -> bool:
+    """Memeriksa apakah UoM sudah direferensikan oleh barang mana pun (PRD 6.4 MST-F02)."""
+    row = conn.execute(
+        """
+        SELECT EXISTS (
+            SELECT 1 FROM items
+            WHERE uom_id = %s
+        ) AS referenced
+        """,
+        (uom_id,),
+    ).fetchone()
+    return bool(row and row["referenced"])
+
+
 # ============================================================================
 # Suppliers
 # ============================================================================
@@ -488,16 +504,25 @@ def update_supplier(
 def is_supplier_in_use(
     conn: Connection[dict[str, Any]], supplier_id: int
 ) -> bool:
-    """Memeriksa apakah pemasok masih memiliki PO yang belum final (PRD 6.8)."""
+    """Memeriksa apakah pemasok masih memiliki PO yang belum final atau GR berstatus DRAFT (PRD 6.4, 6.8)."""
     row = conn.execute(
         """
-        SELECT EXISTS (
-            SELECT 1 FROM purchase_orders
-            WHERE supplier_id = %s
-              AND status IN ('DRAFT', 'ISSUED', 'PARTIALLY_RECEIVED')
+        SELECT (
+            EXISTS (
+                SELECT 1 FROM purchase_orders
+                WHERE supplier_id = %s
+                  AND status IN ('DRAFT', 'ISSUED', 'PARTIALLY_RECEIVED')
+            )
+            OR EXISTS (
+                SELECT 1
+                FROM goods_receipts gr
+                JOIN purchase_orders po ON po.id = gr.po_id
+                WHERE po.supplier_id = %s
+                  AND gr.status = 'DRAFT'
+            )
         ) AS in_use
         """,
-        (supplier_id,),
+        (supplier_id, supplier_id),
     ).fetchone()
     return bool(row and row["in_use"])
 

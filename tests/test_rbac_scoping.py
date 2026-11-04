@@ -298,6 +298,35 @@ def test_master_data_and_warehouse_crud_deactivation_and_sku_immutability(
     assert deact_uom.status_code == 409
     assert deact_uom.json()["error"]["code"] == "ENTITY_IN_USE"
 
+    # UoM dengan allow_decimal=True yang sudah dipakai oleh barang tidak boleh diubah ke allow_decimal=False -> 409 ENTITY_IN_USE (AC-19)
+    uom_dec_res = client.post(
+        "/api/v1/uoms",
+        headers=purchasing_user["auth_headers"],
+        json={"code": "KG-DEC", "name": "Kilogram Desimal", "allow_decimal": True},
+    )
+    assert uom_dec_res.status_code == 201
+    uom_dec_id = uom_dec_res.json()["id"]
+
+    item_dec_res = client.post(
+        "/api/v1/items",
+        headers=purchasing_user["auth_headers"],
+        json={
+            "sku": "ELK-CBL-001",
+            "name": "Kabel Tembaga Roll",
+            "category_id": cat_id,
+            "uom_id": uom_dec_id,
+        },
+    )
+    assert item_dec_res.status_code == 201
+
+    lock_dec_uom = client.patch(
+        f"/api/v1/uoms/{uom_dec_id}",
+        headers=purchasing_user["auth_headers"],
+        json={"allow_decimal": False},
+    )
+    assert lock_dec_uom.status_code == 409
+    assert lock_dec_uom.json()["error"]["code"] == "ENTITY_IN_USE"
+
     # 4. Super Admin membuat Gudang & mengubah allow_negative_stock (tercatat di audit_logs)
     wh_res = client.post(
         "/api/v1/warehouses",
@@ -518,6 +547,44 @@ def test_master_data_and_warehouse_crud_deactivation_and_sku_immutability(
     )
     assert loc2_upd.status_code == 200
     assert loc2_upd.json()["is_active"] is False
+
+    # 9. Validasi format kode/SKU (menolak simbol acak/spasi), format telepon pemasok, dan batas panjang alamat/deskripsi
+    bad_sku_res = client.post(
+        "/api/v1/items",
+        headers=purchasing_user["auth_headers"],
+        json={
+            "sku": "SKU SPASI @@@",
+            "name": "Barang Kode Buruk",
+            "category_id": cat_id,
+            "uom_id": uom_id,
+        },
+    )
+    assert bad_sku_res.status_code == 422
+    assert bad_sku_res.json()["error"]["code"] == "VALIDATION_ERROR"
+
+    bad_phone_res = client.post(
+        "/api/v1/suppliers",
+        headers=purchasing_user["auth_headers"],
+        json={
+            "code": "SUP-PHONE-ERR",
+            "name": "PT Telepon Salah",
+            "phone": "abc-bukan-nomor",
+        },
+    )
+    assert bad_phone_res.status_code == 422
+    assert bad_phone_res.json()["error"]["code"] == "VALIDATION_ERROR"
+
+    too_long_addr_res = client.post(
+        "/api/v1/warehouses",
+        headers=superadmin_user["auth_headers"],
+        json={
+            "code": "WH-LONG-ADDR",
+            "name": "Gudang Alamat Terlalu Panjang",
+            "address": "X" * 1001,
+        },
+    )
+    assert too_long_addr_res.status_code == 422
+    assert too_long_addr_res.json()["error"]["code"] == "VALIDATION_ERROR"
 
     wh2_upd = client.patch(
         f"/api/v1/warehouses/{wh2['id']}",

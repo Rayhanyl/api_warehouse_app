@@ -26,7 +26,7 @@ secara lokal sebagai sumber kebenaran, atau menampilkan fitur di luar scope.
 | Receiving | GR list/detail/create/edit/post/cancel |
 | Transfer | Transfer list/detail/create/approve/ship/receive/cancel |
 | Opname | Session, snapshot, count input, approve/reject, adjustment |
-| Audit | Audit log list/detail/filter |
+| Audit | Audit log list dan filter |
 
 Rute, label, dan navigasi final perlu konfirmasi produk/frontend; tabel di atas
 adalah pemetaan langsung dari FR, bukan daftar endpoint baru.
@@ -78,17 +78,28 @@ Alur request umum:
 6. `403`, `409`, dan `422` ditampilkan sebagai feedback domain/validasi;
 7. `5xx` ditampilkan sebagai error umum tanpa detail internal.
 
+### 5.1 Kontrak pohon menu navigasi dan allowlist icon (`IAM-F08`)
+
+- Endpoint `GET /api/v1/menus/my-menu` mengembalikan struktur pohon (`MenuTreeOut`) dengan atribut: `id`, `code`, `name`, `path`, `icon`, `parent_id`, `sort_order`, `permission_code`, `is_active`, dan `children` (tanpa properti `short_name`).
+- Komponen sidebar memetakan nilai string `icon` ke komponen icon melalui *allowlist* statis (dengan *fallback icon* bila nilai tidak dikenali). Daftar 19 nama icon canonical yang di-seed pada `db/migrations/009_create_menu_tables.sql` adalah:
+  `layout-dashboard`, `database`, `warehouse`, `boxes`, `shopping-cart`, `arrow-left-right`, `clipboard-check`, `shield`, `folder-tree`, `scale`, `truck`, `package`, `building-2`, `map-pin`, `layers`, `bar-chart-3`, `book-open`, `file-text`, `package-check`, `users`, `key-round`, `menu`, `scroll-text`.
+
 ## 6. Pemetaan fitur dan data
 
-| Fitur General | UI utama | Data/API yang dikonsumsi |
-| --- | --- | --- |
-| FR-01 | Auth/session | auth dan user |
-| FR-02 | Master/warehouse | master dan warehouse |
-| FR-03/08 | Inventory/ledger | stock dan movement |
-| FR-04/05 | PO/GR | purchasing dan receiving |
-| FR-06 | Transfer | transfer |
-| FR-07 | Opname | opname |
-| FR-09/10/11 | Audit, document number, list controls | audit, resource list, pagination |
+| Modul / Requirement PRD General | Feature ID | UI utama | Data/API yang dikonsumsi | AC terkait |
+| --- | --- | --- | --- | --- |
+| `FR-PLT-001..004` | `PLT-F01..F04` | Nomor dokumen read-only, kontrol list/pagination/filter/sort, error state | query params list, error envelope, `X-Request-ID`, health | `AC-15`, `AC-16`, `AC-17` |
+| `FR-IAM-001..009` | `IAM-F01..F09` | Login, session refresh, profil, ganti password, manajemen user/role/assignment, sidebar menu dinamis | auth, user, role/permission, warehouse assignment, `my-menu` | `AC-05`, `AC-11`, `AC-12`, `AC-14` |
+| `FR-AUD-002` | `AUD-F02` | Penelusuran dan filter daftar audit log (`old_values`/`new_values`) | audit log list (`GET /api/v1/audit-logs`) | `AC-16`, `AC-22` |
+| `FR-MST-001..005` | `MST-F01..F05` | Layar CRUD dan aktivasi/deaktivasi kategori, UoM, item, supplier | master data CRUD dan list | `AC-16`, `AC-19` |
+| `FR-WHS-001..003` | `WHS-F01..F03` | Layar CRUD warehouse, pengaturan `allow_negative_stock`, lokasi penyimpanan | warehouse dan storage location CRUD/list | `AC-12`, `AC-16`, `AC-20` |
+| `FR-INV-001..003` | `INV-F01..F03` | Saldo per lokasi, per gudang, ringkasan, in-transit, dan movement ledger | stock balances, by-warehouse, summary, movements | `AC-03`, `AC-12`, `AC-16` |
+| `FR-PUR-001..003` | `PUR-F01..F03` | Daftar/detail PO, form draft, aksi issue/cancel/close, progres fulfillment | purchase order CRUD, list, dan action endpoints | `AC-01`, `AC-15`, `AC-16`, `AC-21` |
+| `FR-RCV-001..004` | `RCV-F01..F04` | Daftar/detail GR, form penerimaan dari PO, aksi post dan cancel draft | goods receipt CRUD, list, dan action endpoints | `AC-01`, `AC-07`, `AC-12`, `AC-13`, `AC-21` |
+| `FR-TRF-001..005` | `TRF-F01..F05` | Daftar/detail transfer, form draft, approve, ship, receive (beserta alasan selisih), cancel | stock transfer CRUD, list, dan action endpoints | `AC-02`, `AC-03`, `AC-06`, `AC-09`, `AC-12`, `AC-21` |
+| `FR-OPN-001..006` | `OPN-F01..F06` | Sesi opname, indikator lokasi beku, input count fisik, submit, approve/reject | stock opname CRUD, list, count lines, dan action endpoints | `AC-04`, `AC-10`, `AC-12`, `AC-21` |
+| `FR-TNT-001..006` *(Fase 2 — M9)* | `TNT-F01..F06` | Input `tenant_slug` pada login tenant, panel `Platform Admin` (daftar/provisioning/status/kuota tenant), serta layar profil & penggunaan kuota bagi `Super Admin` tenant | `/api/v1/auth/login` (`tenant_slug`), `/api/v1/platform/*`, `/api/v1/tenant/profile` | `AC-23`, `AC-24`, `AC-25`, `AC-27`, `AC-28`, `AC-29` |
+| `FR-CFG-001..004` *(Fase 2 — M9)* | `CFG-F01..F04` | Layar pengaturan tenant dan override pengaturan per gudang beserta indikator sumber pewarisan nilai | `/api/v1/settings`, `/api/v1/warehouses/{id}/settings` | `AC-26` |
 
 ## 7. Belum terdefinisi / perlu konfirmasi
 

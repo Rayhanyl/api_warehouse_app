@@ -22,6 +22,7 @@ from app.services import (
     audit_service,
     inventory_service,
     numbering_service,
+    po_service,
 )
 from app.utils.enums import DocType, GRStatus, MovementType, POStatus, ReferenceType
 from app.utils.pagination import build_order_by, normalize_pagination
@@ -602,29 +603,18 @@ def post_goods_receipt(
                 added_per_po_line[po_line_id] + qty_rec
             ).quantize(FOUR_PLACES)
 
-        # 6. Tambahkan qty_received pada baris PO (diurutkan po_line_id)
-        for po_line_id in sorted(added_per_po_line.keys()):
-            po_repo.add_po_line_received_qty(
-                conn,
-                po_line_id=po_line_id,
-                qty_added=added_per_po_line[po_line_id],
-            )
-
-        # 7. Evaluasi ulang status PO (PARTIALLY_RECEIVED vs RECEIVED)
-        updated_po_lines = po_repo.list_po_lines(conn, po_id)
-        all_fulfilled = all(
-            Decimal(ln["qty_received"]).quantize(FOUR_PLACES)
-            == Decimal(ln["qty_ordered"]).quantize(FOUR_PLACES)
-            for ln in updated_po_lines
-        )
-        new_po_status = (
-            POStatus.RECEIVED.value
-            if all_fulfilled
-            else POStatus.PARTIALLY_RECEIVED.value
-        )
+        # 6-7. Perbarui qty_received baris PO, status fulfillment PO, dan audit PO melalui contract PUR (`apply_receipt`)
         old_po_status = str(po["status"])
-        if new_po_status != old_po_status:
-            po_repo.update_po_status(conn, po_id, status=new_po_status)
+        new_po_status = po_service.apply_receipt(
+            conn,
+            po_id=po_id,
+            old_po_status=old_po_status,
+            added_per_po_line=added_per_po_line,
+            gr_id=gr_id,
+            gr_number=str(gr["gr_number"]),
+            actor_id=int(actor["id"]),
+            ip_address=ip_address,
+        )
 
         # 8. Tandai GR sebagai POSTED
         gr_repo.mark_gr_posted(conn, gr_id, posted_by=int(actor["id"]))
@@ -632,7 +622,7 @@ def post_goods_receipt(
         posted_gr = gr_repo.get_gr_by_id(conn, gr_id)
         assert posted_gr is not None
 
-        # 9. Catat audit log untuk GR dan PO dalam transaksi yang sama
+        # 9. Catat audit log untuk GR dalam transaksi yang sama
         audit_service.record(
             conn,
             user_id=int(actor["id"]),
@@ -648,20 +638,6 @@ def post_goods_receipt(
                 else None,
                 "po_id": po_id,
                 "po_status_after": new_po_status,
-            },
-            ip_address=ip_address,
-        )
-        audit_service.record(
-            conn,
-            user_id=int(actor["id"]),
-            action="PO_RECEIPT_PROGRESS_UPDATED",
-            entity_type="purchase_orders",
-            entity_id=po_id,
-            old_values={"status": old_po_status},
-            new_values={
-                "status": new_po_status,
-                "gr_id": gr_id,
-                "gr_number": posted_gr["gr_number"],
             },
             ip_address=ip_address,
         )

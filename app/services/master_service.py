@@ -44,6 +44,38 @@ ITEM_SORT_COLUMNS: dict[str, str] = {
 }
 
 EMAIL_REGEX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+CODE_REGEX = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
+PHONE_REGEX = re.compile(r"^[0-9+() -]{6,30}$")
+
+
+def _validate_code_format(value: str, *, field_name: str, label: str) -> str:
+    clean = value.strip()
+    if not clean:
+        raise ValidationDomainError(
+            f"{label} tidak boleh kosong.",
+            details={"field": field_name},
+        )
+    if not CODE_REGEX.match(clean):
+        raise ValidationDomainError(
+            f"Format {label.lower()} tidak valid; hanya boleh diawali huruf/angka dan berisi huruf, angka, titik (.), garis bawah (_), garis miring (/), atau tanda hubung (-) tanpa spasi.",
+            details={"field": field_name, "value": clean},
+        )
+    return clean
+
+
+def _validate_optional_phone(phone: str | None) -> str | None:
+    if phone is None:
+        return None
+    clean = phone.strip()
+    if not clean:
+        return None
+    digit_count = sum(ch.isdigit() for ch in clean)
+    if not PHONE_REGEX.match(clean) or digit_count < 6:
+        raise ValidationDomainError(
+            "Format nomor telepon pemasok tidak valid (gunakan 6-30 karakter angka, +, -, tanda kurung, atau spasi).",
+            details={"field": "phone", "value": clean},
+        )
+    return clean
 
 
 # ============================================================================
@@ -291,6 +323,7 @@ def create_uom(
             "Kode dan nama UoM tidak boleh kosong.",
             details={"code": clean_code, "name": clean_name},
         )
+    clean_code = _validate_code_format(clean_code, field_name="code", label="Kode UoM")
 
     with conn.transaction():
         existing = master_repo.get_uom_by_code(conn, clean_code)
@@ -347,12 +380,7 @@ def update_uom(
 
         new_code = existing["code"]
         if code is not None:
-            new_code = code.strip()
-            if not new_code:
-                raise ValidationDomainError(
-                    "Kode UoM tidak boleh kosong.",
-                    details={"field": "code"},
-                )
+            new_code = _validate_code_format(code, field_name="code", label="Kode UoM")
             if new_code.lower() != str(existing["code"]).lower():
                 dup = master_repo.get_uom_by_code(conn, new_code)
                 if dup and int(dup["id"]) != uom_id:
@@ -378,6 +406,13 @@ def update_uom(
         new_active = (
             bool(is_active) if is_active is not None else bool(existing["is_active"])
         )
+
+        if bool(existing["allow_decimal"]) and not new_allow_decimal:
+            if master_repo.is_uom_referenced_by_any_item(conn, uom_id):
+                raise EntityInUse(
+                    "Atribut allow_decimal pada UoM tidak dapat diubah menjadi FALSE karena UoM sudah digunakan oleh barang.",
+                    details={"uom_id": uom_id, "field": "allow_decimal"},
+                )
 
         if existing["is_active"] and not new_active:
             if master_repo.is_uom_in_use(conn, uom_id):
@@ -491,6 +526,10 @@ def create_supplier(
             "Kode dan nama pemasok tidak boleh kosong.",
             details={"code": clean_code, "name": clean_name},
         )
+    clean_code = _validate_code_format(
+        clean_code, field_name="code", label="Kode pemasok"
+    )
+    clean_phone = _validate_optional_phone(phone)
 
     clean_email: str | None = None
     if email is not None and email.strip():
@@ -512,10 +551,12 @@ def create_supplier(
             conn,
             code=clean_code,
             name=clean_name,
-            contact_person=contact_person.strip() if contact_person else None,
-            phone=phone.strip() if phone else None,
+            contact_person=contact_person.strip()
+            if contact_person and contact_person.strip()
+            else None,
+            phone=clean_phone,
             email=clean_email,
-            address=address.strip() if address else None,
+            address=address.strip() if address and address.strip() else None,
             is_active=is_active,
             created_by=int(actor["id"]),
         )
@@ -565,12 +606,9 @@ def update_supplier(
 
         new_code = existing["code"]
         if code is not None:
-            new_code = code.strip()
-            if not new_code:
-                raise ValidationDomainError(
-                    "Kode pemasok tidak boleh kosong.",
-                    details={"field": "code"},
-                )
+            new_code = _validate_code_format(
+                code, field_name="code", label="Kode pemasok"
+            )
             if new_code.lower() != str(existing["code"]).lower():
                 dup = master_repo.get_supplier_by_code(conn, new_code)
                 if dup and int(dup["id"]) != supplier_id:
@@ -589,12 +627,20 @@ def update_supplier(
                 )
 
         new_contact = (
-            contact_person.strip()
+            (contact_person.strip() or None)
             if contact_person is not None
             else existing["contact_person"]
         )
-        new_phone = phone.strip() if phone is not None else existing["phone"]
-        new_address = address.strip() if address is not None else existing["address"]
+        new_phone = (
+            _validate_optional_phone(phone)
+            if phone is not None
+            else existing["phone"]
+        )
+        new_address = (
+            (address.strip() or None)
+            if address is not None
+            else existing["address"]
+        )
 
         new_email = existing["email"]
         if email is not None:
@@ -732,6 +778,7 @@ def create_item(
             "SKU dan nama barang tidak boleh kosong.",
             details={"sku": clean_sku, "name": clean_name},
         )
+    clean_sku = _validate_code_format(clean_sku, field_name="sku", label="SKU barang")
 
     with conn.transaction():
         existing = master_repo.get_item_by_sku(conn, clean_sku)
@@ -819,12 +866,7 @@ def update_item(
 
         new_sku = existing["sku"]
         if sku is not None:
-            new_sku = sku.strip()
-            if not new_sku:
-                raise ValidationDomainError(
-                    "SKU barang tidak boleh kosong.",
-                    details={"field": "sku"},
-                )
+            new_sku = _validate_code_format(sku, field_name="sku", label="SKU barang")
             if new_sku != existing["sku"]:
                 # PRD FR-02 & 6.8: SKU tidak dapat diubah setelah barang dipakai pada transaksi apa pun
                 if master_repo.is_item_used_in_transactions(conn, item_id):

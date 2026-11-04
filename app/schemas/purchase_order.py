@@ -12,7 +12,7 @@ from app.schemas.common import DecimalStr
 class POLineInput(BaseModel):
     item_id: int
     qty_ordered: Decimal
-    notes: str | None = None
+    notes: str | None = Field(default=None, max_length=500)
 
     @field_validator("qty_ordered", mode="before")
     @classmethod
@@ -43,7 +43,7 @@ class PurchaseOrderCreate(BaseModel):
     supplier_id: int
     warehouse_id: int
     order_date: date
-    notes: str | None = None
+    notes: str | None = Field(default=None, max_length=1000)
     lines: list[POLineInput] = Field(default_factory=list)
 
 
@@ -51,12 +51,12 @@ class PurchaseOrderUpdate(BaseModel):
     supplier_id: int | None = None
     warehouse_id: int | None = None
     order_date: date | None = None
-    notes: str | None = None
+    notes: str | None = Field(default=None, max_length=1000)
     lines: list[POLineInput] | None = None
 
 
 class PurchaseOrderCloseRequest(BaseModel):
-    closed_reason: str = Field(..., min_length=1)
+    closed_reason: str = Field(..., min_length=1, max_length=500)
 
 
 class PurchaseOrderSummaryOut(BaseModel):

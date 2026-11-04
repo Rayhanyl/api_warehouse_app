@@ -13,7 +13,7 @@ class GRLineInput(BaseModel):
     po_line_id: int
     location_id: int
     qty_received: Decimal
-    notes: str | None = None
+    notes: str | None = Field(default=None, max_length=500)
 
     @field_validator("qty_received", mode="before")
     @classmethod
@@ -48,13 +48,13 @@ class GRLineOut(BaseModel):
 class GoodsReceiptCreate(BaseModel):
     po_id: int
     received_date: date
-    notes: str | None = None
+    notes: str | None = Field(default=None, max_length=1000)
     lines: list[GRLineInput] = Field(default_factory=list)
 
 
 class GoodsReceiptUpdate(BaseModel):
     received_date: date | None = None
-    notes: str | None = None
+    notes: str | None = Field(default=None, max_length=1000)
     lines: list[GRLineInput] | None = None
 
 

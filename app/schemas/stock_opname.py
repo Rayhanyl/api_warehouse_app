@@ -20,13 +20,13 @@ def _reject_float(v: Any) -> Any:
 class StockOpnameCreate(BaseModel):
     warehouse_id: int
     location_id: int | None = None
-    notes: str | None = None
+    notes: str | None = Field(default=None, max_length=1000)
 
 
 class StockOpnameUpdate(BaseModel):
     location_id: int | None = None
     clear_location: bool = False
-    notes: str | None = None
+    notes: str | None = Field(default=None, max_length=1000)
 
 
 class StockOpnameCountLineInput(BaseModel):
@@ -34,7 +34,7 @@ class StockOpnameCountLineInput(BaseModel):
     location_id: int | None = None
     item_id: int | None = None
     qty_physical: Decimal
-    notes: str | None = None
+    notes: str | None = Field(default=None, max_length=500)
 
     @field_validator("qty_physical", mode="before")
     @classmethod
@@ -47,7 +47,7 @@ class StockOpnameCountRequest(BaseModel):
 
 
 class StockOpnameRejectRequest(BaseModel):
-    rejection_reason: str
+    rejection_reason: str = Field(..., min_length=1, max_length=500)
 
 
 class StockOpnameLineOut(BaseModel):

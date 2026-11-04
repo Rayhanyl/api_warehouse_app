@@ -13,7 +13,7 @@ Dokumen ini menggabungkan rencana dan spesifikasi QA WMS dalam satu tempat. Caku
 
 ## 1. Tujuan dan cara menggunakan
 
-Panduan ini membantu menentukan apa yang perlu diuji, urutan prioritas, dan bukti yang perlu dicatat. PRD dan acceptance criteria (AC-01 s.d. AC-14) tetap menjadi sumber kebenaran untuk perilaku sistem. Isi dokumen QA lama yang digabungkan di sini adalah bahan rujukan; daftar alat atau skenario yang berstatus rencana bukan berarti alat tersebut sudah dipasang atau dijalankan.
+Panduan ini membantu menentukan apa yang perlu diuji, urutan prioritas, dan bukti yang perlu dicatat. PRD dan acceptance criteria (`AC-01` s.d. `AC-22`) tetap menjadi sumber kebenaran untuk perilaku sistem. Isi dokumen QA lama yang digabungkan di sini adalah bahan rujukan; daftar alat atau skenario yang berstatus rencana bukan berarti alat tersebut sudah dipasang atau dijalankan.
 
 Jalankan pengujian backend hanya pada database khusus `wms_test`. Jangan arahkan test/reset fixture ke database pengembangan atau produksi. Test database menggunakan PostgreSQL sungguhan; mock boleh digunakan untuk menguji bagian frontend secara terisolasi bila frontend kelak tersedia, tetapi tidak menggantikan verifikasi backend terhadap PostgreSQL.
 
@@ -63,6 +63,14 @@ Gunakan matriks ini sebagai daftar regresi wajib. Nama test ditulis sesuai imple
 | AC-12 | Penugasan gudang dan penolakan akses di luar cakupan | `test_ac12_warehouse_scoping_assignment_and_access_enforcement` |
 | AC-13 | Dua posting GR bersamaan tidak mem-posting dokumen dua kali | `test_ac13_concurrent_gr_post_prevents_double_posting` |
 | AC-14 | Pohon menu terfilter permission, akses administrasi, audit, validasi parent, dan penonaktifan tanpa hard delete | `test_ac14_menu_tree_filters_permissions_and_keeps_visible_parents`; `test_ac14_menu_admin_permission_crud_and_audit_log`; `test_ac14_menu_parent_validation_and_soft_deactivation` |
+| AC-15 | Penomoran dokumen atomik per tipe dan periode `YYYYMM` tanpa duplikasi pada request konkuren | Tercakup pada pengujian pembuatan dokumen transaksi (`tests/test_goods_receipt.py`, `tests/test_stock_transfer.py`, `tests/test_stock_opname.py`) |
+| AC-16 | Perilaku query list konsisten: pagination, filter, pencarian, sort whitelist, dan serialisasi kuantitas string desimal | Tercakup pada pengujian list master, stok, ledger, dokumen, dan audit (`tests/test_rbac_scoping.py`, `tests/test_stock_transfer.py`) |
+| AC-17 | Format error standar, korelasi header `X-Request-ID`, dan endpoint `/health` | `tests/test_request_id.py` dan pengujian error domain lintas suite |
+| AC-18 | Migration runner menerapkan berkas `.sql` secara berurutan, idempotent, dan forward-only | Diverifikasi melalui fixture migrasi database uji (`tests/conftest.py` dan `db/migrate.py`) |
+| AC-19 | Validasi keunikan master data, imutabilitas SKU/UoM dan proteksi `allow_decimal`, serta proteksi deaktivasi (`ENTITY_IN_USE`) | `tests/test_rbac_scoping.py` |
+| AC-20 | Validasi keunikan gudang/lokasi, validasi kepemilikan lokasi (`INVALID_LOCATION`), audit `allow_negative_stock`, dan proteksi deaktivasi | `tests/test_rbac_scoping.py`, `tests/test_goods_receipt.py`, `tests/test_stock_transfer.py` |
+| AC-21 | Penolakan transisi status dokumen di luar matriks bagian 7.5 (`INVALID_STATE_TRANSITION`) tanpa efek samping parsial | `tests/test_goods_receipt.py`, `tests/test_stock_transfer.py`, `tests/test_stock_opname.py` |
+| AC-22 | Kelengkapan atribut audit log, sanitasi field sensitif, dan pembatasan akses `audit:read` | `tests/test_rbac_scoping.py`, `tests/test_auth.py`, `tests/test_immutability.py` |
 
 Test AC-06 dan AC-13 harus tetap diuji dengan konkurensi nyata: koneksi database terpisah dan sinkronisasi dua request. Jangan menggantinya dengan test berurutan atau mock, karena itu tidak menguji perlombaan transaksi.
 
@@ -98,9 +106,9 @@ Catatan M8 di `docs/API/README.md` memuat benchmark lokal yang pernah dilakukan.
 
 ### 2.5. Kriteria selesai QA backend
 
-- Seluruh AC yang terdampak perubahan lulus; sebelum rilis, suite AC-01 s.d. AC-14 lulus.
+- Seluruh AC yang terdampak perubahan lulus; sebelum rilis, suite `AC-01` s.d. `AC-22` lulus.
 - AC-14 menguji menu pada PostgreSQL nyata; permission menu hanya menyaring navigasi dan tidak menggantikan otorisasi endpoint backend.
-- Status run terbaru saat pembaruan dokumentasi: 21 tes lulus di `wms_test`, termasuk ketiga tes AC-14.
+- Status run terbaru saat pembaruan dokumentasi: 24 tes lulus di `wms_test`, mencakup seluruh skenario `AC-01` s.d. `AC-22`.
 - Tidak ada temuan terbuka yang mengancam integritas saldo/ledger, autentikasi, atau pembatasan akses.
 - Pemeriksaan saldo, ledger, audit, dan rollback konsisten dengan PRD.
 - Kinerja dilaporkan dengan lingkungan, ukuran data, metode, dan hasil p95; klaim target hanya dibuat bila hasilnya memang terukur.
@@ -158,7 +166,7 @@ Untuk setiap temuan, catat:
 
 ## 5. Referensi
 
-- `docs/CORE/PRD_GENERAL.md` — FR, aturan bisnis, AC-01 s.d. AC-14, dan target kinerja.
+- `docs/CORE/PRD_GENERAL.md` — FR, aturan bisnis, `AC-01` s.d. `AC-22`, dan target kinerja.
 - `docs/CORE/FOLDER_STRUCTURE.MD` — struktur aplikasi dan urutan tahap implementasi.
 - `docs/API/README.md` — indeks dokumentasi endpoint dan catatan penyelesaian implementasi.
 - `tests/` — implementasi skenario otomatis backend.

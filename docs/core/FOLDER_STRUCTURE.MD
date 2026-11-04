@@ -94,10 +94,10 @@ warehouse_api/
 │   ├── init/
 │   │   └── 001_create_app_role.sql         # sekali jalan: role `wms_app` (bukan superuser, bukan pemilik tabel)
 │   ├── migrations/
-│   │   ├── 001_create_auth_tables.sql      # roles, permissions, role_permissions, users, user_warehouses, refresh_tokens
-│   │   ├── 002_create_master_tables.sql    # categories, uoms, items, suppliers, warehouses, storage_locations
+│   │   ├── 001_create_auth_tables.sql      # roles, permissions, role_permissions, users, refresh_tokens
+│   │   ├── 002_create_master_tables.sql    # categories, uoms, items, suppliers, warehouses, storage_locations, user_warehouses
 │   │   ├── 003_create_inventory_tables.sql # inventory_balances, stock_movements
-│   │   ├── 004_create_purchasing_tables.sql# purchase_orders, po_lines, goods_receipts, gr_lines
+│   │   ├── 004_create_po_gr.sql            # purchase_orders, po_lines, goods_receipts, gr_lines
 │   │   ├── 005_create_transfer_opname.sql  # stock_transfers(+lines), stock_opnames(+lines)
 │   │   ├── 006_create_audit_sequences.sql  # audit_logs, document_sequences
 │   │   ├── 007_append_only_guards.sql      # trigger tolak UPDATE/DELETE + REVOKE hak wms_app (AC-08)
@@ -105,7 +105,7 @@ warehouse_api/
 │   │   └── 009_create_menu_tables.sql      # tabel menus + seed menu awal modul WMS
 │   ├── seeds/
 │   │   └── dev_seed.sql                    # data contoh untuk pengembangan lokal
-│   └── migrate.py                          # runner: jalankan .sql berurutan, catat di schema_migrations
+│   └── migrate.py                          # runner: jalankan .sql berurutan, catat di schema_migrations (AC-18)
 │
 ├── scripts/
 │   └── create_superadmin.py        # bootstrap user Super Admin pertama (belum ada user untuk login)
@@ -115,11 +115,12 @@ warehouse_api/
 │   ├── factories.py                # helper insert data (gudang, lokasi, item, PO, saldo)
 │   ├── test_auth.py                # AC-11
 │   ├── test_menus.py               # AC-14
-│   ├── test_rbac_scoping.py        # AC-05, AC-12
-│   ├── test_goods_receipt.py       # AC-01, AC-07, AC-13
-│   ├── test_stock_transfer.py      # AC-02, AC-03, AC-06, AC-09
-│   ├── test_stock_opname.py        # AC-04, AC-10
-│   └── test_immutability.py        # AC-08
+│   ├── test_rbac_scoping.py        # AC-05, AC-12, AC-16, AC-19, AC-20, AC-22
+│   ├── test_goods_receipt.py       # AC-01, AC-07, AC-13, AC-15, AC-21
+│   ├── test_stock_transfer.py      # AC-02, AC-03, AC-06, AC-09, AC-21
+│   ├── test_stock_opname.py        # AC-04, AC-10, AC-21
+│   ├── test_immutability.py        # AC-08
+│   └── test_request_id.py          # AC-17
 │
 ├── .env.example
 ├── .gitignore

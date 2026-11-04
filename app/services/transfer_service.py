@@ -604,12 +604,27 @@ def approve_transfer(
             conn, actor, int(locked["source_warehouse_id"])
         )
 
+        _validate_header(
+            conn,
+            source_warehouse_id=int(locked["source_warehouse_id"]),
+            source_location_id=int(locked["source_location_id"]),
+            destination_warehouse_id=int(locked["destination_warehouse_id"]),
+            destination_location_id=int(locked["destination_location_id"]),
+        )
+
         lines = transfer_repo.list_transfer_lines(conn, transfer_id)
         if not lines:
             raise ValidationDomainError(
                 "Transfer tidak dapat disetujui karena belum memiliki baris barang.",
                 details={"transfer_id": transfer_id},
             )
+        for ln in lines:
+            item = inventory_repo.get_item_with_uom(conn, int(ln["item_id"]))
+            if not item or not item["is_active"]:
+                raise InactiveReferenceError(
+                    f"Barang '{ln['item_sku']}' berstatus tidak aktif.",
+                    details={"item_id": ln["item_id"], "sku": ln["item_sku"]},
+                )
 
         transfer_repo.update_transfer_approved(
             conn, transfer_id, approved_by=int(actor["id"])
