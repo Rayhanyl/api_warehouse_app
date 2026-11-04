@@ -155,6 +155,7 @@ def list_users(
     *,
     limit: int,
     offset: int,
+    exclude_user_id: int | None = None,
     role_id: int | None = None,
     is_active: bool | None = None,
     search: str | None = None,
@@ -165,6 +166,9 @@ def list_users(
     conditions: list[str] = []
     params: list[Any] = []
 
+    if exclude_user_id is not None:
+        conditions.append("u.id <> %s")
+        params.append(exclude_user_id)
     if role_id is not None:
         conditions.append("u.role_id = %s")
         params.append(role_id)

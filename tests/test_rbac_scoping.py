@@ -40,6 +40,16 @@ def test_ac05_rbac_enforcement_and_audit_log_recording(
     assert forbidden_res.status_code == 403
     assert forbidden_res.json()["error"]["code"] == "PERMISSION_DENIED"
 
+    # Super Admin mengambil daftar pengguna -> akun Super Admin yang sedang login tidak muncul di list
+    users_list_res = client.get(
+        "/api/v1/users?limit=25&offset=0&search=&is_active=",
+        headers=superadmin_user["auth_headers"],
+    )
+    assert users_list_res.status_code == 200
+    listed_user_ids = [u["id"] for u in users_list_res.json()["items"]]
+    assert superadmin_user["id"] not in listed_user_ids
+    assert staff_user["id"] in listed_user_ids
+
     # 2. Warehouse Staff mencoba membaca audit log (butuh audit:read) -> 403 PERMISSION_DENIED
     forbidden_audit = client.get("/api/v1/audit-logs", headers=staff_user["auth_headers"])
     assert forbidden_audit.status_code == 403

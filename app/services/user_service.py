@@ -49,6 +49,7 @@ def _public_user_snapshot(user: dict[str, Any]) -> dict[str, Any]:
 def list_users(
     conn: Connection[dict[str, Any]],
     *,
+    actor: dict[str, Any] | None = None,
     limit: int = 50,
     offset: int = 0,
     role_id: int | None = None,
@@ -57,12 +58,14 @@ def list_users(
     sort_by: str | None = None,
     sort_dir: str | None = None,
 ) -> dict[str, Any]:
-    """Mengambil daftar pengguna terpaginasi."""
+    """Mengambil daftar pengguna terpaginasi (mengecualikan akun pengguna yang sedang login)."""
     norm_limit, norm_offset = normalize_pagination(limit, offset)
+    exclude_user_id = int(actor["id"]) if actor and "id" in actor else None
     items, total = user_repo.list_users(
         conn,
         limit=norm_limit,
         offset=norm_offset,
+        exclude_user_id=exclude_user_id,
         role_id=role_id,
         is_active=is_active,
         search=search,

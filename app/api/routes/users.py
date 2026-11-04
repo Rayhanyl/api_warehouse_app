@@ -33,11 +33,12 @@ def list_users(
     search: OptStrQuery = Query(default=None),
     sort_by: OptStrQuery = Query(default=None),
     sort_dir: OptStrQuery = Query(default=None),
-    _actor: dict[str, Any] = Depends(require_permission(USER_MANAGE)),
+    actor: dict[str, Any] = Depends(require_permission(USER_MANAGE)),
     conn: Connection[dict[str, Any]] = Depends(get_conn),
 ) -> Page[UserOut]:
     page = user_service.list_users(
         conn,
+        actor=actor,
         limit=limit,
         offset=offset,
         role_id=role_id,
