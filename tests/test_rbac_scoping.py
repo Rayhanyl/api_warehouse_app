@@ -84,6 +84,28 @@ def test_ac05_rbac_enforcement_and_audit_log_recording(
     assert audit_row["old_values"]["role_name"] == "Warehouse Staff"
     assert audit_row["new_values"]["full_name"] == "Operator Gudang Senior"
     assert audit_row["new_values"]["role_name"] == "Warehouse Manager"
+    assert "username" not in audit_row["old_values"]
+
+    # No-op update (mengirim nilai yang sama persis) tidak menambah baris duplikat di audit_logs
+    noop_res = client.patch(
+        f"/api/v1/users/{staff_user['id']}",
+        headers=superadmin_user["auth_headers"],
+        json={
+            "full_name": "Operator Gudang Senior",
+            "role_id": manager_user["role_id"],
+        },
+    )
+    assert noop_res.status_code == 200
+    update_count_row = db_conn.execute(
+        """
+        SELECT COUNT(*) AS cnt
+        FROM audit_logs
+        WHERE action = 'USER_UPDATED' AND entity_type = 'users' AND entity_id = %s
+        """,
+        (str(staff_user["id"]),),
+    ).fetchone()
+    assert update_count_row is not None
+    assert int(update_count_row["cnt"]) == 1
 
     # 4. Invarian 14 & FR-01: Peran & status aktif diverifikasi dari DB pada setiap request tanpa menunggu token kedaluwarsa.
     #    Jika pengguna dinonaktifkan oleh Super Admin, token akses yang masih berumur 15 menit langsung ditolak (401).

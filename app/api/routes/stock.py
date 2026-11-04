@@ -7,7 +7,13 @@ from psycopg import Connection
 
 from app.core.database import get_conn
 from app.core.permissions import LEDGER_READ, STOCK_READ, require_permission
-from app.schemas.common import OptDatetimeQuery, OptIntQuery, OptStrQuery, Page
+from app.schemas.common import (
+    OptDatetimeQuery,
+    OptEndDatetimeQuery,
+    OptIntQuery,
+    OptStrQuery,
+    Page,
+)
 from app.schemas.stock import (
     StockLocationBalanceOut,
     StockMovementOut,
@@ -118,7 +124,7 @@ def list_stock_movements(
     reference_type: OptStrQuery = Query(default=None),
     reference_id: OptIntQuery = Query(default=None),
     date_from: OptDatetimeQuery = Query(default=None),
-    date_to: OptDatetimeQuery = Query(default=None),
+    date_to: OptEndDatetimeQuery = Query(default=None),
     sort_by: OptStrQuery = Query(default=None),
     sort_dir: OptStrQuery = Query(default=None),
     actor: dict[str, Any] = Depends(require_permission(LEDGER_READ)),

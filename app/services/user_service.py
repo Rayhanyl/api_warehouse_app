@@ -273,6 +273,11 @@ def update_user(
         if (before_ctx["is_active"] and not new_is_active) or password is not None:
             token_repo.update_revoke_all_user_tokens(conn, user_id, revoked_at=now)
 
+        old_snap = _public_user_snapshot(before_ctx)
+        new_snap = _public_user_snapshot(updated)
+        if password is not None:
+            new_snap["password_changed"] = True
+
         audit_service.record(
             conn,
             user_id=actor_id,
@@ -281,8 +286,8 @@ def update_user(
             else "USER_UPDATED",
             entity_type="users",
             entity_id=user_id,
-            old_values=_public_user_snapshot(before_ctx),
-            new_values=_public_user_snapshot(updated),
+            old_values=old_snap,
+            new_values=new_snap,
             ip_address=ip_address,
         )
         return updated

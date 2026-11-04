@@ -76,6 +76,7 @@ def list_audit_logs(
     entity_id: str | None = None,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
+    search: str | None = None,
     sort_by: str | None = None,
     sort_dir: str | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
@@ -101,12 +102,19 @@ def list_audit_logs(
     if date_to is not None:
         conditions.append("a.created_at <= %s")
         params.append(date_to)
+    if search:
+        pattern = f"%{search.strip()}%"
+        conditions.append(
+            "(a.action ILIKE %s OR a.entity_type ILIKE %s OR COALESCE(a.entity_id, '') ILIKE %s OR COALESCE(u.username, '') ILIKE %s)"
+        )
+        params.extend([pattern, pattern, pattern, pattern])
 
     where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     order_clause = build_order_by(sort_by, sort_dir, AUDIT_SORT_COLUMNS, "id", "DESC")
+    join_users_in_count = "LEFT JOIN users u ON u.id = a.user_id" if search else ""
 
     count_row = conn.execute(
-        f"SELECT COUNT(*) AS total FROM audit_logs a {where_clause}",
+        f"SELECT COUNT(*) AS total FROM audit_logs a {join_users_in_count} {where_clause}",
         params,
     ).fetchone()
     total = int(count_row["total"]) if count_row else 0

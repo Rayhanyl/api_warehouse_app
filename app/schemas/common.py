@@ -16,6 +16,17 @@ def _empty_str_to_none(v: Any) -> Any:
     return v
 
 
+def _empty_or_date_to_end_datetime(v: Any) -> Any:
+    """Normalisasi date_to bertipe datetime: string kosong -> None; tanggal 'YYYY-MM-DD' -> akhir hari 'YYYY-MM-DDT23:59:59.999999'."""
+    if isinstance(v, str):
+        s = v.strip()
+        if not s:
+            return None
+        if len(s) == 10 and s[4:5] == "-" and s[7:8] == "-":
+            return f"{s}T23:59:59.999999"
+    return v
+
+
 DecimalStr = Annotated[
     Decimal,
     PlainSerializer(lambda v: f"{v:.4f}", return_type=str, when_used="json"),
@@ -32,6 +43,9 @@ OptBoolQuery = Annotated[bool, BeforeValidator(_empty_str_to_none)] | _OptNone
 OptDateQuery = Annotated[date, BeforeValidator(_empty_str_to_none)] | _OptNone
 OptDatetimeQuery = (
     Annotated[datetime, BeforeValidator(_empty_str_to_none)] | _OptNone
+)
+OptEndDatetimeQuery = (
+    Annotated[datetime, BeforeValidator(_empty_or_date_to_end_datetime)] | _OptNone
 )
 
 

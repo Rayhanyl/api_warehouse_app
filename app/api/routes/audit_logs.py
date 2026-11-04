@@ -8,7 +8,13 @@ from psycopg import Connection
 from app.core.database import get_conn
 from app.core.permissions import AUDIT_READ, require_permission
 from app.schemas.audit_log import AuditLogOut
-from app.schemas.common import OptDatetimeQuery, OptIntQuery, OptStrQuery, Page
+from app.schemas.common import (
+    OptDatetimeQuery,
+    OptEndDatetimeQuery,
+    OptIntQuery,
+    OptStrQuery,
+    Page,
+)
 from app.services import audit_service
 
 router = APIRouter(prefix="/audit-logs", tags=["Audit Logs"])
@@ -23,7 +29,8 @@ def list_audit_logs(
     entity_type: OptStrQuery = Query(default=None),
     entity_id: OptStrQuery = Query(default=None),
     date_from: OptDatetimeQuery = Query(default=None),
-    date_to: OptDatetimeQuery = Query(default=None),
+    date_to: OptEndDatetimeQuery = Query(default=None),
+    search: OptStrQuery = Query(default=None),
     sort_by: OptStrQuery = Query(default=None),
     sort_dir: OptStrQuery = Query(default=None),
     _actor: dict[str, Any] = Depends(require_permission(AUDIT_READ)),
@@ -39,6 +46,7 @@ def list_audit_logs(
         entity_id=entity_id,
         date_from=date_from,
         date_to=date_to,
+        search=search,
         sort_by=sort_by,
         sort_dir=sort_dir,
     )
