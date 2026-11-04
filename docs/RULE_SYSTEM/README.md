@@ -10,7 +10,7 @@ Ia tidak membuat permission, status, kode error, atau requirement baru.
 | [REVIEW_PRD_DAN_ARSITEKTUR.md](REVIEW_PRD_DAN_ARSITEKTUR.md) | Audit, konflik, asumsi, dan rekomendasi; bukan spesifikasi yang disetujui |
 
 Aturan bisnis yang mengikat saat ini berada di
-[PRODUCT_REQUIREMENTS_DOCUMENT.MD](../core/PRODUCT_REQUIREMENTS_DOCUMENT.MD).
+[PRD_GENERAL.md](../core/PRD_GENERAL.md).
 Saat aturan rinci baru ditambahkan, buat dokumen pemilik di folder ini dan
 tautkan kembali ke ID PRD tanpa menyalin seluruh isi PRD.
 

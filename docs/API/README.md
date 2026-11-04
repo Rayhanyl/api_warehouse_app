@@ -1,6 +1,6 @@
 # Dokumentasi API — Warehouse Management System (WMS)
 
-Dokumentasi teknis REST API untuk aplikasi **Warehouse Management System (WMS)** berbasis **Python (FastAPI)** dan **PostgreSQL** (`psycopg` 3 tanpa ORM). Seluruh isi dokumentasi ini disusun berdasarkan **implementasi kode aktual**, **skema migrasi SQL (`001`–`009`)**, **pengujian otomatis (`pytest`)**, serta dokumen acuan [PRODUCT_REQUIREMENTS_DOCUMENT.MD](../CORE/PRODUCT_REQUIREMENTS_DOCUMENT.MD).
+Dokumentasi teknis REST API untuk aplikasi **Warehouse Management System (WMS)** berbasis **Python (FastAPI)** dan **PostgreSQL** (`psycopg` 3 tanpa ORM). Seluruh isi dokumentasi ini disusun berdasarkan **implementasi kode aktual**, **skema migrasi SQL (`001`–`009`)**, **pengujian otomatis (`pytest`)**, serta dokumen acuan [PRD_GENERAL.md](../CORE/PRD_GENERAL.md).
 
 ---
 

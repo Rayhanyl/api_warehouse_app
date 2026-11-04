@@ -7,7 +7,7 @@
 
 | ID | Kategori | Sumber | Temuan | Dampak | Prioritas | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| DOC-001 | Aktual | `docs/CORE/PRODUCT_REQUIREMENTS_DOCUMENT.MD`, `docs/CORE/PRD JejakStok — Sistem Manajemen Gudang (Modular).md` | Ada dua PRD dengan scope berbeda: MVP single-tenant versus usulan multi-tenant SaaS. | Developer dapat menambah fitur yang dilarang MVP. | Critical | Open |
+| DOC-001 | Aktual | Audit sebelum restrukturisasi; `docs/CORE/PRD_GENERAL.md` dan `PRD_AUDIT_AND_RESTRUCTURING_REPORT.md` | Sebelumnya ada dua PRD dengan scope berbeda: MVP single-tenant versus usulan multi-tenant SaaS. | Developer dapat menambah fitur yang dilarang MVP. | Critical | Resolved |
 | DOC-002 | Aktual | `docs/CORE/PRD JejakStok — Sistem Manajemen Gudang (Modular).md` | Draft modular menyebut `PRD_FRONTEND.md` yang tidak tersedia di repository. | Referensi frontend tidak dapat diverifikasi. | Medium | Open |
 | DOC-003 | Aktual | `docs/QA/QA.MD`, `docs/STANDARDS/TECHNICAL_QUALITY_GATE.md` | QA dan quality gate mencakup frontend, walaupun repository ini hanya memiliki backend API. | Status rencana dapat terbaca sebagai fitur atau bukti aktual. | Medium | Open |
 | DOC-004 | Aktual | `docs/CORE/CATATAN_PERMASALAHAN_ADMIN.md` | Catatan admin mencampur observasi backend, usulan frontend, dan kontrak yang belum dikonfirmasi. | Usulan integrasi dapat disalahpahami sebagai kontrak resmi. | Medium | Open |
@@ -17,7 +17,7 @@
 
 | ID | Asumsi | Alasan perlu konfirmasi | Dampak |
 | --- | --- | --- | --- |
-| AS-001 | MVP saat ini tetap single-tenant. | `AGENTS.md`, migrasi `001`–`009`, dan PRD v2.0 mendukungnya, tetapi draft modular mengusulkan tenant. | Menentukan apakah desain multi-tenant boleh direncanakan. |
+| AS-001 | MVP saat ini tetap single-tenant. | `AGENTS.md`, migrasi `001`–`009`, dan hasil audit PRD v2.0 mendukungnya, tetapi draft modular mengusulkan tenant. | Menentukan apakah desain multi-tenant boleh direncanakan. |
 | AS-002 | Frontend admin berada di repository terpisah. | Tidak ada source frontend di repository ini; catatan admin merujuk frontend. | Kontrak frontend tidak dapat divalidasi di sini. |
 | AS-003 | Klaim hasil test di QA adalah snapshot historis. | QA menyebut 21 test lulus, tetapi status saat ini harus diverifikasi dengan run baru. | Tidak boleh dipakai sebagai bukti run terkini. |
 
@@ -31,7 +31,7 @@
 
 ## Rekomendasi
 
-1. Pertahankan PRD v2.0 sebagai acuan implementasi hingga AS-001 diputuskan.
+1. Gunakan `PRD_GENERAL.md` sebagai acuan implementasi aktif.
 2. Tandai dokumen modular sebagai draft dan jangan menambahkan migrasi atau
    endpoint dari dokumen tersebut tanpa persetujuan.
 3. Pisahkan hasil test historis dari hasil run terbaru pada QA.

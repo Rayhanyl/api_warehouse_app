@@ -8,7 +8,7 @@ Dokumen ini mengikat setiap agen yang menulis, mengubah, atau meninjau kode di r
 
 Urutan rujukan (yang di atas menang bila bertentangan):
 
-1. `docs/core/PRODUCT_REQUIREMENTS_DOCUMENT.md` — apa yang dibangun: lingkup, peran, status dokumen, aturan bisnis, acceptance criteria (AC-01 s.d. AC-13), entitas data (Lampiran A), konvensi API dan kode error (Lampiran B).
+1. `docs/core/PRD_GENERAL.md` — apa yang dibangun: lingkup, peran, status dokumen, aturan bisnis, requirement, acceptance criteria, entitas data, konvensi API, dan kode error.
 2. `docs/core/FOLDER_STRUCTURE.md` — bagaimana kode disusun: folder, lapisan, pola transaksi, pola penguncian, urutan implementasi.
 3. `AGENTS.md` (dokumen ini, di root repositori) — cara agen bekerja.
 

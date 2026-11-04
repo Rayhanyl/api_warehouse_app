@@ -26,7 +26,9 @@ di [API/README.md](../API/README.md).
 ## Rujukan
 
 - Kebutuhan dan acceptance criteria:
-  [PRODUCT_REQUIREMENTS_DOCUMENT.MD](PRODUCT_REQUIREMENTS_DOCUMENT.MD).
+  [PRD_GENERAL.md](PRD_GENERAL.md).
+- Kebutuhan backend:
+  [PRD_BACKEND.md](PRD_BACKEND.md).
 - Struktur layer:
   [FOLDER_STRUCTURE.MD](FOLDER_STRUCTURE.MD).
 - Detail endpoint:

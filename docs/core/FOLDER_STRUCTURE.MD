@@ -1,6 +1,6 @@
 # Acuan Struktur Folder & Arsitektur Kode — WMS API
 
-Dokumen pendamping `PRODUCT_REQUIREMENTS_DOCUMENT.md` (keduanya disimpan di folder `docs/core`). Struktur ini untuk FastAPI + PostgreSQL yang diakses langsung (psycopg 3, tanpa ORM). Setiap kode FR, AC, permission, status, dan kode error di sini merujuk ke PRD v2.
+Dokumen sumber requirement `PRD_GENERAL.md` disimpan di folder `docs/core`. Struktur ini untuk FastAPI + PostgreSQL yang diakses langsung (psycopg 3, tanpa ORM). Setiap kode FR, AC, permission, status, dan kode error di sini merujuk ke PRD General.
 
 ---
 
@@ -10,7 +10,7 @@ Dokumen pendamping `PRODUCT_REQUIREMENTS_DOCUMENT.md` (keduanya disimpan di fold
 warehouse_api/
 ├── AGENTS.md                       # aturan kerja untuk AI coding agent (harus di root repositori)
 ├── docs/core/
-│   ├── PRODUCT_REQUIREMENTS_DOCUMENT.md                   # sumber kebenaran: apa yang dibangun
+│   ├── PRD_GENERAL.md              # sumber kebenaran: apa yang dibangun
 │   ├── FOLDER_STRUCTURE.md         # dokumen ini
 │   └── schema_database.sql         # (opsional) hasil pg_dump --schema-only; referensi baca saja, bukan sumber kebenaran
 ├── app/

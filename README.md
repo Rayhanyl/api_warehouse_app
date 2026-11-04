@@ -80,7 +80,7 @@ warehouse_app/
 │   └── migrate.py                  # Runner migrasi SQL (mencatat versi di tabel schema_migrations)
 ├── docs/
 │   ├── API/                        # Dokumentasi REST API per modul dan indeks
-│   ├── CORE/                       # Dokumen acuan utama (PRD, FOLDER_STRUCTURE, SCHEMA_DATABASE, aturan dokumentasi)
+│   ├── CORE/                       # PRD General dan spesifikasi layer, schema, API, serta arsitektur
 │   └── QA/                         # Rencana dan spesifikasi pengujian
 ├── scripts/
 │   ├── create_superadmin.py        # Bootstrap akun Super Admin pertama
@@ -231,8 +231,11 @@ Invoke-Item .\htmlcov\index.html
 * [**Health Check**](docs/API/health.md) — Status layanan dan konektivitas pool PostgreSQL.
 
 ### Dokumen Spesifikasi, Arsitektur & QA
-* [**PRD**](docs/CORE/PRODUCT_REQUIREMENTS_DOCUMENT.MD) — Kebutuhan fungsional, RBAC, status, validasi, error, dan AC-01–AC-13.
+* [**PRD General**](docs/CORE/PRD_GENERAL.md) — Master product requirements, scope, role, workflow, NFR, dan acceptance criteria.
+* [**PRD Backend**](docs/CORE/PRD_BACKEND.md) — Kebutuhan API, service, validasi, keamanan, transaksi, dan error handling.
+* [**PRD Frontend**](docs/CORE/PRD_FRONTEND.md) — Struktur halaman, UX, state, permission UI, dan integrasi API.
 * [**Struktur Proyek**](docs/CORE/FOLDER_STRUCTURE.MD) — Arsitektur, transaksi, locking, serta urutan milestone.
+* [**Database Design**](docs/CORE/DATABASE_DESIGN.md) — Pemetaan entitas, relasi, integritas data, dan migration ownership.
 * [**Skema Database**](docs/CORE/SCHEMA_DATABASE.MD) — Entitas, relasi, migrasi, dan trigger.
 * [**Panduan QA**](docs/QA/QA.MD) — Cakupan backend saat ini dan rencana QA frontend bila klien terpisah dibangun.
 * [**AGENTS.md**](AGENTS.MD) — Aturan kerja dan batasan invarian bisnis.
