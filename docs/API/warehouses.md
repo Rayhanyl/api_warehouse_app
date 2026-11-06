@@ -28,9 +28,13 @@ Modul ini mengelola struktur fisik penyimpanan barang dalam dua tingkatan:
 * **Kebijakan Stok Negatif per Gudang (`allow_negative_stock` — FR-02 & PRD 6.1):**
   * Secara bawaan bernilai `false`. Hanya pengguna dengan izin `warehouse:manage` (*Super Admin*) yang dapat membuat gudang atau mengubah `allow_negative_stock`.
   * Setiap perubahan pada gudang (termasuk perubahan `allow_negative_stock`) wajib dicatat di `audit_logs` beserta `old_values` dan `new_values`.
-* **Penegakan *Warehouse Scoping* pada Lokasi Penyimpanan (`403 WAREHOUSE_NOT_ASSIGNED` — PRD 3.1, 3.2 & AC-12):**
-  * Aksi pengelolaan lokasi penyimpanan (`location:manage`) bertanda `(g)` pada Matriks 3.1 PRD.
-  * Saat pengguna non-*Super Admin* (misalnya *Warehouse Manager*) membuat atau memperbarui lokasi penyimpanan, `warehouse_service` memanggil `access_service.ensure_warehouse_access(conn, actor, warehouse_id)`. Apabila pengguna tidak ditugaskan pada gudang pemilik lokasi tersebut, permintaan ditolak dengan HTTP `403` dan kode error `WAREHOUSE_NOT_ASSIGNED`.
+* **Penegakan *Warehouse Scoping* pada Gudang & Lokasi (`403 WAREHOUSE_NOT_ASSIGNED` — PRD 3.1, 3.2 & AC-12):**
+  * Aksi pembacaan dan pengelolaan bertanda `(g)` pada Matriks 3.1 PRD dibatasi hanya pada gudang yang ditugaskan kepada pengguna (`user_warehouses`).
+  * Peran *Warehouse Staff*, *Warehouse Manager*, dan *Purchasing Staff* terikat scoping gudang `(g)`. Pengguna dengan peran ini hanya melihat gudang dan lokasi yang ditugaskan kepada mereka.
+  * *Super Admin* dan *Auditor* bersifat *unscoped* (dapat membaca seluruh gudang dan lokasi secara global).
+  * **Parameter Khusus Tujuan Transfer (`purpose=transfer_destination`):**
+    * Pada endpoint daftar gudang (`GET /api/v1/warehouses`) dan lokasi (`GET /api/v1/locations`), staf dapat mengirimkan `purpose=transfer_destination`.
+    * Ketika parameter ini disertakan, sistem mengembalikan seluruh gudang/lokasi yang aktif (`is_active = true`) di luar penugasan pengguna, agar staf dapat memilih gudang dan lokasi tujuan pada modul Transfer Antar-Gudang (PRD 3.2 & Lampiran B).
 * **Perlindungan Penonaktifan (`409 ENTITY_IN_USE` — PRD 6.8):**
   * **Gudang:** Tidak dapat dinonaktifkan (`is_active: true -> false`) apabila masih memiliki saldo stok (`inventory_balances.qty_on_hand <> 0`) atau masih dirujuk oleh dokumen operasional yang belum final (PO `DRAFT`/`ISSUED`/`PARTIALLY_RECEIVED`, GR `DRAFT`, Transfer `DRAFT`/`APPROVED`/`SHIPPED`, atau Opname `DRAFT`/`IN_PROGRESS`/`WAITING_APPROVAL`).
   * **Lokasi Penyimpanan:** Tidak dapat dinonaktifkan apabila masih memiliki saldo stok (`qty_on_hand <> 0`), dipakai pada baris GR `DRAFT`, menjadi lokasi asal/tujuan Transfer `DRAFT`/`APPROVED`/`SHIPPED`, atau tercakup dalam sesi Opname yang belum final (`DRAFT`/`IN_PROGRESS`/`WAITING_APPROVAL`, termasuk Opname tingkat seluruh gudang di mana `stock_opnames.location_id IS NULL`).
@@ -45,8 +49,8 @@ Modul ini mengelola struktur fisik penyimpanan barang dalam dua tingkatan:
 
 | Aksi | Permission | Peran Bawaan (Matriks 3.1) | Warehouse Scoping `(g)` |
 | --- | --- | --- | --- |
-| Membaca daftar & detail gudang / lokasi | `master:read` | Semua peran (*Super Admin*, *Warehouse Manager*, *Purchasing Staff*, *Warehouse Staff*, *Auditor*) | Tidak |
-| Membuat & memperbarui gudang | `warehouse:manage` | *Super Admin* | Tidak |
+| Membaca daftar & detail gudang / lokasi | `master:read` | Semua peran (*Super Admin*, *Warehouse Manager*, *Purchasing Staff*, *Warehouse Staff*, *Auditor*) | **Ya `(g)`** (kecuali bila `purpose=transfer_destination` disertakan, atau aktor adalah *Super Admin* / *Auditor*) |
+| Membuat & memperbarui gudang | `warehouse:manage` | *Super Admin* | Tidak (Global) |
 | Membuat & memperbarui lokasi penyimpanan | `location:manage` | *Super Admin*, *Warehouse Manager* | **Ya** (`ensure_warehouse_access`) |
 
 ---
@@ -55,15 +59,15 @@ Modul ini mengelola struktur fisik penyimpanan barang dalam dua tingkatan:
 
 | # | Method | Endpoint | Fungsi | Auth | Permission |
 | :-: | --- | --- | --- | --- | --- |
-| 1 | GET | `/api/v1/warehouses` | Daftar gudang (paginasi, filter `is_active`, pencarian, urut) | Bearer | `master:read` |
+| 1 | GET | `/api/v1/warehouses` | Daftar gudang (paginasi, filter `is_active`, `purpose`, pencarian, urut) | Bearer | `master:read` `(g)` |
 | 2 | POST | `/api/v1/warehouses` | Buat gudang baru | Bearer | `warehouse:manage` |
-| 3 | GET | `/api/v1/warehouses/{warehouse_id}` | Detail gudang berdasarkan ID | Bearer | `master:read` |
+| 3 | GET | `/api/v1/warehouses/{warehouse_id}` | Detail gudang berdasarkan ID | Bearer | `master:read` `(g)` |
 | 4 | PATCH | `/api/v1/warehouses/{warehouse_id}` | Perbarui atau nonaktifkan gudang (termasuk `allow_negative_stock`) | Bearer | `warehouse:manage` |
-| 5 | GET | `/api/v1/warehouses/{warehouse_id}/locations` | Daftar lokasi penyimpanan milik suatu gudang | Bearer | `master:read` |
+| 5 | GET | `/api/v1/warehouses/{warehouse_id}/locations` | Daftar lokasi penyimpanan milik suatu gudang (dapat menyertakan `purpose`) | Bearer | `master:read` `(g)` |
 | 6 | POST | `/api/v1/warehouses/{warehouse_id}/locations` | Buat lokasi penyimpanan baru di dalam gudang tertentu | Bearer | `location:manage` `(g)` |
-| 7 | GET | `/api/v1/locations` | Daftar seluruh lokasi penyimpanan (dapat difilter `warehouse_id`) | Bearer | `master:read` |
+| 7 | GET | `/api/v1/locations` | Daftar seluruh lokasi penyimpanan (dapat difilter `warehouse_id` & `purpose`) | Bearer | `master:read` `(g)` |
 | 8 | POST | `/api/v1/locations` | Buat lokasi penyimpanan baru (menyertakan `warehouse_id` di body) | Bearer | `location:manage` `(g)` |
-| 9 | GET | `/api/v1/locations/{location_id}` | Detail lokasi penyimpanan berdasarkan ID | Bearer | `master:read` |
+| 9 | GET | `/api/v1/locations/{location_id}` | Detail lokasi penyimpanan berdasarkan ID | Bearer | `master:read` `(g)` |
 | 10 | PATCH | `/api/v1/locations/{location_id}` | Perbarui atau nonaktifkan lokasi penyimpanan | Bearer | `location:manage` `(g)` |
 
 ---
@@ -73,10 +77,11 @@ Modul ini mengelola struktur fisik penyimpanan barang dalam dua tingkatan:
 ### 5.1 Gudang (`/api/v1/warehouses`)
 
 #### GET `/api/v1/warehouses` — Daftar Gudang
-* **Autentikasi & Permission:** Bearer Token, `master:read`
+* **Autentikasi & Permission:** Bearer Token, `master:read` + **Warehouse Scoping `(g)`**
 * **Query Parameter:**
   * `limit` (`1..200`, default `50`), `offset` (`>= 0`, default `0`)
   * `is_active` (boolean, opsional)
+  * `purpose` (string, opsional) — Nilai: `"transfer_destination"`. Mengembalikan gudang-gudang aktif untuk tujuan transfer tanpa dibatasi oleh penugasan user saat ini.
   * `search` (string, opsional) — Pencarian `ILIKE` pada `code`, `name`, atau `address`.
   * `sort_by` (string, default `"id"`) — Whitelist: `"id"`, `"code"`, `"name"`, `"created_at"`.
   * `sort_dir` (`"asc"` | `"desc"`, default `"asc"`).
@@ -124,9 +129,9 @@ Modul ini mengelola struktur fisik penyimpanan barang dalam dua tingkatan:
 * **Kemungkinan Error:** `401 AUTH_TOKEN_INVALID`, `403 PERMISSION_DENIED`, `409 DUPLICATE` (kode gudang sudah ada), `422 VALIDATION_ERROR`.
 
 #### GET `/api/v1/warehouses/{warehouse_id}` — Detail Gudang
-* **Autentikasi & Permission:** Bearer Token, `master:read`
+* **Autentikasi & Permission:** Bearer Token, `master:read` + **Warehouse Scoping `(g)`**
 * **Response Berhasil:** `200 OK` (`WarehouseOut`).
-* **Kemungkinan Error:** `404 NOT_FOUND` (`details: {"warehouse_id": ...}`).
+* **Kemungkinan Error:** `403 WAREHOUSE_NOT_ASSIGNED` (pengguna tidak ditugaskan ke gudang ini), `404 NOT_FOUND` (`details: {"warehouse_id": ...}`).
 
 #### PATCH `/api/v1/warehouses/{warehouse_id}` — Perbarui / Nonaktifkan Gudang
 * **Autentikasi & Permission:** Bearer Token, `warehouse:manage`
@@ -146,9 +151,9 @@ Aplikasi menyediakan dua rute ekuivalen untuk membaca daftar dan membuat lokasi 
 2. **Resource top-level:** `GET / POST /api/v1/locations` (`warehouse_id` dikirim sebagai query filter atau di dalam body JSON).
 
 #### GET `/api/v1/warehouses/{warehouse_id}/locations` — Daftar Lokasi pada Satu Gudang
-* **Autentikasi & Permission:** Bearer Token, `master:read`
-* **Path Parameter:** `warehouse_id` (integer, wajib — diverifikasi keberadaannya; jika gudang tidak ada, mengembalikan `404 NOT_FOUND`).
-* **Query Parameter:** `limit` (`1..200`, default `50`), `offset` (`>= 0`, default `0`), `is_active` (boolean, opsional), `search` (string, opsional — `ILIKE` pada `code` atau `name`), `sort_by` (`"id"`, `"code"`, `"name"`, `"warehouse_id"`, `"created_at"`), `sort_dir` (`"asc"` | `"desc"`).
+* **Autentikasi & Permission:** Bearer Token, `master:read` + **Warehouse Scoping `(g)`**
+* **Path Parameter:** `warehouse_id` (integer, wajib — diverifikasi keberadaannya; jika gudang tidak ada, mengembalikan `404 NOT_FOUND`; jika di luar penugasan, `403 WAREHOUSE_NOT_ASSIGNED`).
+* **Query Parameter:** `limit` (`1..200`, default `50`), `offset` (`>= 0`, default `0`), `is_active` (boolean, opsional), `purpose` (string, opsional — `"transfer_destination"`), `search` (string, opsional — `ILIKE` pada `code` atau `name`), `sort_by` (`"id"`, `"code"`, `"name"`, `"warehouse_id"`, `"created_at"`), `sort_dir` (`"asc"` | `"desc"`).
 * **Response Berhasil (`200 OK` — `Page[StorageLocationOut]`):**
 ```json
 {
@@ -196,8 +201,8 @@ Aplikasi menyediakan dua rute ekuivalen untuk membaca daftar dan membuat lokasi 
   * `422 VALIDATION_ERROR` — Payload tidak valid.
 
 #### GET `/api/v1/locations` — Daftar Seluruh Lokasi Penyimpanan
-* **Autentikasi & Permission:** Bearer Token, `master:read`
-* **Query Parameter:** Sama dengan `GET /api/v1/warehouses/{warehouse_id}/locations`, ditambah query opsional `warehouse_id` (integer).
+* **Autentikasi & Permission:** Bearer Token, `master:read` + **Warehouse Scoping `(g)`**
+* **Query Parameter:** Sama dengan `GET /api/v1/warehouses/{warehouse_id}/locations`, ditambah query opsional `warehouse_id` (integer) dan `purpose` (string, opsional — `"transfer_destination"`).
 * **Response Berhasil:** `200 OK` (`Page[StorageLocationOut]`).
 
 #### POST `/api/v1/locations` — Buat Lokasi Penyimpanan (Top-Level)
@@ -219,9 +224,9 @@ Aplikasi menyediakan dua rute ekuivalen untuk membaca daftar dan membuat lokasi 
 * **Response Berhasil & Error:** Identik dengan `POST /api/v1/warehouses/{warehouse_id}/locations`.
 
 #### GET `/api/v1/locations/{location_id}` — Detail Lokasi Penyimpanan
-* **Autentikasi & Permission:** Bearer Token, `master:read`
+* **Autentikasi & Permission:** Bearer Token, `master:read` + **Warehouse Scoping `(g)`**
 * **Response Berhasil:** `200 OK` (`StorageLocationOut`).
-* **Kemungkinan Error:** `404 NOT_FOUND` (`details: {"location_id": ...}`).
+* **Kemungkinan Error:** `403 WAREHOUSE_NOT_ASSIGNED` (pengguna tidak ditugaskan ke gudang pemilik lokasi), `404 NOT_FOUND` (`details: {"location_id": ...}`).
 
 #### PATCH `/api/v1/locations/{location_id}` — Perbarui / Nonaktifkan Lokasi Penyimpanan
 * **Autentikasi & Permission:** Bearer Token, `location:manage` + **Warehouse Scoping `(g)`** pada gudang pemilik lokasi.

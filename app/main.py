@@ -29,6 +29,7 @@ from app.core import database
 from app.core.config import settings
 from app.core.exceptions import DomainError
 from app.core.logging import logger, request_id_ctx
+from app.core.middleware import register_request_id_middleware
 
 
 @asynccontextmanager
@@ -66,22 +67,7 @@ def create_app() -> FastAPI:
         expose_headers=["X-Request-ID"],
     )
 
-    @application.middleware("http")
-    async def request_id_middleware(request: Request, call_next):
-        supplied_req_id = request.headers.get("X-Request-ID", "")
-        req_id = (
-            supplied_req_id
-            if len(supplied_req_id) <= 128
-            and re.fullmatch(r"[A-Za-z0-9._:-]+", supplied_req_id)
-            else str(uuid.uuid4())
-        )
-        token = request_id_ctx.set(req_id)
-        try:
-            response = await call_next(request)
-            response.headers["X-Request-ID"] = req_id
-            return response
-        finally:
-            request_id_ctx.reset(token)
+    register_request_id_middleware(application)
 
     @application.exception_handler(DomainError)
     def handle_domain_error(_request: Request, exc: DomainError) -> JSONResponse:

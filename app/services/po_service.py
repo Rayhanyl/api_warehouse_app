@@ -13,7 +13,7 @@ from app.core.exceptions import (
     PermissionDenied,
     ValidationDomainError,
 )
-from app.core.permissions import PO_CANCEL, PO_CREATE, ROLE_WAREHOUSE_STAFF
+from app.core.permissions import PO_CANCEL, PO_CREATE
 from app.repositories import inventory_repo, master_repo, po_repo, warehouse_repo
 from app.services import access_service, audit_service, numbering_service
 from app.utils.enums import DocType, POStatus
@@ -238,7 +238,7 @@ def list_purchase_orders(
             },
         )
 
-    # PRD 3.2 poin 5 & 6: Warehouse Staff hanya melihat dokumen pada gudang yang ditugaskan
+    # PRD 3.2 poin 2: selain Super Admin & Auditor, PO hanya terlihat pada gudang yang ditugaskan
     scoped_ids = access_service.get_scoped_warehouse_ids_for_read(conn, actor)
     if scoped_ids is not None and warehouse_id is not None:
         access_service.ensure_warehouse_access(conn, actor, warehouse_id)
@@ -276,8 +276,7 @@ def get_purchase_order(
             "Purchase Order tidak ditemukan.",
             details={"po_id": po_id},
         )
-    if actor.get("role_name") == ROLE_WAREHOUSE_STAFF:
-        access_service.ensure_warehouse_access(conn, actor, int(po["warehouse_id"]))
+    access_service.ensure_warehouse_read_access(conn, actor, int(po["warehouse_id"]))
     return po
 
 
@@ -295,6 +294,8 @@ def create_purchase_order(
     clean_notes = notes.strip() if notes is not None and notes.strip() else None
 
     with conn.transaction():
+        # PRD 3.2 poin 1: po:create bertanda (g) terhadap warehouse_id PO
+        access_service.ensure_warehouse_access(conn, actor, warehouse_id)
         _validate_supplier_and_warehouse(
             conn, supplier_id=supplier_id, warehouse_id=warehouse_id
         )
@@ -357,6 +358,7 @@ def update_purchase_order(
                 "Purchase Order tidak ditemukan.",
                 details={"po_id": po_id},
             )
+        access_service.ensure_warehouse_access(conn, actor, int(locked["warehouse_id"]))
         if locked["status"] != POStatus.DRAFT.value:
             raise InvalidStateTransition(
                 f"Purchase Order berstatus '{locked['status']}' tidak dapat diubah; hanya PO berstatus DRAFT yang dapat direvisi.",
@@ -377,6 +379,8 @@ def update_purchase_order(
             if warehouse_id is not None
             else int(locked["warehouse_id"])
         )
+        if new_warehouse_id != int(locked["warehouse_id"]):
+            access_service.ensure_warehouse_access(conn, actor, new_warehouse_id)
         _validate_supplier_and_warehouse(
             conn, supplier_id=new_supplier_id, warehouse_id=new_warehouse_id
         )
@@ -439,6 +443,7 @@ def issue_purchase_order(
                 "Purchase Order tidak ditemukan.",
                 details={"po_id": po_id},
             )
+        access_service.ensure_warehouse_access(conn, actor, int(locked["warehouse_id"]))
         if locked["status"] != POStatus.DRAFT.value:
             raise InvalidStateTransition(
                 f"Purchase Order berstatus '{locked['status']}' tidak dapat diterbitkan (harus berstatus DRAFT).",
@@ -520,6 +525,7 @@ def cancel_purchase_order(
                 "Purchase Order tidak ditemukan.",
                 details={"po_id": po_id},
             )
+        access_service.ensure_warehouse_access(conn, actor, int(locked["warehouse_id"]))
 
         current_status = str(locked["status"])
         actor_perms: set[str] = set(actor.get("permissions", []))
@@ -536,11 +542,6 @@ def cancel_purchase_order(
                     f"Anda tidak memiliki izin '{PO_CANCEL}' untuk membatalkan PO berstatus ISSUED.",
                     details={"required_permission": PO_CANCEL},
                 )
-            if po_repo.has_draft_or_posted_gr_for_po(conn, po_id):
-                raise InvalidStateTransition(
-                    "Purchase Order berstatus ISSUED tidak dapat dibatalkan karena sudah memiliki Goods Receipt berstatus DRAFT atau POSTED.",
-                    details={"po_id": po_id, "current_status": current_status},
-                )
         else:
             raise InvalidStateTransition(
                 f"Purchase Order berstatus '{current_status}' tidak dapat dibatalkan.",
@@ -549,6 +550,15 @@ def cancel_purchase_order(
                     "current_status": current_status,
                     "target_status": POStatus.CANCELLED.value,
                 },
+            )
+
+        from app.services import gr_service
+
+        gr_summary = gr_service.gr_status_summary(conn, po_id)
+        if gr_summary["draft_count"] > 0 or gr_summary["posted_count"] > 0:
+            raise InvalidStateTransition(
+                f"Purchase Order berstatus {current_status} tidak dapat dibatalkan karena sudah memiliki Goods Receipt berstatus DRAFT atau POSTED.",
+                details={"po_id": po_id, "current_status": current_status, "gr_summary": gr_summary},
             )
 
         po_repo.update_po_cancelled(conn, po_id)
@@ -591,6 +601,7 @@ def close_purchase_order(
                 "Purchase Order tidak ditemukan.",
                 details={"po_id": po_id},
             )
+        access_service.ensure_warehouse_access(conn, actor, int(locked["warehouse_id"]))
 
         current_status = str(locked["status"])
         if current_status not in (
@@ -606,10 +617,13 @@ def close_purchase_order(
                 },
             )
 
-        if po_repo.has_draft_gr_for_po(conn, po_id):
+        from app.services import gr_service
+
+        gr_summary = gr_service.gr_status_summary(conn, po_id)
+        if gr_summary["draft_count"] > 0:
             raise InvalidStateTransition(
                 "Purchase Order tidak dapat ditutup karena masih memiliki Goods Receipt berstatus DRAFT.",
-                details={"po_id": po_id, "current_status": current_status},
+                details={"po_id": po_id, "current_status": current_status, "gr_summary": gr_summary},
             )
 
         po_repo.update_po_closed(

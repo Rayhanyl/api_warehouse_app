@@ -418,36 +418,5 @@ def add_po_line_received_qty(
     return row
 
 
-def has_draft_or_posted_gr_for_po(
-    conn: Connection[dict[str, Any]], po_id: int
-) -> bool:
-    """Memeriksa apakah terdapat GR berstatus DRAFT atau POSTED pada PO ini (syarat cancel PO ISSUED, PRD 5.1)."""
-    row = conn.execute(
-        """
-        SELECT EXISTS (
-            SELECT 1 FROM goods_receipts
-            WHERE po_id = %s
-              AND status IN ('DRAFT', 'POSTED')
-        ) AS has_gr
-        """,
-        (po_id,),
-    ).fetchone()
-    return bool(row and row["has_gr"])
 
-
-def has_draft_gr_for_po(
-    conn: Connection[dict[str, Any]], po_id: int
-) -> bool:
-    """Memeriksa apakah terdapat GR berstatus DRAFT pada PO ini (syarat close PO, PRD 5.1)."""
-    row = conn.execute(
-        """
-        SELECT EXISTS (
-            SELECT 1 FROM goods_receipts
-            WHERE po_id = %s
-              AND status = 'DRAFT'
-        ) AS has_draft_gr
-        """,
-        (po_id,),
-    ).fetchone()
-    return bool(row and row["has_draft_gr"])
 

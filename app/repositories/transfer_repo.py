@@ -398,3 +398,44 @@ def update_transfer_line_received(
         (qty_received, variance_reason, line_id),
     )
 
+
+def get_in_transit_quantities(
+    conn: Connection[dict[str, Any]],
+    *,
+    warehouse_id: int | None = None,
+    location_id: int | None = None,
+    item_id: int | None = None,
+    scoped_warehouse_ids: list[int] | None = None,
+) -> list[dict[str, Any]]:
+    """Contract TRF (in_transit): mengembalikan kuantitas transfer SHIPPED yang belum received (PRD 4.3)."""
+    conditions = ["st.status = 'SHIPPED'"]
+    params: list[Any] = []
+    if scoped_warehouse_ids is not None:
+        conditions.append("st.destination_warehouse_id = ANY(%s)")
+        params.append(scoped_warehouse_ids)
+    if warehouse_id is not None:
+        conditions.append("st.destination_warehouse_id = %s")
+        params.append(warehouse_id)
+    if location_id is not None:
+        conditions.append("st.destination_location_id = %s")
+        params.append(location_id)
+    if item_id is not None:
+        conditions.append("stl.item_id = %s")
+        params.append(item_id)
+    where_sql = f"WHERE {' AND '.join(conditions)}"
+    rows = conn.execute(
+        f"""
+        SELECT
+            st.destination_warehouse_id AS warehouse_id,
+            st.destination_location_id AS location_id,
+            stl.item_id,
+            SUM(stl.qty)::NUMERIC(18, 4) AS qty_in_transit
+        FROM stock_transfer_lines stl
+        JOIN stock_transfers st ON st.id = stl.transfer_id
+        {where_sql}
+        GROUP BY st.destination_warehouse_id, st.destination_location_id, stl.item_id
+        """,
+        tuple(params),
+    ).fetchall()
+    return list(rows)
+

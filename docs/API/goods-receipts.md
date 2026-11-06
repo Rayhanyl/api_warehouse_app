@@ -60,8 +60,8 @@ Saat `POST /api/v1/goods-receipts/{gr_id}/post` dipanggil, seluruh langkah dijal
 
 | Permission | Aksi | Peran Bawaan (Matriks 3.1) | Warehouse Scoping `(g)` |
 | --- | --- | --- | --- |
-| `gr:read` | Daftar & detail GR | *Super Admin*, *Warehouse Manager*, *Purchasing Staff*, *Warehouse Staff*, *Auditor* | **Ya untuk Warehouse Staff** (hanya melihat GR pada gudang yang ditugaskan). Peran lain tidak dibatasi. |
-| `gr:manage` | Buat, revisi `DRAFT`, posting, dan batalkan GR | *Super Admin*, *Warehouse Staff* | **Ya** (`ensure_warehouse_access` terhadap gudang tujuan PO). |
+| `gr:read` | Daftar & detail GR | *Super Admin*, *Warehouse Manager*, *Purchasing Staff*, *Warehouse Staff*, *Auditor* | **Ya `(g)`** untuk *Warehouse Staff*, *Warehouse Manager*, dan *Purchasing Staff* (hanya melihat GR pada gudang yang ditugaskan; gudang lain → `403 WAREHOUSE_NOT_ASSIGNED`). *Super Admin* dan *Auditor* tidak dibatasi (unscoped). |
+| `gr:manage` | Buat, revisi `DRAFT`, posting, dan batalkan GR | *Super Admin*, *Warehouse Staff* | **Ya `(g)`** (`ensure_warehouse_access` terhadap gudang tujuan PO). |
 
 ---
 

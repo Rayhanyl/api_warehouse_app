@@ -24,7 +24,6 @@ from app.core.exceptions import (
 from app.core.permissions import TRANSFER_APPROVE, TRANSFER_CREATE
 from app.repositories import (
     inventory_repo,
-    opname_repo,
     transfer_repo,
     warehouse_repo,
 )
@@ -33,6 +32,8 @@ from app.services import (
     audit_service,
     inventory_service,
     numbering_service,
+    opname_service,
+    warehouse_service,
 )
 from app.utils.enums import DocType, MovementType, ReferenceType, TransferStatus
 from app.utils.pagination import build_order_by, normalize_pagination
@@ -121,36 +122,28 @@ def _validate_warehouse_and_location(
     location_id: int,
     role: str,
 ) -> None:
-    """Gudang wajib ada & aktif (INACTIVE_REFERENCE); lokasi wajib aktif & milik gudang tsb (INVALID_LOCATION) (PRD 6.3)."""
-    warehouse = warehouse_repo.get_warehouse_by_id(conn, warehouse_id)
-    if not warehouse:
-        raise NotFoundError(
-            f"Gudang {role} tidak ditemukan.",
-            details={f"{role}_warehouse_id": warehouse_id},
+    """Contract WHS (`validate_location`): gudang wajib ada & aktif; lokasi wajib aktif & milik gudang tsb (PRD 4.3, 6.3)."""
+    try:
+        warehouse_service.validate_location(
+            conn, warehouse_id=warehouse_id, location_id=location_id
         )
-    if not warehouse["is_active"]:
-        raise InactiveReferenceError(
-            f"Gudang {role} '{warehouse['code']}' berstatus tidak aktif.",
-            details={f"{role}_warehouse_id": warehouse_id},
-        )
-
-    location = warehouse_repo.get_location_by_id(conn, location_id)
-    if not location or int(location["warehouse_id"]) != int(warehouse_id):
-        raise InvalidLocationError(
-            f"Lokasi {role} tidak ditemukan atau bukan milik gudang {role}.",
-            details={
-                f"{role}_warehouse_id": warehouse_id,
-                f"{role}_location_id": location_id,
-            },
-        )
-    if not location["is_active"]:
-        raise InvalidLocationError(
-            f"Lokasi {role} '{location['code']}' berstatus tidak aktif.",
-            details={
-                f"{role}_warehouse_id": warehouse_id,
-                f"{role}_location_id": location_id,
-            },
-        )
+    except InactiveReferenceError as exc:
+        if role:
+            raise InactiveReferenceError(
+                f"Gudang {role} berstatus tidak aktif.",
+                details={f"{role}_warehouse_id": warehouse_id},
+            ) from exc
+        raise
+    except InvalidLocationError as exc:
+        if role:
+            raise InvalidLocationError(
+                f"Lokasi {role} tidak ditemukan, tidak aktif, atau bukan milik gudang {role}.",
+                details={
+                    f"{role}_warehouse_id": warehouse_id,
+                    f"{role}_location_id": location_id,
+                },
+            ) from exc
+        raise
 
 
 def _validate_header(
@@ -250,7 +243,7 @@ def _ensure_location_receivable(
             "Gudang tujuan berstatus tidak aktif.",
             details={"warehouse_id": warehouse_id},
         )
-    freezing = opname_repo.get_active_opname_freezing_location(
+    freezing = opname_service.is_location_frozen(
         conn, warehouse_id=warehouse_id, location_id=location_id
     )
     if freezing is not None:
@@ -359,7 +352,7 @@ def list_stock_transfers(
             details={"date_from": date_from.isoformat(), "date_to": date_to.isoformat()},
         )
 
-    # PRD 3.2 poin 5: Warehouse Staff hanya melihat Transfer yang asal ATAU tujuannya gudang yang ditugaskan
+    # PRD 3.2 poin 2: selain Super Admin & Auditor, Transfer terlihat bila asal ATAU tujuannya gudang yang ditugaskan
     scoped_ids = access_service.get_scoped_warehouse_ids_for_read(conn, actor)
     if scoped_ids is not None:
         for wh_filter in (warehouse_id, source_warehouse_id, destination_warehouse_id):
@@ -686,9 +679,19 @@ def ship_transfer(
 
         source_wh = int(locked["source_warehouse_id"])
         source_loc = int(locked["source_location_id"])
+        dest_wh = int(locked["destination_warehouse_id"])
+        dest_loc = int(locked["destination_location_id"])
 
         # 2. transfer:ship mensyaratkan penugasan pada gudang asal (PRD 3.2 poin 3)
         access_service.ensure_warehouse_access(conn, actor, source_wh)
+
+        # Validasi referensi aktif saat pengiriman (PRD 6.9)
+        _validate_warehouse_and_location(
+            conn, warehouse_id=source_wh, location_id=source_loc, role="asal"
+        )
+        _validate_warehouse_and_location(
+            conn, warehouse_id=dest_wh, location_id=dest_loc, role="tujuan"
+        )
 
         lines = transfer_repo.list_transfer_lines(conn, transfer_id)
         if not lines:
@@ -775,14 +778,31 @@ def receive_transfer(
                 f"Transfer berstatus '{locked['status']}' tidak dapat diterima (harus berstatus SHIPPED).",
             )
 
+        source_wh = int(locked["source_warehouse_id"])
+        source_loc = int(locked["source_location_id"])
         dest_wh = int(locked["destination_warehouse_id"])
         dest_loc = int(locked["destination_location_id"])
 
         # 2. transfer:receive mensyaratkan penugasan pada gudang tujuan (PRD 3.2 poin 3)
         access_service.ensure_warehouse_access(conn, actor, dest_wh)
 
+        # Validasi referensi aktif saat penerimaan (PRD 6.9)
+        _validate_warehouse_and_location(
+            conn, warehouse_id=source_wh, location_id=source_loc, role="asal"
+        )
+        _validate_warehouse_and_location(
+            conn, warehouse_id=dest_wh, location_id=dest_loc, role="tujuan"
+        )
+
         # 3. Validasi payload penerimaan terhadap baris Transfer
         transfer_lines = transfer_repo.list_transfer_lines(conn, transfer_id)
+        for tl in transfer_lines:
+            item = inventory_repo.get_item_with_uom(conn, int(tl["item_id"]))
+            if not item or not item["is_active"]:
+                raise InactiveReferenceError(
+                    f"Barang '{tl['item_sku']}' pada baris Transfer berstatus tidak aktif.",
+                    details={"transfer_id": transfer_id, "item_id": tl["item_id"], "sku": tl["item_sku"]},
+                )
         lines_by_id = {int(ln["id"]): ln for ln in transfer_lines}
 
         received_map: dict[int, dict[str, Any]] = {}
@@ -981,4 +1001,22 @@ def cancel_transfer(
             ip_address=ip_address,
         )
         return updated
+
+
+def in_transit(
+    conn: Connection[dict[str, Any]],
+    *,
+    warehouse_id: int | None = None,
+    location_id: int | None = None,
+    item_id: int | None = None,
+    scoped_warehouse_ids: list[int] | None = None,
+) -> list[dict[str, Any]]:
+    """Contract TRF (`in_transit`): mengembalikan kuantitas transfer yang sudah shipped dan belum received (PRD 4.3, 6.9)."""
+    return transfer_repo.get_in_transit_quantities(
+        conn,
+        warehouse_id=warehouse_id,
+        location_id=location_id,
+        item_id=item_id,
+        scoped_warehouse_ids=scoped_warehouse_ids,
+    )
 

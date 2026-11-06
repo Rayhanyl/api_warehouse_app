@@ -24,6 +24,7 @@ from app.services import (
     audit_service,
     inventory_service,
     numbering_service,
+    warehouse_service,
 )
 from app.utils.enums import DocType, MovementType, OpnameStatus, ReferenceType
 from app.utils.pagination import build_order_by, normalize_pagination
@@ -114,6 +115,12 @@ def _validate_warehouse_and_optional_location(
     location_id: int | None,
 ) -> None:
     """Memastikan gudang aktif (INACTIVE_REFERENCE) dan lokasi (bila diisi) aktif & milik gudang tsb (INVALID_LOCATION)."""
+    if location_id is not None:
+        warehouse_service.validate_location(
+            conn, warehouse_id=warehouse_id, location_id=location_id
+        )
+        return
+
     warehouse = warehouse_repo.get_warehouse_by_id(conn, warehouse_id)
     if not warehouse:
         raise NotFoundError(
@@ -125,19 +132,6 @@ def _validate_warehouse_and_optional_location(
             f"Gudang '{warehouse['code']}' berstatus tidak aktif.",
             details={"warehouse_id": warehouse_id},
         )
-
-    if location_id is not None:
-        loc = warehouse_repo.get_location_by_id(conn, location_id)
-        if not loc or int(loc["warehouse_id"]) != int(warehouse_id):
-            raise InvalidLocationError(
-                "Lokasi penyimpanan tidak ditemukan atau bukan milik gudang yang dipilih.",
-                details={"warehouse_id": warehouse_id, "location_id": location_id},
-            )
-        if not loc["is_active"]:
-            raise InvalidLocationError(
-                f"Lokasi penyimpanan '{loc['code']}' berstatus tidak aktif.",
-                details={"warehouse_id": warehouse_id, "location_id": location_id},
-            )
 
 
 def _serialize_snapshot(detail: dict[str, Any]) -> dict[str, Any]:
@@ -568,16 +562,9 @@ def record_opname_counts(
                         },
                     )
 
-                loc = warehouse_repo.get_location_by_id(conn, target_loc_id)
-                if not loc or int(loc["warehouse_id"]) != warehouse_id or not loc["is_active"]:
-                    raise InvalidLocationError(
-                        "Lokasi penyimpanan tidak ditemukan, tidak aktif, atau bukan milik gudang sesi Opname.",
-                        details={
-                            "warehouse_id": warehouse_id,
-                            "location_id": target_loc_id,
-                            "line_index": idx,
-                        },
-                    )
+                warehouse_service.validate_location(
+                    conn, warehouse_id=warehouse_id, location_id=target_loc_id
+                )
 
                 item = inventory_repo.get_item_with_uom(conn, target_item_id)
                 if not item:

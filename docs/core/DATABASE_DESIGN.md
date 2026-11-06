@@ -72,23 +72,25 @@ dengan `CHECK (qty_on_hand >= 0)` karena aturan bergantung pada gudang.
 | `007` | Append-only guard dan privilege |
 | `008` | Seed role dan permission |
 | `009` | Menu dan seed navigasi |
-| `010` *(Fase 2 — M9)* | Tabel `plans`, `tenants`, `platform_admins`, `platform_refresh_tokens`, `settings`, dan seed paket kuota awal |
-| `011` *(Fase 2 — M9)* | Penambahan `tenant_id`, *Composite FK* `(tenant_id, <fk>_id)`, constraint `UNIQUE (tenant_id, ...)`, dan PostgreSQL RLS pada 21 tabel bisnis |
+| `010` | Pengerasan constraint unik (`uq_stock_transfer_lines_transfer_item`) dan indeks performa Fase 1 |
+| `011` | Optimasi indeks komposit pencarian & filter `audit_logs` Fase 1 |
+| `012` *(Fase 2 — M9)* | Tabel `plans`, `tenants`, `platform_admins`, `platform_refresh_tokens`, `settings`, dan seed paket kuota awal |
+| `013` *(Fase 2 — M9)* | Penambahan `tenant_id`, *Composite FK* `(tenant_id, <fk>_id)`, constraint `UNIQUE (tenant_id, ...)`, dan PostgreSQL RLS pada 21 tabel bisnis |
 
-Migration yang sudah diterapkan (`001`–`009`) tidak diedit; transisi Multi-Tenant Fase 2 menggunakan berkas baru `010` dan `011`.
+Migration yang sudah diterapkan (`001`–`011`) tidak diedit; transisi Multi-Tenant Fase 2 menggunakan berkas baru `012` dan `013`.
 
 ## 6. Spesifikasi teknis migrasi Fase 2 (M9 — Multi-Tenant SaaS)
 
-Untuk menjamin migrasi *forward-only* `010_create_tenants_settings.sql` dan `011_add_tenant_scope.sql` berjalan tanpa konflik pada PostgreSQL, rancangan skema wajib mengikuti empat aturan teknis berikut:
+Untuk menjamin migrasi *forward-only* `012_create_tenants_settings.sql` dan `013_add_tenant_scope.sql` berjalan tanpa konflik pada PostgreSQL, rancangan skema wajib mengikuti empat aturan teknis berikut:
 
-1. **Penanganan Trigger Imutabilitas (`007`) saat Backfill `011_add_tenant_scope.sql`:**
-   - Karena `stock_movements` dan `audit_logs` dilindungi oleh trigger `trg_stock_movements_immutable` dan `trg_audit_logs_immutable` (yang menolak setiap `UPDATE`), skrip migrasi `011` (dijalankan oleh role pemilik tabel di dalam satu blok transaksi) wajib melakukan:
+1. **Penanganan Trigger Imutabilitas (`007`) saat Backfill `013_add_tenant_scope.sql`:**
+   - Karena `stock_movements` dan `audit_logs` dilindungi oleh trigger `trg_stock_movements_immutable` dan `trg_audit_logs_immutable` (yang menolak setiap `UPDATE`), skrip migrasi `013` (dijalankan oleh role pemilik tabel di dalam satu blok transaksi) wajib melakukan:
      - `ALTER TABLE stock_movements DISABLE TRIGGER trg_stock_movements_immutable;`
      - `ALTER TABLE audit_logs DISABLE TRIGGER trg_audit_logs_immutable;`
      - melakukan *backfill* `UPDATE ... SET tenant_id = <default_tenant_id>` lalu memasang `ALTER COLUMN tenant_id SET NOT NULL`, dan
      - mengaktifkan kembali kedua trigger (`ENABLE TRIGGER`) sebelum transaksi migrasi selesai.
 2. **Prasyarat `UNIQUE (tenant_id, id)` untuk *Composite Foreign Key* (`BR-GLB-019`):**
-   - Sebelum mengganti Foreign Key tunggal menjadi *Composite FK* `(tenant_id, <fk>_id)`, migrasi `011` wajib menambahkan constraint `uq_<table>_tenant_id UNIQUE (tenant_id, id)` pada seluruh tabel induk: `roles`, `users`, `menus`, `categories`, `uoms`, `suppliers`, `items`, `warehouses`, `storage_locations` (beserta `UNIQUE (tenant_id, id, warehouse_id)`), `purchase_orders`, `po_lines`, `goods_receipts`, `stock_transfers`, dan `stock_opnames`.
+   - Sebelum mengganti Foreign Key tunggal menjadi *Composite FK* `(tenant_id, <fk>_id)`, migrasi `013` wajib menambahkan constraint `uq_<table>_tenant_id UNIQUE (tenant_id, id)` pada seluruh tabel induk: `roles`, `users`, `menus`, `categories`, `uoms`, `suppliers`, `items`, `warehouses`, `storage_locations` (beserta `UNIQUE (tenant_id, id, warehouse_id)`), `purchase_orders`, `po_lines`, `goods_receipts`, `stock_transfers`, dan `stock_opnames`.
 3. **Transformasi 14 Constraint `UNIQUE`/`PK` Global Menjadi Per-Tenant (`BR-GLB-021`):**
    - Constraint global berikut di-`DROP` dan dibuat ulang dengan awalan `tenant_id`:
      `uq_roles_name`, `uq_users_username`, `uq_users_email`, `uq_menus_code`, `uq_categories_name`, `uq_uoms_code`, `uq_suppliers_code`, `uq_items_sku`, `uq_warehouses_code`, `uq_purchase_orders_po_number`, `uq_goods_receipts_gr_number`, `uq_stock_transfers_transfer_number`, `uq_stock_opnames_opname_number`, serta `pk_document_sequences (tenant_id, doc_type, period)`.

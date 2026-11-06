@@ -64,10 +64,10 @@ stateDiagram-v2
 
 | Permission | Aksi | Peran Bawaan (Matriks 3.1) | Warehouse Scoping `(g)` |
 | --- | --- | --- | --- |
-| `opname:read` | Daftar & detail sesi Opname | *Super Admin*, *Warehouse Manager*, *Warehouse Staff*, *Auditor* | **Ya untuk Warehouse Staff** (hanya melihat sesi pada gudang yang ditugaskan). Peran lain tidak dibatasi. |
-| `opname:manage` | Buat `DRAFT`, revisi `DRAFT`, mulai (`start`), dan batalkan (`cancel`) sesi | *Super Admin*, *Warehouse Manager* | **Ya** (`ensure_warehouse_access` pada `warehouse_id` sesi). |
-| `opname:count` | Input hasil hitung fisik (`count`/`lines`) & ajukan persetujuan (`submit`) | *Super Admin*, *Warehouse Staff* | **Ya** (`ensure_warehouse_access` pada `warehouse_id` sesi). |
-| `opname:approve` | Setujui (`approve`) atau tolak (`reject`) hasil Opname | *Super Admin*, *Warehouse Manager* | **Ya** (`ensure_warehouse_access` pada `warehouse_id` sesi). |
+| `opname:read` | Daftar & detail sesi Opname | *Super Admin*, *Warehouse Manager*, *Warehouse Staff*, *Auditor* | **Ya `(g)`** untuk *Warehouse Staff* dan *Warehouse Manager* (hanya melihat sesi pada gudang yang ditugaskan; gudang lain → `403 WAREHOUSE_NOT_ASSIGNED`). *Super Admin* dan *Auditor* tidak dibatasi (unscoped). |
+| `opname:manage` | Buat `DRAFT`, revisi `DRAFT`, mulai (`start`), dan batalkan (`cancel`) sesi | *Super Admin*, *Warehouse Manager* | **Ya `(g)`** (`ensure_warehouse_access` pada `warehouse_id` sesi). |
+| `opname:count` | Input hasil hitung fisik (`count`) & ajukan persetujuan (`submit`) | *Super Admin*, *Warehouse Staff* | **Ya `(g)`** (`ensure_warehouse_access` pada `warehouse_id` sesi). |
+| `opname:approve` | Setujui (`approve`) atau tolak (`reject`) hasil Opname | *Super Admin*, *Warehouse Manager* | **Ya `(g)`** (`ensure_warehouse_access` pada `warehouse_id` sesi). |
 
 ---
 
@@ -81,12 +81,10 @@ stateDiagram-v2
 | 4 | PATCH | `/api/v1/stock-opnames/{opname_id}` | Revisi cakupan lokasi atau catatan sesi `DRAFT` | Bearer | `opname:manage` `(g)` |
 | 5 | POST | `/api/v1/stock-opnames/{opname_id}/start` | Mulai sesi, ambil *snapshot* `qty_system`, dan bekukan lokasi (`DRAFT → IN_PROGRESS`) | Bearer | `opname:manage` `(g)` |
 | 6 | POST | `/api/v1/stock-opnames/{opname_id}/count` | Input/perbarui `qty_physical` atau tambah baris barang baru | Bearer | `opname:count` `(g)` |
-| 7 | POST | `/api/v1/stock-opnames/{opname_id}/lines` | Alias untuk `POST /api/v1/stock-opnames/{opname_id}/count` | Bearer | `opname:count` `(g)` |
-| 8 | PUT | `/api/v1/stock-opnames/{opname_id}/lines` | Alias untuk `POST /api/v1/stock-opnames/{opname_id}/count` | Bearer | `opname:count` `(g)` |
-| 9 | POST | `/api/v1/stock-opnames/{opname_id}/submit` | Ajukan hasil hitung untuk ditinjau (`IN_PROGRESS → WAITING_APPROVAL`) | Bearer | `opname:count` `(g)` |
-| 10 | POST | `/api/v1/stock-opnames/{opname_id}/approve` | Setujui hasil Opname & sesuaikan saldo stok (`WAITING_APPROVAL → COMPLETED`) | Bearer | `opname:approve` `(g)` |
-| 11 | POST | `/api/v1/stock-opnames/{opname_id}/reject` | Tolak hasil Opname dengan alasan wajib (`WAITING_APPROVAL → IN_PROGRESS`) | Bearer | `opname:approve` `(g)` |
-| 12 | POST | `/api/v1/stock-opnames/{opname_id}/cancel` | Batalkan sesi (`DRAFT`/`IN_PROGRESS → CANCELLED`) | Bearer | `opname:manage` `(g)` |
+| 7 | POST | `/api/v1/stock-opnames/{opname_id}/submit` | Ajukan hasil hitung untuk ditinjau (`IN_PROGRESS → WAITING_APPROVAL`) | Bearer | `opname:count` `(g)` |
+| 8 | POST | `/api/v1/stock-opnames/{opname_id}/approve` | Setujui hasil Opname & sesuaikan saldo stok (`WAITING_APPROVAL → COMPLETED`) | Bearer | `opname:approve` `(g)` |
+| 9 | POST | `/api/v1/stock-opnames/{opname_id}/reject` | Tolak hasil Opname dengan alasan wajib (`WAITING_APPROVAL → IN_PROGRESS`) | Bearer | `opname:approve` `(g)` |
+| 10 | POST | `/api/v1/stock-opnames/{opname_id}/cancel` | Batalkan sesi (`DRAFT`/`IN_PROGRESS → CANCELLED`) | Bearer | `opname:manage` `(g)` |
 
 ---
 

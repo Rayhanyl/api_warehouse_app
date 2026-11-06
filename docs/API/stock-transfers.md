@@ -61,11 +61,11 @@ stateDiagram-v2
 
 | Permission | Aksi | Peran Bawaan (Matriks 3.1) | Aturan Warehouse Scoping `(g)` |
 | --- | --- | --- | --- |
-| `transfer:read` | Daftar & detail Transfer | *Super Admin*, *Warehouse Manager*, *Warehouse Staff*, *Auditor* | **Ya untuk Warehouse Staff**: hanya melihat Transfer apabila ditugaskan pada **gudang asal ATAU gudang tujuan**. Peran lain tidak dibatasi. |
-| `transfer:create` | Buat `DRAFT`, revisi `DRAFT`, batalkan `DRAFT` | *Super Admin*, *Warehouse Staff* | **Ya** — Wajib ditugaskan pada **gudang asal** (`source_warehouse_id`). |
-| `transfer:approve` | Setujui `DRAFT → APPROVED`, batalkan `APPROVED` | *Super Admin*, *Warehouse Manager* | **Ya** — Wajib ditugaskan pada **gudang asal** (`source_warehouse_id`). |
-| `transfer:ship` | Kirim `APPROVED → SHIPPED` | *Super Admin*, *Warehouse Staff* | **Ya** — Wajib ditugaskan pada **gudang asal** (`source_warehouse_id`). |
-| `transfer:receive` | Terima `SHIPPED → RECEIVED` | *Super Admin*, *Warehouse Staff* | **Ya** — Wajib ditugaskan pada **gudang tujuan** (`destination_warehouse_id`). |
+| `transfer:read` | Daftar & detail Transfer | *Super Admin*, *Warehouse Manager*, *Warehouse Staff*, *Auditor* | **Ya `(g)`** untuk *Warehouse Staff* dan *Warehouse Manager*: hanya melihat Transfer apabila ditugaskan pada **gudang asal ATAU gudang tujuan** (`403 WAREHOUSE_NOT_ASSIGNED` bila membaca dokumen di luar penugasan). *Super Admin* dan *Auditor* tidak dibatasi (unscoped). |
+| `transfer:create` | Buat `DRAFT`, revisi `DRAFT`, batalkan `DRAFT` | *Super Admin*, *Warehouse Staff* | **Ya `(g)`** — Wajib ditugaskan pada **gudang asal** (`source_warehouse_id`). Pemilihan gudang & lokasi tujuan transfer didukung oleh query param `purpose=transfer_destination` pada modul gudang/lokasi. |
+| `transfer:approve` | Setujui `DRAFT → APPROVED`, batalkan `APPROVED` | *Super Admin*, *Warehouse Manager* | **Ya `(g)`** — Wajib ditugaskan pada **gudang asal** (`source_warehouse_id`). |
+| `transfer:ship` | Kirim `APPROVED → SHIPPED` | *Super Admin*, *Warehouse Staff* | **Ya `(g)`** — Wajib ditugaskan pada **gudang asal** (`source_warehouse_id`). |
+| `transfer:receive` | Terima `SHIPPED → RECEIVED` | *Super Admin*, *Warehouse Staff* | **Ya `(g)`** — Wajib ditugaskan pada **gudang tujuan** (`destination_warehouse_id`). |
 
 ---
 

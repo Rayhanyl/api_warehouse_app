@@ -557,28 +557,28 @@ Tabel berikut merangkum 24 kode *permission* yang di-*seed* oleh `008_seed_roles
 | `warehouse:manage` | ✓ | – | – | – | – |
 | `location:manage` | ✓ | ✓ (g) | – | – | – |
 | `master:manage` | ✓ | – | ✓ | – | – |
-| `master:read` | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `po:create` | ✓ | – | ✓ | – | – |
-| `po:issue` | ✓ | – | ✓ | – | – |
-| `po:cancel` | ✓ | – | ✓ | – | – |
-| `po:close` | ✓ | ✓ | ✓ | – | – |
-| `po:read` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `master:read` | ✓ | ✓ (g) | ✓ (g) | ✓ (g) | ✓ |
+| `po:create` | ✓ | – | ✓ (g) | – | – |
+| `po:issue` | ✓ | – | ✓ (g) | – | – |
+| `po:cancel` | ✓ | – | ✓ (g) | – | – |
+| `po:close` | ✓ | ✓ (g) | ✓ (g) | – | – |
+| `po:read` | ✓ | ✓ (g) | ✓ (g) | ✓ (g) | ✓ |
 | `gr:manage` | ✓ | – | – | ✓ (g) | – |
-| `gr:read` | ✓ | ✓ | ✓ | ✓ (g) | ✓ |
+| `gr:read` | ✓ | ✓ (g) | ✓ (g) | ✓ (g) | ✓ |
 | `transfer:create` | ✓ | – | – | ✓ (g) | – |
 | `transfer:approve` | ✓ | ✓ (g) | – | – | – |
 | `transfer:ship` | ✓ | – | – | ✓ (g) | – |
 | `transfer:receive` | ✓ | – | – | ✓ (g) | – |
-| `transfer:read` | ✓ | ✓ | – | ✓ (g) | ✓ |
+| `transfer:read` | ✓ | ✓ (g) | – | ✓ (g) | ✓ |
 | `opname:manage` | ✓ | ✓ (g) | – | – | – |
 | `opname:count` | ✓ | – | – | ✓ (g) | – |
 | `opname:approve` | ✓ | ✓ (g) | – | – | – |
-| `opname:read` | ✓ | ✓ | – | ✓ (g) | ✓ |
-| `stock:read` | ✓ | ✓ | ✓ | ✓ (g) | ✓ |
-| `ledger:read` | ✓ | ✓ | – | ✓ (g) | ✓ |
+| `opname:read` | ✓ | ✓ (g) | – | ✓ (g) | ✓ |
+| `stock:read` | ✓ | ✓ (g) | ✓ (g) | ✓ (g) | ✓ |
+| `ledger:read` | ✓ | ✓ (g) | – | ✓ (g) | ✓ |
 | `audit:read` | ✓ | – | – | – | ✓ |
 
-*(Keterangan: tanda **(g)** menunjukkan aksi yang pada modul operasionalnya dibatasi oleh penugasan gudang di `user_warehouses`).*
+*(Keterangan: tanda **(g)** menunjukkan aksi/pembacaan yang dibatasi oleh penugasan gudang di `user_warehouses`. Untuk pemilihan tujuan transfer, parameter query `purpose=transfer_destination` pada endpoint gudang & lokasi membuka pembacaan gudang/lokasi aktif di luar penugasan).*
 
 ---
 

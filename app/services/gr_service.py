@@ -15,14 +15,14 @@ from app.core.exceptions import (
     OverReceipt,
     ValidationDomainError,
 )
-from app.core.permissions import ROLE_WAREHOUSE_STAFF
-from app.repositories import gr_repo, inventory_repo, po_repo, warehouse_repo
+from app.repositories import gr_repo, inventory_repo, po_repo
 from app.services import (
     access_service,
     audit_service,
     inventory_service,
     numbering_service,
     po_service,
+    warehouse_service,
 )
 from app.utils.enums import DocType, GRStatus, MovementType, POStatus, ReferenceType
 from app.utils.pagination import build_order_by, normalize_pagination
@@ -151,26 +151,9 @@ def _validate_and_normalize_gr_lines(
                 },
             )
 
-        location = warehouse_repo.get_location_by_id(conn, location_id)
-        if not location or int(location["warehouse_id"]) != int(warehouse_id):
-            raise InvalidLocationError(
-                "Lokasi penyimpanan tidak ditemukan atau bukan milik gudang tujuan PO.",
-                details={
-                    "warehouse_id": warehouse_id,
-                    "location_id": location_id,
-                    "line_index": idx,
-                },
-            )
-        if not location["is_active"]:
-            raise InvalidLocationError(
-                f"Lokasi penyimpanan '{location['code']}' berstatus tidak aktif.",
-                details={
-                    "warehouse_id": warehouse_id,
-                    "location_id": location_id,
-                    "location_code": location["code"],
-                    "line_index": idx,
-                },
-            )
+        warehouse_service.validate_location(
+            conn, warehouse_id=warehouse_id, location_id=location_id
+        )
 
         requested_per_po_line[po_line_id] = (
             requested_per_po_line[po_line_id] + qty_received
@@ -212,6 +195,13 @@ def _validate_and_normalize_gr_lines(
             )
 
     return normalized_lines
+
+
+def gr_status_summary(
+    conn: Connection[dict[str, Any]], po_id: int
+) -> dict[str, int]:
+    """Contract RCV (`gr_status_summary`): mengembalikan ringkasan status GR untuk PO tertentu (PRD 4.3)."""
+    return gr_repo.get_gr_status_summary_for_po(conn, po_id)
 
 
 def _serialize_gr_snapshot(gr_detail: dict[str, Any]) -> dict[str, Any]:
@@ -288,7 +278,7 @@ def list_goods_receipts(
             },
         )
 
-    # PRD 3.1 & 3.2 poin 5: Warehouse Staff hanya melihat GR pada gudang yang ditugaskan
+    # PRD 3.2 poin 2: selain Super Admin & Auditor, GR hanya terlihat pada gudang yang ditugaskan
     scoped_ids = access_service.get_scoped_warehouse_ids_for_read(conn, actor)
     if scoped_ids is not None and warehouse_id is not None:
         access_service.ensure_warehouse_access(conn, actor, warehouse_id)
@@ -326,8 +316,7 @@ def get_goods_receipt(
             "Goods Receipt tidak ditemukan.",
             details={"gr_id": gr_id},
         )
-    if actor.get("role_name") == ROLE_WAREHOUSE_STAFF:
-        access_service.ensure_warehouse_access(conn, actor, int(gr["warehouse_id"]))
+    access_service.ensure_warehouse_read_access(conn, actor, int(gr["warehouse_id"]))
     return gr
 
 

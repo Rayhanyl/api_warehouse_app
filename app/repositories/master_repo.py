@@ -726,13 +726,14 @@ def is_item_used_in_transactions(
         """
         SELECT (
             EXISTS (SELECT 1 FROM po_lines WHERE item_id = %s)
+            OR EXISTS (SELECT 1 FROM gr_lines gl JOIN po_lines pl ON pl.id = gl.po_line_id WHERE pl.item_id = %s)
             OR EXISTS (SELECT 1 FROM stock_transfer_lines WHERE item_id = %s)
             OR EXISTS (SELECT 1 FROM stock_opname_lines WHERE item_id = %s)
             OR EXISTS (SELECT 1 FROM stock_movements WHERE item_id = %s)
             OR EXISTS (SELECT 1 FROM inventory_balances WHERE item_id = %s AND qty_on_hand <> 0)
         ) AS used
         """,
-        (item_id, item_id, item_id, item_id, item_id),
+        (item_id, item_id, item_id, item_id, item_id, item_id),
     ).fetchone()
     return bool(row and row["used"])
 

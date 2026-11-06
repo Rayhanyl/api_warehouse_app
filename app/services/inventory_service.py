@@ -14,7 +14,8 @@ from app.core.exceptions import (
     NotFoundError,
     ValidationDomainError,
 )
-from app.repositories import inventory_repo, opname_repo
+from app.repositories import inventory_repo
+from app.services import opname_service
 from app.utils.enums import (
     ADJUSTMENT_MOVEMENT_TYPES,
     MOVEMENT_REFERENCE_MAP,
@@ -158,7 +159,7 @@ def apply_movement(
                 details={"warehouse_id": warehouse_id},
             )
 
-        freezing_opname = opname_repo.get_active_opname_freezing_location(
+        freezing_opname = opname_service.is_location_frozen(
             conn, warehouse_id=warehouse_id, location_id=location_id
         )
         if freezing_opname is not None:

@@ -4,7 +4,7 @@ import uuid
 
 
 def test_request_id_preserves_safe_value_and_replaces_invalid_value(client):
-    safe_request_id = "wms-request:20261023.1"
+    safe_request_id = "wms-request-20261023.1"
 
     safe_response = client.get("/health", headers={"X-Request-ID": safe_request_id})
     assert safe_response.status_code == 200

@@ -62,16 +62,16 @@ stateDiagram-v2
 * **Autentikasi:** Wajib menyertakan header `Authorization: Bearer <access_token>`.
 * **Permission & Warehouse Scoping (Matriks 3.1 & PRD 3.2):**
 
-| Permission | Aksi | Peran Bawaan (Matriks 3.1) | Warehouse Scoping |
+| Permission | Aksi | Peran Bawaan (Matriks 3.1) | Warehouse Scoping `(g)` |
 | --- | --- | --- | --- |
-| `po:read` | Daftar & detail PO | *Super Admin*, *Warehouse Manager*, *Purchasing Staff*, *Warehouse Staff*, *Auditor* | Hanya untuk peran **Warehouse Staff** (hanya melihat PO pada gudang yang ditugaskan; gudang lain → `403 WAREHOUSE_NOT_ASSIGNED`). Peran lain tidak dibatasi. |
-| `po:create` | Buat PO `DRAFT`, revisi PO `DRAFT`, batalkan PO `DRAFT` | *Super Admin*, *Purchasing Staff* | Tidak |
-| `po:issue` | Terbitkan PO (`DRAFT → ISSUED`) | *Super Admin*, *Purchasing Staff* | Tidak |
-| `po:cancel` | Batalkan PO `ISSUED` (`ISSUED → CANCELLED`) | *Super Admin*, *Purchasing Staff* | Tidak |
-| `po:close` | Tutup PO (`ISSUED`/`PARTIALLY_RECEIVED → CLOSED`) | *Super Admin*, *Warehouse Manager*, *Purchasing Staff* | Tidak |
+| `po:read` | Daftar & detail PO | *Super Admin*, *Warehouse Manager*, *Purchasing Staff*, *Warehouse Staff*, *Auditor* | **Ya `(g)`** untuk *Warehouse Staff*, *Warehouse Manager*, dan *Purchasing Staff* (hanya melihat PO pada gudang yang ditugaskan; gudang lain → `403 WAREHOUSE_NOT_ASSIGNED`). *Super Admin* dan *Auditor* tidak dibatasi (unscoped). |
+| `po:create` | Buat PO `DRAFT`, revisi PO `DRAFT`, batalkan PO `DRAFT` | *Super Admin*, *Purchasing Staff* | **Ya `(g)`** (`ensure_warehouse_access` pada `warehouse_id`) |
+| `po:issue` | Terbitkan PO (`DRAFT → ISSUED`) | *Super Admin*, *Purchasing Staff* | **Ya `(g)`** (`ensure_warehouse_access` pada `warehouse_id`) |
+| `po:cancel` | Batalkan PO `ISSUED` (`ISSUED → CANCELLED`) | *Super Admin*, *Purchasing Staff* | **Ya `(g)`** (`ensure_warehouse_access` pada `warehouse_id`) |
+| `po:close` | Tutup PO (`ISSUED`/`PARTIALLY_RECEIVED → CLOSED`) | *Super Admin*, *Warehouse Manager*, *Purchasing Staff* | **Ya `(g)`** (`ensure_warehouse_access` pada `warehouse_id`) |
 
 > [!NOTE]
-> Endpoint `POST /api/v1/purchase-orders/{po_id}/cancel` di lapisan route mengizinkan pemanggil yang memiliki `po:create` **atau** `po:cancel`, lalu di dalam `po_service.cancel_purchase_order()` setelah baris PO dikunci (`FOR UPDATE`), sistem memverifikasi izin spesifik sesuai status aktual dokumen (`po:create` untuk `DRAFT`, `po:cancel` untuk `ISSUED`).
+> Endpoint `POST /api/v1/purchase-orders/{po_id}/cancel` di lapisan route mengizinkan pemanggil yang memiliki `po:create` **atau** `po:cancel`, lalu di dalam `po_service.cancel_purchase_order()` setelah baris PO dikunci (`FOR UPDATE`), sistem memverifikasi izin spesifik sesuai status aktual dokumen (`po:create` untuk `DRAFT`, `po:cancel` untuk `ISSUED`) serta memastikan penugasan gudang pemanggil (`ensure_warehouse_access`).
 
 ---
 

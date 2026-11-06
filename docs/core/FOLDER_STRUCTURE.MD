@@ -97,12 +97,14 @@ warehouse_api/
 │   │   ├── 001_create_auth_tables.sql      # roles, permissions, role_permissions, users, refresh_tokens
 │   │   ├── 002_create_master_tables.sql    # categories, uoms, items, suppliers, warehouses, storage_locations, user_warehouses
 │   │   ├── 003_create_inventory_tables.sql # inventory_balances, stock_movements
-│   │   ├── 004_create_po_gr.sql            # purchase_orders, po_lines, goods_receipts, gr_lines
+│   │   ├── 004_create_purchasing_tables.sql # purchase_orders, po_lines, goods_receipts, gr_lines
 │   │   ├── 005_create_transfer_opname.sql  # stock_transfers(+lines), stock_opnames(+lines)
 │   │   ├── 006_create_audit_sequences.sql  # audit_logs, document_sequences
 │   │   ├── 007_append_only_guards.sql      # trigger tolak UPDATE/DELETE + REVOKE hak wms_app (AC-08)
 │   │   ├── 008_seed_roles_permissions.sql  # 5 role, kode permission, pemetaan (Matriks 3.1 PRD)
-│   │   └── 009_create_menu_tables.sql      # tabel menus + seed menu awal modul WMS
+│   │   ├── 009_create_menu_tables.sql      # tabel menus + seed menu awal modul WMS
+│   │   ├── 010_harden_constraints_and_indexes.sql # constraint unik & indeks performa Fase 1
+│   │   └── 011_optimize_audit_logs_index.sql # indeks komposit audit_logs Fase 1
 │   ├── seeds/
 │   │   └── dev_seed.sql                    # data contoh untuk pengembangan lokal
 │   └── migrate.py                          # runner: jalankan .sql berurutan, catat di schema_migrations (AC-18)

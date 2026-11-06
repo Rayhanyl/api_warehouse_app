@@ -58,11 +58,11 @@ def _resolve_read_scoping(
     actor: dict[str, Any],
     warehouse_id: int | None,
 ) -> list[int] | None:
-    """Menerapkan aturan Warehouse Scoping pada pembacaan stok & ledger (PRD 3.2 poin 5 & 6).
+    """Menerapkan aturan Warehouse Scoping pada pembacaan stok & ledger (PRD 3.2 poin 2).
 
-    - Bila pengguna adalah Warehouse Staff dan meminta warehouse_id tertentu yang tidak ditugaskan -> 403 WAREHOUSE_NOT_ASSIGNED.
-    - Bila Warehouse Staff tidak mengisi warehouse_id -> batasi hasil hanya pada gudang yang ditugaskan.
-    - Peran lain (Super Admin, Warehouse Manager, Purchasing Staff, Auditor) -> tidak dibatasi penugasan pada aksi baca.
+    - Peran ber-scope (selain Super Admin & Auditor) yang meminta warehouse_id tidak ditugaskan -> 403 WAREHOUSE_NOT_ASSIGNED.
+    - Peran ber-scope tanpa warehouse_id -> hasil dibatasi pada gudang yang ditugaskan.
+    - Super Admin & Auditor -> tidak dibatasi penugasan pada aksi baca.
     """
     scoped_ids = access_service.get_scoped_warehouse_ids_for_read(conn, actor)
     if scoped_ids is not None and warehouse_id is not None:

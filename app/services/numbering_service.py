@@ -37,3 +37,13 @@ def generate_document_number(
     )
     return f"{prefix}-{period}-{seq_num:04d}"
 
+
+def next_number(
+    conn: Connection[dict[str, Any]],
+    doc_type: str | DocType,
+    *,
+    reference_date: date | datetime | None = None,
+) -> str:
+    """Contract PLT (`next_number`): menghasilkan nomor unik per tipe dan periode secara atomik (PRD 4.3, 6.1)."""
+    return generate_document_number(conn, doc_type, reference_date=reference_date)
+

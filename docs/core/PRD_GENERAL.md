@@ -110,11 +110,11 @@ dan jejak audit yang dapat diperiksa.
 
 | Role | Fokus |
 | --- | --- |
-| Super Admin | User, role/permission, assignment, warehouse configuration, audit |
-| Warehouse Manager | Location, transfer approval, opname approval, PO close, monitoring |
-| Purchasing Staff | Master procurement dan PO |
-| Warehouse Staff | GR, transfer physical execution, opname count pada warehouse assigned |
-| Auditor | Read-only master, stock, documents, ledger, opname, audit |
+| Super Admin | User, role/permission, assignment, warehouse configuration, audit (lintas gudang) |
+| Warehouse Manager | Location, transfer approval, opname approval, PO close, monitoring pada warehouse assigned |
+| Purchasing Staff | Master procurement serta pengelolaan dan pemantauan PO/GR/stok pada warehouse assigned |
+| Warehouse Staff | GR, transfer physical execution, opname count, dan pembacaan operasional pada warehouse assigned |
+| Auditor | Read-only master, stock, documents, ledger, opname, audit (lintas gudang) |
 
 ### 3.1 Matriks permission per role (MVP)
 
@@ -128,25 +128,25 @@ seluruh 24 permission tanpa batasan penugasan gudang.
 | `warehouse:manage` | Kelola gudang & konfigurasi `allow_negative_stock` | ✓ | – | – | – | – |
 | `location:manage` | Kelola lokasi penyimpanan | ✓ | ✓ `(g)` | – | – | – |
 | `master:manage` | Kelola kategori, UoM, barang, pemasok | ✓ | – | ✓ | – | – |
-| `master:read` | Baca master data, gudang, dan lokasi | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `po:create` | Buat/ubah PO `DRAFT`, batalkan PO `DRAFT` | ✓ | – | ✓ | – | – |
-| `po:issue` | Terbitkan PO (`DRAFT -> ISSUED`) | ✓ | – | ✓ | – | – |
-| `po:cancel` | Batalkan PO `ISSUED` | ✓ | – | ✓ | – | – |
-| `po:close` | Tutup PO (`ISSUED`/`PARTIALLY_RECEIVED -> CLOSED`) | ✓ | ✓ | ✓ | – | – |
-| `po:read` | Baca PO | ✓ | ✓ | ✓ | ✓ `(g)` | ✓ |
+| `master:read` | Baca master data, gudang, dan lokasi | ✓ | ✓ `(g)` | ✓ `(g)` | ✓ `(g)` | ✓ |
+| `po:create` | Buat/ubah PO `DRAFT`, batalkan PO `DRAFT` | ✓ | – | ✓ `(g)` | – | – |
+| `po:issue` | Terbitkan PO (`DRAFT -> ISSUED`) | ✓ | – | ✓ `(g)` | – | – |
+| `po:cancel` | Batalkan PO `ISSUED` | ✓ | – | ✓ `(g)` | – | – |
+| `po:close` | Tutup PO (`ISSUED`/`PARTIALLY_RECEIVED -> CLOSED`) | ✓ | ✓ `(g)` | ✓ `(g)` | – | – |
+| `po:read` | Baca PO | ✓ | ✓ `(g)` | ✓ `(g)` | ✓ `(g)` | ✓ |
 | `gr:manage` | Buat, ubah, posting, batalkan GR | ✓ | – | – | ✓ `(g)` | – |
-| `gr:read` | Baca GR | ✓ | ✓ | ✓ | ✓ `(g)` | ✓ |
+| `gr:read` | Baca GR | ✓ | ✓ `(g)` | ✓ `(g)` | ✓ `(g)` | ✓ |
 | `transfer:create` | Buat/ubah/batalkan Transfer `DRAFT` | ✓ | – | – | ✓ `(g)` | – |
 | `transfer:approve` | Setujui Transfer `DRAFT` atau batalkan Transfer `APPROVED` | ✓ | ✓ `(g)` | – | – | – |
 | `transfer:ship` | Kirim Transfer (`APPROVED -> SHIPPED`) | ✓ | – | – | ✓ `(g)` | – |
 | `transfer:receive` | Terima Transfer (`SHIPPED -> RECEIVED`) | ✓ | – | – | ✓ `(g)` | – |
-| `transfer:read` | Baca Transfer | ✓ | ✓ | – | ✓ `(g)` | ✓ |
+| `transfer:read` | Baca Transfer | ✓ | ✓ `(g)` | – | ✓ `(g)` | ✓ |
 | `opname:manage` | Buat, ubah draft, mulai (`start`), batalkan sesi Opname | ✓ | ✓ `(g)` | – | – | – |
 | `opname:count` | Input hitung fisik & ajukan persetujuan (`submit`) | ✓ | – | – | ✓ `(g)` | – |
 | `opname:approve` | Setujui (`approve`) atau tolak (`reject`) hasil Opname | ✓ | ✓ `(g)` | – | – | – |
-| `opname:read` | Baca sesi Opname | ✓ | ✓ | – | ✓ `(g)` | ✓ |
-| `stock:read` | Baca saldo stok | ✓ | ✓ | ✓ | ✓ `(g)` | ✓ |
-| `ledger:read` | Baca Stock Movement Ledger | ✓ | ✓ | – | ✓ `(g)` | ✓ |
+| `opname:read` | Baca sesi Opname | ✓ | ✓ `(g)` | – | ✓ `(g)` | ✓ |
+| `stock:read` | Baca saldo stok | ✓ | ✓ `(g)` | ✓ `(g)` | ✓ `(g)` | ✓ |
+| `ledger:read` | Baca Stock Movement Ledger | ✓ | ✓ `(g)` | – | ✓ `(g)` | ✓ |
 | `audit:read` | Baca Audit Log | ✓ | – | – | – | ✓ |
 
 ### 3.2 Aturan warehouse scoping `(g)`
@@ -156,19 +156,19 @@ seluruh 24 permission tanpa batasan penugasan gudang.
    relevan; bila pengguna (selain `Super Admin`) tidak ditugaskan ke gudang tersebut,
    request ditolak dengan `403 WAREHOUSE_NOT_ASSIGNED`:
    - `location:manage`: `warehouse_id` tempat lokasi berada.
+   - `po:create`, `po:issue`, `po:cancel`, `po:close`: `warehouse_id` pada dokumen Purchase Order (`PO`).
    - `gr:manage`: `warehouse_id` pada dokumen PO/GR.
    - `transfer:create`, `transfer:approve`, `transfer:ship`: `source_warehouse_id`
      (gudang asal transfer).
    - `transfer:receive`: `destination_warehouse_id` (gudang tujuan transfer).
    - `opname:manage`, `opname:count`, `opname:approve`: `warehouse_id` pada sesi
      Stock Opname.
-2. **Operasi baca bagi `Warehouse Staff`:** Pengguna dengan peran `Warehouse Staff`
-   hanya dapat membaca saldo (`stock:read`), buku besar (`ledger:read`), PO
-   (`po:read`), GR (`gr:read`), dan Opname (`opname:read`) pada gudang yang ditugaskan
-   kepadanya. Untuk Transfer (`transfer:read`), `Warehouse Staff` dapat membaca
-   dokumen apabila ditugaskan pada `source_warehouse_id` **atau**
-   `destination_warehouse_id`. Peran lain yang memiliki permission baca (`Super Admin`,
-   `Warehouse Manager`, `Purchasing Staff`, `Auditor`) membaca lintas gudang.
+2. **Operasi baca bagi `Warehouse Staff`, `Warehouse Manager`, dan `Purchasing Staff` (`(g)`):** Seluruh data operasional yang muncul untuk ketiga peran ini wajib disesuaikan dengan gudang yang ditugaskan (`user_warehouses`) dan lokasi penyimpanan di dalam gudang tersebut:
+   - **Gudang & Lokasi (`master:read` pada `warehouses` dan `storage_locations`):** Secara default, pembacaan daftar maupun detail gudang dan lokasi penyimpanan hanya mengembalikan gudang yang ditugaskan pada `user_warehouses` beserta lokasi di dalamnya; akses detail atau filter ke `warehouse_id` di luar penugasan ditolak dengan `403 WAREHOUSE_NOT_ASSIGNED`. Khusus saat memilih gudang dan lokasi tujuan untuk pembuatan Stock Transfer antar-gudang, endpoint daftar gudang dan lokasi menyediakan parameter query referensi tujuan transfer yang mengembalikan gudang dan lokasi aktif lintas gudang.
+   - **Katalog Master Global (`master:read` pada `categories`, `uoms`, `items`, `suppliers`):** Tidak terikat pada gudang tertentu sehingga dapat dibaca lintas gudang oleh seluruh pemegang `master:read`.
+   - **Dokumen, Saldo Stok, dan Buku Besar (`po:read`, `gr:read`, `opname:read`, `stock:read`, `ledger:read`):** Ketiga peran hanya dapat membaca PO, GR, Opname, saldo stok (per lokasi, per gudang, maupun ringkasan agregat `summary`), serta buku besar (`stock_movements`) pada gudang yang ditugaskan (`user_warehouses`). Permintaan dengan filter atau ID dokumen/gudang di luar penugasan ditolak dengan `403 WAREHOUSE_NOT_ASSIGNED`.
+   - **Transfer Stok (`transfer:read`):** Pengguna ber-scope `(g)` dapat membaca dokumen Transfer apabila ditugaskan pada `source_warehouse_id` **atau** `destination_warehouse_id`.
+   - **Peran Lintas Gudang:** Hanya `Super Admin` dan `Auditor` yang membaca seluruh gudang, lokasi, stok, buku besar, dan dokumen tanpa batasan `user_warehouses`.
 
 ### 3.3 Aktor dan permission tambahan Fase 2 (M9 — Multi-Tenant SaaS)
 
@@ -227,7 +227,7 @@ requirement owner, consumer, RTM, dan test terkait.
 | Contract | Owner | Consumer | Operasi yang dijamin | Batas ownership |
 |---|---|---|---|---|
 | `authorize` | IAM | Semua route terlindungi | Memverifikasi user aktif, role, dan permission dari database pada setiap request | IAM tidak menentukan validasi bisnis dokumen |
-| `ensure_warehouse_access` | IAM | PUR, RCV, TRF, OPN, WHS | Memverifikasi assignment user terhadap warehouse yang menjadi scope aksi | Modul consumer tetap menentukan warehouse bisnis yang harus diperiksa |
+| `ensure_warehouse_access` | IAM | PUR, RCV, TRF, OPN, WHS, INV | Memverifikasi assignment user terhadap warehouse yang menjadi scope aksi | Modul consumer tetap menentukan warehouse bisnis yang harus diperiksa |
 | `record` | AUD | Semua modul yang mengubah data | Menulis audit event dalam transaksi perubahan | AUD tidak menentukan validitas aksi atau mengubah data owner |
 | `next_number` | PLT | PUR, RCV, TRF, OPN | Menghasilkan nomor unik per tipe dan periode secara atomik (per tenant pada M9) | Consumer tidak membuat nomor dokumen sendiri |
 | `apply_movement` | INV | RCV, TRF, OPN | Mengunci balance, memvalidasi negative stock/freeze, mengubah balance, dan menulis ledger | Consumer tidak boleh update `inventory_balances` atau `stock_movements` |
@@ -403,7 +403,7 @@ location aktif dan dimiliki oleh warehouse yang direferensikan (`BR-GLB-008`);
 `allow_negative_stock` default `false`, hanya Super Admin (`warehouse:manage`) yang
 mengubahnya, dan setiap perubahan wajib tercatat pada audit log; tidak boleh
 menonaktifkan warehouse atau location yang masih memiliki saldo non-nol atau referensi
-dokumen aktif.
+dokumen aktif; pembacaan daftar dan detail warehouse serta storage location bagi `Warehouse Staff`, `Warehouse Manager`, dan `Purchasing Staff` terfilter sesuai `user_warehouses` (dengan pengecualian parameter referensi tujuan Transfer saat memilih gudang/lokasi tujuan Stock Transfer).
 
 **Data, permission, dependency:** `warehouses`, `storage_locations`;
 `warehouse:manage`, `location:manage`, `master:read`; dipakai IAM, INV, PUR, RCV,
@@ -412,7 +412,7 @@ TRF, OPN.
 **Acceptance:** `AC-20` duplikasi kode warehouse/location dan mismatch kepemilikan
 location (`INVALID_LOCATION`) ditolak, penonaktifan dengan open reference atau saldo
 non-nol ditolak (`ENTITY_IN_USE`), dan perubahan konfigurasi `allow_negative_stock`
-diaudit; `AC-12` warehouse scoping pada pengelolaan lokasi; `AC-16` pencarian, filter,
+diaudit; `AC-12` warehouse scoping pada pembacaan dan pengelolaan gudang/lokasi; `AC-16` pencarian, filter,
 pagination, dan sort whitelist daftar warehouse/location.
 
 ### 6.6 INV, Inventory
@@ -430,14 +430,14 @@ pagination, dan sort whitelist daftar warehouse/location.
 `qty_before`, `qty_change`, `qty_after`, type, reference, actor, time; `qty_after`
 harus sama dengan before plus change; negative stock ditolak dengan
 `INSUFFICIENT_STOCK`; movement non-adjustment di lokasi beku ditolak
-`LOCATION_FROZEN`.
+`LOCATION_FROZEN`; pembacaan view saldo (`balances`, `by-warehouse`, `summary`) dan `stock_movements` (`ledger`) bagi `Warehouse Staff`, `Warehouse Manager`, dan `Purchasing Staff` dibatasi pada gudang yang ditugaskan (`user_warehouses`).
 
 **Data, permission, dependency:** `inventory_balances`, `stock_movements`;
 `stock:read`, `ledger:read`; membaca MST/WHS/OPN/TRF dan dipicu RCV/TRF/OPN.
 
 **Acceptance:** `AC-02` negative stock transfer ditolak; `AC-03` view saldo per
 lokasi, gudang, agregat, dan `in_transit` konsisten; `AC-06` concurrency hanya
-menghasilkan satu ship; `AC-08` append-only; `AC-13` lock ordering konsisten; `AC-16`
+menghasilkan satu ship; `AC-08` append-only; `AC-12` warehouse scoping pada pembacaan stok dan ledger; `AC-13` lock ordering konsisten; `AC-16`
 filter, pagination, sort whitelist, dan format kuantitas string desimal pada query
 saldo serta movement ledger.
 
@@ -459,7 +459,7 @@ PO `ISSUED` dan `PARTIALLY_RECEIVED` dapat ditutup melalui aksi close (`po:close
 dengan alasan penutupan wajib (`closed_reason`) setelah tidak ada GR draft yang perlu
 diselesaikan. PO `RECEIVED`, `CANCELLED`, dan `CLOSED` adalah terminal.
 
-Setiap aksi issue, cancel, dan close mengubah status serta menulis audit dalam satu
+Setiap aksi pembuatan/pembaruan draft, issue, cancel, close, serta pembacaan PO wajib menegakkan warehouse scoping (`user_warehouses`) terhadap `warehouse_id` PO bagi `Purchasing Staff`, `Warehouse Manager`, dan `Warehouse Staff`. Setiap aksi issue, cancel, dan close mengubah status serta menulis audit dalam satu
 transaksi. Perubahan fulfillment akibat posting GR dilakukan oleh contract PUR,
 bukan oleh route atau modul RCV secara langsung.
 
@@ -467,7 +467,7 @@ bukan oleh route atau modul RCV secara langsung.
 MST/WHS/PLT dependency, RCV consumer melalui contract `apply_receipt` dan
 `gr_status_summary`.
 
-**Acceptance:** `AC-01` partial lalu full receiving mengubah fulfillment; `AC-21`
+**Acceptance:** `AC-01` partial lalu full receiving mengubah fulfillment; `AC-12` warehouse scoping pada pengelolaan dan pembacaan PO; `AC-21`
 status transition invalid ditolak; `AC-16` pagination, filter, dan sort daftar PO.
 
 ### 6.8 RCV, Goods Receipt
@@ -755,14 +755,14 @@ Database dan service layer wajib menegakkan lima invariant relasi konseptual ber
 
 | Entitas (M9) | Owner | Feature ID | Kunci bisnis / keunikan konseptual | Relationship utama | Aturan siklus hidup dan proteksi |
 | --- | --- | --- | --- | --- | --- |
-| `plans` | TNT | `TNT-F04` | `code` (case-insensitive) | Direferensikan oleh `tenants` | Menyimpan batas kuota `max_warehouses`, `max_active_users`, `max_active_items`; paket default di-seed pada migrasi `010` |
+| `plans` | TNT | `TNT-F04` | `code` (case-insensitive) | Direferensikan oleh `tenants` | Menyimpan batas kuota `max_warehouses`, `max_active_users`, `max_active_items`; paket default di-seed pada migrasi `012` |
 | `tenants` | TNT | `TNT-F02..F05` | `slug` (global, imutabel) | Mengacu ke `plans`; menjadi induk `tenant_id` bagi seluruh tabel bisnis tenant | Siklus status `TRIAL`, `ACTIVE`, `SUSPENDED`, `DEACTIVATED`; tidak ada hard delete |
 | `platform_admins` | TNT | `TNT-F01` | `username`, `email` | Memiliki banyak `platform_refresh_tokens` | Tabel level platform (tanpa `tenant_id`); terpisah dari `users` tenant |
 | `platform_refresh_tokens` | TNT | `TNT-F01` | `token_hash` | Mengacu ke `platform_admins` | Rotasi dan pencabutan sesi khusus `Platform Admin` |
 | `settings` | CFG | `CFG-F01..F04` | `(tenant_id, COALESCE(warehouse_id, 0), key)` | Mengacu ke `tenants` dan opsional komposit ke `warehouses (tenant_id, id)` | Hanya menyimpan kunci pengaturan terdaftar; perubahan diaudit |
 
-Pada migrasi Fase 2 (`010_create_tenants_settings.sql` dan `011_add_tenant_scope.sql`), seluruh 21 tabel bisnis dari Fase 1 (`roles`, `role_permissions`, `users`, `user_warehouses`, `refresh_tokens`, `menus`, `audit_logs`, `document_sequences`, `categories`, `uoms`, `suppliers`, `items`, `warehouses`, `storage_locations`, `inventory_balances`, `stock_movements`, `purchase_orders`, `po_lines`, `goods_receipts`, `gr_lines`, `stock_transfers`, `stock_transfer_lines`, `stock_opnames`, `stock_opname_lines`) ditambahkan `tenant_id BIGINT NOT NULL REFERENCES tenants(id)` dengan tiga jaminan teknis wajib pada [DATABASE_DESIGN.md](DATABASE_DESIGN.md):
-1. Penonaktifan sementara trigger imutabilitas `007` pada `stock_movements` dan `audit_logs` hanya selama transaksi migrasi `011` melakukan *backfill* `tenant_id` untuk tenant default, lalu diaktifkan kembali sebelum commit.
+Pada migrasi Fase 2 (`012_create_tenants_settings.sql` dan `013_add_tenant_scope.sql`), seluruh 21 tabel bisnis dari Fase 1 (`roles`, `role_permissions`, `users`, `user_warehouses`, `refresh_tokens`, `menus`, `audit_logs`, `document_sequences`, `categories`, `uoms`, `suppliers`, `items`, `warehouses`, `storage_locations`, `inventory_balances`, `stock_movements`, `purchase_orders`, `po_lines`, `goods_receipts`, `gr_lines`, `stock_transfers`, `stock_transfer_lines`, `stock_opnames`, `stock_opname_lines`) ditambahkan `tenant_id BIGINT NOT NULL REFERENCES tenants(id)` dengan tiga jaminan teknis wajib pada [DATABASE_DESIGN.md](DATABASE_DESIGN.md):
+1. Penonaktifan sementara trigger imutabilitas `007` pada `stock_movements` dan `audit_logs` hanya selama transaksi migrasi `013` melakukan *backfill* `tenant_id` untuk tenant default, lalu diaktifkan kembali sebelum commit.
 2. Pembuatan constraint `UNIQUE (tenant_id, id)` pada seluruh tabel induk sebelum memasang *Composite FK* `(tenant_id, <fk>_id)` agar lintas-referensi antar-tenant mustahil terjadi di level database.
 3. Penggantian 14 constraint `UNIQUE`/`PK` global menjadi komposit berawalan `tenant_id`, disertai kebijakan PostgreSQL `ENABLE` & `FORCE ROW LEVEL SECURITY`.
 
@@ -874,17 +874,17 @@ pada dokumen bukti layer dan laporan QA.
 | `FR-MST-003` | `MST-F03` | `items`, `categories`, `uoms` | master service (item & proteksi SKU/UoM) | layar CRUD/katalog item | endpoint CRUD/list item dan item per kategori | `AC-16`, `AC-19`, `AC-22` | `Mapped` |
 | `FR-MST-004` | `MST-F04` | `suppliers` | master service (supplier) | layar CRUD supplier | endpoint CRUD/list supplier | `AC-16`, `AC-19`, `AC-22` | `Mapped` |
 | `FR-MST-005` | `MST-F05` | `categories`, `uoms`, `items`, `suppliers` | master service (open-reference guard & soft deactivate) | aksi aktivasi/deaktivasi master | endpoint update master (`is_active`) | `AC-19`, `AC-22` | `Mapped` |
-| `FR-WHS-001` | `WHS-F01` | `warehouses` | warehouse service | layar CRUD gudang dan pengaturan `allow_negative_stock` | endpoint CRUD/list warehouse | `AC-02`, `AC-16`, `AC-20`, `AC-22` | `Mapped` |
+| `FR-WHS-001` | `WHS-F01` | `warehouses` | warehouse service | layar CRUD gudang dan pengaturan `allow_negative_stock` | endpoint CRUD/list warehouse | `AC-02`, `AC-12`, `AC-16`, `AC-20`, `AC-22` | `Mapped` |
 | `FR-WHS-002` | `WHS-F02` | `storage_locations`, `warehouses` | warehouse service | layar CRUD lokasi penyimpanan per gudang | endpoint CRUD/list storage location | `AC-12`, `AC-16`, `AC-20`, `AC-22` | `Mapped` |
 | `FR-WHS-003` | `WHS-F03` | `storage_locations`, `warehouses` | warehouse service (`validate_location`) | pemilihan lokasi terfilter berdasarkan gudang | seluruh endpoint dokumen dan stok yang menerima `location_id` | `AC-20` | `Mapped` |
-| `FR-INV-001` | `INV-F01` | `inventory_balances` | inventory/stock service | tabel saldo per lokasi/item | endpoint saldo per lokasi | `AC-01`, `AC-03`, `AC-16` | `Mapped` |
+| `FR-INV-001` | `INV-F01` | `inventory_balances` | inventory/stock service | tabel saldo per lokasi/item | endpoint saldo per lokasi | `AC-01`, `AC-03`, `AC-12`, `AC-16` | `Mapped` |
 | `FR-INV-002` | `INV-F02` | `inventory_balances`, `stock_transfers`, `stock_transfer_lines` | stock service & contract `in_transit` | tampilan stok per lokasi, per gudang, ringkasan, dan in-transit | endpoint stock balances, by-warehouse, dan summary | `AC-03`, `AC-12`, `AC-16` | `Mapped` |
 | `FR-INV-003` | `INV-F03` | `stock_movements` | inventory/stock service | layar buku besar pergerakan stok (ledger) | endpoint list dan detail stock movements | `AC-08`, `AC-12`, `AC-16` | `Mapped` |
 | `FR-INV-004` | `INV-F04` | `inventory_balances`, `stock_movements` | inventory service (`apply_movement`) | n/a | dipicu oleh action post GR, ship/receive Transfer, approve Opname | `AC-01`, `AC-03`, `AC-06`, `AC-07`, `AC-10`, `AC-13` | `Mapped` |
 | `FR-INV-005` | `INV-F05` | `inventory_balances`, `warehouses` | inventory service (`apply_movement`) | tampilan peringatan stok tidak cukup | action ship Transfer dan approve Opname (`ADJUSTMENT_MINUS`) | `AC-02`, `AC-06` | `Mapped` |
 | `FR-INV-006` | `INV-F06` | `stock_opnames` | inventory service (`apply_movement`) & contract `is_location_frozen` | indikator lokasi sedang dibekukan opname | action post GR, ship Transfer, receive Transfer | `AC-04`, `AC-10` | `Mapped` |
-| `FR-PUR-001` | `PUR-F01` | `purchase_orders`, `po_lines` | PO service | form pembuatan/edit draft PO dan detail baris | endpoint create, update draft, get, dan list PO | `AC-01`, `AC-15`, `AC-16` | `Mapped` |
-| `FR-PUR-002` | `PUR-F02` | `purchase_orders` | PO service & contract `gr_status_summary` | tombol aksi issue, cancel, dan close PO | action endpoint `issue`, `cancel`, `close` PO | `AC-01`, `AC-21`, `AC-22` | `Mapped` |
+| `FR-PUR-001` | `PUR-F01` | `purchase_orders`, `po_lines` | PO service | form pembuatan/edit draft PO dan detail baris | endpoint create, update draft, get, dan list PO | `AC-01`, `AC-12`, `AC-15`, `AC-16` | `Mapped` |
+| `FR-PUR-002` | `PUR-F02` | `purchase_orders` | PO service & contract `gr_status_summary` | tombol aksi issue, cancel, dan close PO | action endpoint `issue`, `cancel`, `close` PO | `AC-01`, `AC-12`, `AC-21`, `AC-22` | `Mapped` |
 | `FR-PUR-003` | `PUR-F03` | `purchase_orders`, `po_lines` | PO service | indikator progres `qty_received` dan status PO | detail PO dan respons posting GR | `AC-01`, `AC-13` | `Mapped` |
 | `FR-PUR-004` | `PUR-F04` | `purchase_orders`, `po_lines` | PO service (`apply_receipt`) | n/a | dipanggil secara internal saat action `post` GR | `AC-01`, `AC-07`, `AC-13` | `Mapped` |
 | `FR-RCV-001` | `RCV-F01` | `goods_receipts`, `gr_lines` | GR service | form pembuatan/edit draft GR dari PO eligible | endpoint create, update draft, get, dan list GR | `AC-01`, `AC-12`, `AC-15`, `AC-16` | `Mapped` |
@@ -907,14 +907,14 @@ pada dokumen bukti layer dan laporan QA.
 
 Seluruh kebutuhan Fase 2 (M9) berikut telah disetujui pemilik proyek (`CONF-001` Resolved) sebagai tahap langsung berikutnya sebelum penambahan modul operasional Fase 3:
 
-| Requirement ID | Feature ID | Database (`010` & `011`) | Backend | Frontend | API | QA | Status |
+| Requirement ID | Feature ID | Database (`012` & `013`) | Backend | Frontend | API | QA | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `FR-TNT-001` | `TNT-F01` | `platform_admins`, `platform_refresh_tokens` | platform auth service & dependency `require_platform_admin` | halaman login Platform Admin | `POST /api/v1/platform/auth/login`, `/refresh`, `/logout` | `AC-28` | `Mapped (Phase 2 - M9)` |
 | `FR-TNT-002` | `TNT-F02` | `tenants`, `plans`, `roles`, `menus`, `users`, `settings` | tenant provisioning service (atomik) | form pembuatan tenant baru di panel Platform Admin | `POST /api/v1/platform/tenants`, `GET /api/v1/platform/tenants`, `GET /api/v1/platform/tenants/{id}` | `AC-29` | `Mapped (Phase 2 - M9)` |
 | `FR-TNT-003` | `TNT-F03` | `tenants`, `refresh_tokens` | tenant lifecycle service & contract `ensure_tenant_active` | aksi activate/suspend/deactivate tenant & state `TENANT_SUSPENDED` | `POST /api/v1/platform/tenants/{id}/activate`, `/suspend`, `/deactivate` | `AC-24` | `Mapped (Phase 2 - M9)` |
 | `FR-TNT-004` | `TNT-F04` | `plans`, `tenants`, `warehouses`, `users`, `items` | quota service (`check_quota` dengan lock `tenants FOR UPDATE`) | indikator pemakaian kuota & pengelolaan paket tenant | `GET /api/v1/platform/plans`, `PATCH /api/v1/platform/tenants/{id}` | `AC-25` | `Mapped (Phase 2 - M9)` |
 | `FR-TNT-005` | `TNT-F05` | `tenants`, `plans` | tenant profile service | halaman profil organisasi & bar pemakaian kuota (`Super Admin` tenant) | `GET /api/v1/tenant/profile`, `PATCH /api/v1/tenant/profile` | `AC-25`, `AC-28` | `Mapped (Phase 2 - M9)` |
-| `FR-TNT-006` | `TNT-F06` | kolom `tenant_id`, *Composite FK*, `UNIQUE (tenant_id, ...)`, kebijakan RLS (`011`) | context `current_tenant()`, pool `RESET app.current_tenant_id`, login ber-`tenant_slug` | input `tenant_slug` pada halaman login tenant | `POST /api/v1/auth/login` (dengan `tenant_slug`) dan seluruh endpoint `/api/v1/*` | `AC-23`, `AC-27`, `AC-28` | `Mapped (Phase 2 - M9)` |
+| `FR-TNT-006` | `TNT-F06` | kolom `tenant_id`, *Composite FK*, `UNIQUE (tenant_id, ...)`, kebijakan RLS (`013`) | context `current_tenant()`, pool `RESET app.current_tenant_id`, login ber-`tenant_slug` | input `tenant_slug` pada halaman login tenant | `POST /api/v1/auth/login` (dengan `tenant_slug`) dan seluruh endpoint `/api/v1/*` | `AC-23`, `AC-27`, `AC-28` | `Mapped (Phase 2 - M9)` |
 | `FR-CFG-001` | `CFG-F01` | `settings` | setting registry & type validator | form dinamis sesuai tipe nilai pengaturan | validasi pada `PUT /api/v1/settings` | `AC-26` | `Mapped (Phase 2 - M9)` |
 | `FR-CFG-002` | `CFG-F02` | `settings`, `audit_logs` | setting service (tenant level) | layar pengaturan tenant (`Super Admin` tenant) | `GET /api/v1/settings`, `PUT /api/v1/settings` | `AC-22`, `AC-26` | `Mapped (Phase 2 - M9)` |
 | `FR-CFG-003` | `CFG-F03` | `settings`, `warehouses`, `audit_logs` | setting service (warehouse override) | pengaturan override per gudang | `GET /api/v1/warehouses/{id}/settings`, `PUT /api/v1/warehouses/{id}/settings` | `AC-22`, `AC-26` | `Mapped (Phase 2 - M9)` |
@@ -936,7 +936,7 @@ Fase 1 (M0–M8, Selesai):
 PLT -> IAM/AUD -> MST/WHS -> INV -> (PUR + RCV), (TRF), (OPN) [Single-Tenant Baseline]
 
 Fase 2 (M9, Target Langsung Berikutnya — Multi-Tenant SaaS):
-M9a (Database & RLS: migrasi 010 & 011 + current_tenant context & pool reset)
+M9a (Database & RLS: migrasi 012 & 013 + current_tenant context & pool reset)
  -> M9b (Modul TNT & CFG + Platform Admin Auth & Tenant Provisioning)
  -> M9c (Adaptasi login tenant ber-slug, kuota check_quota, & injeksi tenant_id di repository M0–M8)
  -> M9d (Verifikasi AC-23 s.d. AC-29 + regresi penuh AC-01 s.d. AC-22)

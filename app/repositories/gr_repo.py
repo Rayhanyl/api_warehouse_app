@@ -334,3 +334,25 @@ def mark_gr_cancelled(
         (gr_id,),
     )
 
+
+def get_gr_status_summary_for_po(
+    conn: Connection[dict[str, Any]], po_id: int
+) -> dict[str, int]:
+    """Mengembalikan ringkasan status Goods Receipt untuk PO tertentu (contract RCV gr_status_summary, PRD 4.3)."""
+    rows = conn.execute(
+        """
+        SELECT status, COUNT(*) AS cnt
+        FROM goods_receipts
+        WHERE po_id = %s
+        GROUP BY status
+        """,
+        (po_id,),
+    ).fetchall()
+    counts = {r["status"]: int(r["cnt"]) for r in rows}
+    return {
+        "draft_count": counts.get("DRAFT", 0),
+        "posted_count": counts.get("POSTED", 0),
+        "cancelled_count": counts.get("CANCELLED", 0),
+        "total": sum(counts.values()),
+    }
+

@@ -127,8 +127,6 @@ def start_stock_opname(
 
 
 @router.post("/{opname_id}/count", response_model=StockOpnameOut)
-@router.post("/{opname_id}/lines", response_model=StockOpnameOut)
-@router.put("/{opname_id}/lines", response_model=StockOpnameOut)
 def record_opname_counts(
     opname_id: int,
     payload: StockOpnameCountRequest,

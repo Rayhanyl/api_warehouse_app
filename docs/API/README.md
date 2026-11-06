@@ -115,61 +115,59 @@ Sesuai pentahapan di [`docs/CORE/FOLDER_STRUCTURE.MD`](../CORE/FOLDER_STRUCTURE.
 | 30 | POST | `/api/v1/items` | Buat barang (SKU) baru | Bearer | `master:manage` | [master-data.md](master-data.md#post-apiv1items--buat-barang-baru) |
 | 31 | GET | `/api/v1/items/{item_id}` | Detail barang (SKU) berdasarkan ID | Bearer | `master:read` | [master-data.md](master-data.md#get-apiv1itemsitem_id--detail-barang) |
 | 32 | PATCH | `/api/v1/items/{item_id}` | Perbarui atau nonaktifkan barang (SKU) | Bearer | `master:manage` | [master-data.md](master-data.md#patch-apiv1itemsitem_id--perbarui--nonaktifkan-barang) |
-| 33 | GET | `/api/v1/warehouses` | Daftar gudang (paginasi, filter, pencarian) | Bearer | `master:read` | [warehouses.md](warehouses.md#get-apiv1warehouses--daftar-gudang) |
+| 33 | GET | `/api/v1/warehouses` | Daftar gudang (paginasi, filter, purpose, pencarian) | Bearer | `master:read` `(g)` | [warehouses.md](warehouses.md#get-apiv1warehouses--daftar-gudang) |
 | 34 | POST | `/api/v1/warehouses` | Buat gudang baru | Bearer | `warehouse:manage` | [warehouses.md](warehouses.md#post-apiv1warehouses--buat-gudang-baru) |
-| 35 | GET | `/api/v1/warehouses/{warehouse_id}` | Detail gudang berdasarkan ID | Bearer | `master:read` | [warehouses.md](warehouses.md#get-apiv1warehouseswarehouse_id--detail-gudang) |
+| 35 | GET | `/api/v1/warehouses/{warehouse_id}` | Detail gudang berdasarkan ID | Bearer | `master:read` `(g)` | [warehouses.md](warehouses.md#get-apiv1warehouseswarehouse_id--detail-gudang) |
 | 36 | PATCH | `/api/v1/warehouses/{warehouse_id}` | Perbarui atau nonaktifkan gudang | Bearer | `warehouse:manage` | [warehouses.md](warehouses.md#patch-apiv1warehouseswarehouse_id--perbarui--nonaktifkan-gudang) |
-| 37 | GET | `/api/v1/warehouses/{warehouse_id}/locations` | Daftar lokasi penyimpanan pada satu gudang | Bearer | `master:read` | [warehouses.md](warehouses.md#get-apiv1warehouseswarehouse_idlocations--daftar-lokasi-pada-satu-gudang) |
+| 37 | GET | `/api/v1/warehouses/{warehouse_id}/locations` | Daftar lokasi penyimpanan pada satu gudang | Bearer | `master:read` `(g)` | [warehouses.md](warehouses.md#get-apiv1warehouseswarehouse_idlocations--daftar-lokasi-pada-satu-gudang) |
 | 38 | POST | `/api/v1/warehouses/{warehouse_id}/locations` | Buat lokasi penyimpanan pada gudang tertentu | Bearer | `location:manage` `(g)` | [warehouses.md](warehouses.md#post-apiv1warehouseswarehouse_idlocations--buat-lokasi-pada-gudang-tertentu) |
-| 39 | GET | `/api/v1/locations` | Daftar seluruh lokasi penyimpanan (filter `warehouse_id`) | Bearer | `master:read` | [warehouses.md](warehouses.md#get-apiv1locations--daftar-seluruh-lokasi-penyimpanan) |
+| 39 | GET | `/api/v1/locations` | Daftar seluruh lokasi penyimpanan (filter `warehouse_id`, `purpose`) | Bearer | `master:read` `(g)` | [warehouses.md](warehouses.md#get-apiv1locations--daftar-seluruh-lokasi-penyimpanan) |
 | 40 | POST | `/api/v1/locations` | Buat lokasi penyimpanan (dengan `warehouse_id` di body) | Bearer | `location:manage` `(g)` | [warehouses.md](warehouses.md#post-apiv1locations--buat-lokasi-penyimpanan-top-level) |
-| 41 | GET | `/api/v1/locations/{location_id}` | Detail lokasi penyimpanan berdasarkan ID | Bearer | `master:read` | [warehouses.md](warehouses.md#get-apiv1locationslocation_id--detail-lokasi-penyimpanan) |
+| 41 | GET | `/api/v1/locations/{location_id}` | Detail lokasi penyimpanan berdasarkan ID | Bearer | `master:read` `(g)` | [warehouses.md](warehouses.md#get-apiv1locationslocation_id--detail-lokasi-penyimpanan) |
 | 42 | PATCH | `/api/v1/locations/{location_id}` | Perbarui atau nonaktifkan lokasi penyimpanan | Bearer | `location:manage` `(g)` | [warehouses.md](warehouses.md#patch-apiv1locationslocation_id--perbarui--nonaktifkan-lokasi-penyimpanan) |
 | 43 | GET | `/api/v1/audit-logs` | Daftar jejak audit (paginasi & filter) | Bearer | `audit:read` | [audit-logs.md](audit-logs.md#get-apiv1audit-logs--daftar-audit-log) |
-| 44 | GET | `/api/v1/purchase-orders` | Daftar PO (filter, pencarian, pagination) | Bearer | `po:read` | [purchase-orders.md](purchase-orders.md#51-get-apiv1purchase-orders--daftar-po) |
-| 45 | POST | `/api/v1/purchase-orders` | Buat PO berstatus `DRAFT` | Bearer | `po:create` | [purchase-orders.md](purchase-orders.md#52-post-apiv1purchase-orders--buat-po) |
-| 46 | GET | `/api/v1/purchase-orders/{po_id}` | Detail PO dan barisnya | Bearer | `po:read` | [purchase-orders.md](purchase-orders.md#53-get-apiv1purchase-orderspo_id--detail-po) |
-| 47 | PATCH | `/api/v1/purchase-orders/{po_id}` | Revisi header/baris PO `DRAFT` | Bearer | `po:create` | [purchase-orders.md](purchase-orders.md#54-patch-apiv1purchase-orderspo_id--revisi-po) |
-| 48 | POST | `/api/v1/purchase-orders/{po_id}/issue` | Terbitkan PO | Bearer | `po:issue` | [purchase-orders.md](purchase-orders.md#55-post-apiv1purchase-orderspo_idissue--terbitkan-po) |
-| 49 | POST | `/api/v1/purchase-orders/{po_id}/cancel` | Batalkan PO sesuai status | Bearer | `po:create` / `po:cancel` | [purchase-orders.md](purchase-orders.md#56-post-apiv1purchase-orderspo_idcancel--batalkan-po) |
-| 50 | POST | `/api/v1/purchase-orders/{po_id}/close` | Tutup PO dengan alasan | Bearer | `po:close` | [purchase-orders.md](purchase-orders.md#57-post-apiv1purchase-orderspo_idclose--tutup-po) |
-| 51 | GET | `/api/v1/stock/balances` | Saldo stok per lokasi (alias `by-location`) | Bearer | `stock:read` | [stock-ledger.md](stock-ledger.md#51-get-apiv1stockbalances--get-apiv1stockby-location--saldo-stok-per-lokasi) |
-| 52 | GET | `/api/v1/stock/by-location` | Saldo stok per lokasi | Bearer | `stock:read` | [stock-ledger.md](stock-ledger.md#51-get-apiv1stockbalances--get-apiv1stockby-location--saldo-stok-per-lokasi) |
-| 53 | GET | `/api/v1/stock/by-warehouse` | Saldo diagregasi per gudang dan barang | Bearer | `stock:read` | [stock-ledger.md](stock-ledger.md#52-get-apiv1stockby-warehouse--saldo-stok-per-gudang) |
-| 54 | GET | `/api/v1/stock/summary` | Saldo diagregasi lintas gudang per barang | Bearer | `stock:read` | [stock-ledger.md](stock-ledger.md#53-get-apiv1stocksummary--ringkasan-saldo-stok-lintas-gudang) |
-| 55 | GET | `/api/v1/stock/movements` | Daftar Stock Movement Ledger (alias `ledger`) | Bearer | `ledger:read` | [stock-ledger.md](stock-ledger.md#54-get-apiv1stockledger--get-apiv1stockmovements--buku-besar-pergerakan-stok) |
-| 56 | GET | `/api/v1/stock/ledger` | Daftar Stock Movement Ledger | Bearer | `ledger:read` | [stock-ledger.md](stock-ledger.md#54-get-apiv1stockledger--get-apiv1stockmovements--buku-besar-pergerakan-stok) |
-| 57 | GET | `/api/v1/goods-receipts` | Daftar dan filter Goods Receipt | Bearer | `gr:read` | [goods-receipts.md](goods-receipts.md#51-get-apiv1goods-receipts--daftar-gr) |
-| 58 | POST | `/api/v1/goods-receipts` | Buat GR berstatus `DRAFT` | Bearer | `gr:manage` | [goods-receipts.md](goods-receipts.md#52-post-apiv1goods-receipts--buat-gr) |
-| 59 | GET | `/api/v1/goods-receipts/{gr_id}` | Detail GR dan baris penerimaan | Bearer | `gr:read` | [goods-receipts.md](goods-receipts.md#53-get-apiv1goods-receiptsgr_id--detail-gr) |
-| 60 | PATCH | `/api/v1/goods-receipts/{gr_id}` | Revisi GR `DRAFT` | Bearer | `gr:manage` | [goods-receipts.md](goods-receipts.md#54-patch-apiv1goods-receiptsgr_id--revisi-gr) |
-| 61 | POST | `/api/v1/goods-receipts/{gr_id}/post` | Posting penerimaan dan mutasi stok | Bearer | `gr:manage` | [goods-receipts.md](goods-receipts.md#55-post-apiv1goods-receiptsgr_idpost--posting-gr) |
-| 62 | POST | `/api/v1/goods-receipts/{gr_id}/cancel` | Batalkan GR `DRAFT` | Bearer | `gr:manage` | [goods-receipts.md](goods-receipts.md#56-post-apiv1goods-receiptsgr_idcancel--batalkan-gr) |
-| 63 | GET | `/api/v1/stock-transfers` | Daftar dan filter Transfer Stok | Bearer | `transfer:read` | [stock-transfers.md](stock-transfers.md#51-get-apiv1stock-transfers--daftar-transfer) |
-| 64 | POST | `/api/v1/stock-transfers` | Buat Transfer berstatus `DRAFT` | Bearer | `transfer:create` | [stock-transfers.md](stock-transfers.md#52-post-apiv1stock-transfers--buat-transfer) |
-| 65 | GET | `/api/v1/stock-transfers/{transfer_id}` | Detail Transfer dan baris | Bearer | `transfer:read` | [stock-transfers.md](stock-transfers.md#53-get-apiv1stock-transferstransfer_id--detail-transfer) |
-| 66 | PATCH | `/api/v1/stock-transfers/{transfer_id}` | Revisi Transfer `DRAFT` | Bearer | `transfer:create` | [stock-transfers.md](stock-transfers.md#54-patch-apiv1stock-transferstransfer_id--revisi-transfer) |
-| 67 | POST | `/api/v1/stock-transfers/{transfer_id}/approve` | Setujui Transfer | Bearer | `transfer:approve` | [stock-transfers.md](stock-transfers.md#55-post-apiv1stock-transferstransfer_idapprove--setujui) |
-| 68 | POST | `/api/v1/stock-transfers/{transfer_id}/ship` | Kirim dan kurangi saldo gudang asal | Bearer | `transfer:ship` | [stock-transfers.md](stock-transfers.md#56-post-apiv1stock-transferstransfer_idship--kirim) |
-| 69 | POST | `/api/v1/stock-transfers/{transfer_id}/receive` | Catat penerimaan final dan selisih | Bearer | `transfer:receive` | [stock-transfers.md](stock-transfers.md#57-post-apiv1stock-transferstransfer_idreceive--terima) |
-| 70 | POST | `/api/v1/stock-transfers/{transfer_id}/cancel` | Batalkan Transfer `DRAFT`/`APPROVED` | Bearer | `transfer:create` atau `transfer:approve` | [stock-transfers.md](stock-transfers.md#58-post-apiv1stock-transferstransfer_idcancel--batalkan) |
-| 71 | GET | `/api/v1/stock-opnames` | Daftar dan filter sesi Stock Opname | Bearer | `opname:read` | [stock-opnames.md](stock-opnames.md#51-get-apiv1stock-opnames--daftar-sesi) |
-| 72 | POST | `/api/v1/stock-opnames` | Buat sesi `DRAFT` | Bearer | `opname:manage` | [stock-opnames.md](stock-opnames.md#52-post-apiv1stock-opnames--buat-sesi) |
-| 73 | GET | `/api/v1/stock-opnames/{opname_id}` | Detail sesi dan baris hitung | Bearer | `opname:read` | [stock-opnames.md](stock-opnames.md#53-get-apiv1stock-opnamesopname_id--detail-sesi) |
-| 74 | PATCH | `/api/v1/stock-opnames/{opname_id}` | Revisi sesi `DRAFT` | Bearer | `opname:manage` | [stock-opnames.md](stock-opnames.md#54-patch-apiv1stock-opnamesopname_id--revisi-sesi) |
-| 75 | POST | `/api/v1/stock-opnames/{opname_id}/start` | Ambil snapshot dan mulai sesi | Bearer | `opname:manage` | [stock-opnames.md](stock-opnames.md#55-post-apiv1stock-opnamesopname_idstart--mulai-sesi) |
-| 76 | POST | `/api/v1/stock-opnames/{opname_id}/count` | Input atau revisi hasil hitung | Bearer | `opname:count` | [stock-opnames.md](stock-opnames.md#56-input-hasil-hitung--post-opname_idcount-post-opname_idlines-put-opname_idlines) |
-| 77 | POST | `/api/v1/stock-opnames/{opname_id}/lines` | Alias input hasil hitung | Bearer | `opname:count` | [stock-opnames.md](stock-opnames.md#56-input-hasil-hitung--post-opname_idcount-post-opname_idlines-put-opname_idlines) |
-| 78 | PUT | `/api/v1/stock-opnames/{opname_id}/lines` | Alias input hasil hitung | Bearer | `opname:count` | [stock-opnames.md](stock-opnames.md#56-input-hasil-hitung--post-opname_idcount-post-opname_idlines-put-opname_idlines) |
-| 79 | POST | `/api/v1/stock-opnames/{opname_id}/submit` | Ajukan hasil hitung | Bearer | `opname:count` | [stock-opnames.md](stock-opnames.md#57-post-apiv1stock-opnamesopname_idsubmit--ajukan-persetujuan) |
-| 80 | POST | `/api/v1/stock-opnames/{opname_id}/approve` | Setujui dan terapkan selisih | Bearer | `opname:approve` | [stock-opnames.md](stock-opnames.md#58-post-apiv1stock-opnamesopname_idapprove--setujui) |
-| 81 | POST | `/api/v1/stock-opnames/{opname_id}/reject` | Tolak dan minta hitung ulang | Bearer | `opname:approve` | [stock-opnames.md](stock-opnames.md#59-post-apiv1stock-opnamesopname_idreject--tolak) |
-| 82 | POST | `/api/v1/stock-opnames/{opname_id}/cancel` | Batalkan sesi `DRAFT`/`IN_PROGRESS` | Bearer | `opname:manage` | [stock-opnames.md](stock-opnames.md#510-post-apiv1stock-opnamesopname_idcancel--batalkan) |
-| 83 | GET | `/api/v1/menus/my-menu` | Ambil pohon menu aktif sesuai permission pengguna | Bearer | – (autentikasi saja) | [menus.md](menus.md#41-mengambil-pohon-menu-pengguna) |
-| 84 | GET | `/api/v1/menus` | Daftar katalog menu (pagination, filter, pencarian, sorting) | Bearer | `user:manage` | [menus.md](menus.md#42-membaca-katalog-menu) |
-| 85 | POST | `/api/v1/menus` | Buat menu navigasi | Bearer | `user:manage` | [menus.md](menus.md#43-membuat-menu) |
-| 86 | GET | `/api/v1/menus/{menu_id}` | Detail menu berdasarkan ID | Bearer | `user:manage` | [menus.md](menus.md#44-membaca-detail-menu) |
-| 87 | PATCH | `/api/v1/menus/{menu_id}` | Ubah atau nonaktifkan menu | Bearer | `user:manage` | [menus.md](menus.md#45-memperbarui-atau-menonaktifkan-menu) |
+| 44 | GET | `/api/v1/purchase-orders` | Daftar PO (filter, pencarian, pagination) | Bearer | `po:read` `(g)` | [purchase-orders.md](purchase-orders.md#51-get-apiv1purchase-orders--daftar-po) |
+| 45 | POST | `/api/v1/purchase-orders` | Buat PO berstatus `DRAFT` | Bearer | `po:create` `(g)` | [purchase-orders.md](purchase-orders.md#52-post-apiv1purchase-orders--buat-po) |
+| 46 | GET | `/api/v1/purchase-orders/{po_id}` | Detail PO dan barisnya | Bearer | `po:read` `(g)` | [purchase-orders.md](purchase-orders.md#53-get-apiv1purchase-orderspo_id--detail-po) |
+| 47 | PATCH | `/api/v1/purchase-orders/{po_id}` | Revisi header/baris PO `DRAFT` | Bearer | `po:create` `(g)` | [purchase-orders.md](purchase-orders.md#54-patch-apiv1purchase-orderspo_id--revisi-po) |
+| 48 | POST | `/api/v1/purchase-orders/{po_id}/issue` | Terbitkan PO | Bearer | `po:issue` `(g)` | [purchase-orders.md](purchase-orders.md#55-post-apiv1purchase-orderspo_idissue--terbitkan-po) |
+| 49 | POST | `/api/v1/purchase-orders/{po_id}/cancel` | Batalkan PO sesuai status | Bearer | `po:create` / `po:cancel` `(g)` | [purchase-orders.md](purchase-orders.md#56-post-apiv1purchase-orderspo_idcancel--batalkan-po) |
+| 50 | POST | `/api/v1/purchase-orders/{po_id}/close` | Tutup PO dengan alasan | Bearer | `po:close` `(g)` | [purchase-orders.md](purchase-orders.md#57-post-apiv1purchase-orderspo_idclose--tutup-po) |
+| 51 | GET | `/api/v1/stock/balances` | Saldo stok per lokasi (alias `by-location`) | Bearer | `stock:read` `(g)` | [stock-ledger.md](stock-ledger.md#51-get-apiv1stockbalances--get-apiv1stockby-location--saldo-stok-per-lokasi) |
+| 52 | GET | `/api/v1/stock/by-location` | Saldo stok per lokasi | Bearer | `stock:read` `(g)` | [stock-ledger.md](stock-ledger.md#51-get-apiv1stockbalances--get-apiv1stockby-location--saldo-stok-per-lokasi) |
+| 53 | GET | `/api/v1/stock/by-warehouse` | Saldo diagregasi per gudang dan barang | Bearer | `stock:read` `(g)` | [stock-ledger.md](stock-ledger.md#52-get-apiv1stockby-warehouse--saldo-stok-per-gudang) |
+| 54 | GET | `/api/v1/stock/summary` | Saldo diagregasi lintas gudang per barang | Bearer | `stock:read` `(g)` | [stock-ledger.md](stock-ledger.md#53-get-apiv1stocksummary--ringkasan-saldo-stok-lintas-gudang) |
+| 55 | GET | `/api/v1/stock/movements` | Daftar Stock Movement Ledger (alias `ledger`) | Bearer | `ledger:read` `(g)` | [stock-ledger.md](stock-ledger.md#54-get-apiv1stockledger--get-apiv1stockmovements--buku-besar-pergerakan-stok) |
+| 56 | GET | `/api/v1/stock/ledger` | Daftar Stock Movement Ledger | Bearer | `ledger:read` `(g)` | [stock-ledger.md](stock-ledger.md#54-get-apiv1stockledger--get-apiv1stockmovements--buku-besar-pergerakan-stok) |
+| 57 | GET | `/api/v1/goods-receipts` | Daftar dan filter Goods Receipt | Bearer | `gr:read` `(g)` | [goods-receipts.md](goods-receipts.md#51-get-apiv1goods-receipts--daftar-gr) |
+| 58 | POST | `/api/v1/goods-receipts` | Buat GR berstatus `DRAFT` | Bearer | `gr:manage` `(g)` | [goods-receipts.md](goods-receipts.md#52-post-apiv1goods-receipts--buat-gr) |
+| 59 | GET | `/api/v1/goods-receipts/{gr_id}` | Detail GR dan baris penerimaan | Bearer | `gr:read` `(g)` | [goods-receipts.md](goods-receipts.md#53-get-apiv1goods-receiptsgr_id--detail-gr) |
+| 60 | PATCH | `/api/v1/goods-receipts/{gr_id}` | Revisi GR `DRAFT` | Bearer | `gr:manage` `(g)` | [goods-receipts.md](goods-receipts.md#54-patch-apiv1goods-receiptsgr_id--revisi-gr) |
+| 61 | POST | `/api/v1/goods-receipts/{gr_id}/post` | Posting penerimaan dan mutasi stok | Bearer | `gr:manage` `(g)` | [goods-receipts.md](goods-receipts.md#55-post-apiv1goods-receiptsgr_idpost--posting-gr) |
+| 62 | POST | `/api/v1/goods-receipts/{gr_id}/cancel` | Batalkan GR `DRAFT` | Bearer | `gr:manage` `(g)` | [goods-receipts.md](goods-receipts.md#56-post-apiv1goods-receiptsgr_idcancel--batalkan-gr) |
+| 63 | GET | `/api/v1/stock-transfers` | Daftar dan filter Transfer Stok | Bearer | `transfer:read` `(g)` | [stock-transfers.md](stock-transfers.md#51-get-apiv1stock-transfers--daftar-transfer) |
+| 64 | POST | `/api/v1/stock-transfers` | Buat Transfer berstatus `DRAFT` | Bearer | `transfer:create` `(g asal)` | [stock-transfers.md](stock-transfers.md#52-post-apiv1stock-transfers--buat-transfer) |
+| 65 | GET | `/api/v1/stock-transfers/{transfer_id}` | Detail Transfer dan baris | Bearer | `transfer:read` `(g)` | [stock-transfers.md](stock-transfers.md#53-get-apiv1stock-transferstransfer_id--detail-transfer) |
+| 66 | PATCH | `/api/v1/stock-transfers/{transfer_id}` | Revisi Transfer `DRAFT` | Bearer | `transfer:create` `(g asal)` | [stock-transfers.md](stock-transfers.md#54-patch-apiv1stock-transferstransfer_id--revisi-transfer) |
+| 67 | POST | `/api/v1/stock-transfers/{transfer_id}/approve` | Setujui Transfer | Bearer | `transfer:approve` `(g asal)` | [stock-transfers.md](stock-transfers.md#55-post-apiv1stock-transferstransfer_idapprove--setujui) |
+| 68 | POST | `/api/v1/stock-transfers/{transfer_id}/ship` | Kirim dan kurangi saldo gudang asal | Bearer | `transfer:ship` `(g asal)` | [stock-transfers.md](stock-transfers.md#56-post-apiv1stock-transferstransfer_idship--kirim) |
+| 69 | POST | `/api/v1/stock-transfers/{transfer_id}/receive` | Catat penerimaan final dan selisih | Bearer | `transfer:receive` `(g tujuan)` | [stock-transfers.md](stock-transfers.md#57-post-apiv1stock-transferstransfer_idreceive--terima) |
+| 70 | POST | `/api/v1/stock-transfers/{transfer_id}/cancel` | Batalkan Transfer `DRAFT`/`APPROVED` | Bearer | `transfer:create` / `transfer:approve` `(g asal)` | [stock-transfers.md](stock-transfers.md#58-post-apiv1stock-transferstransfer_idcancel--batalkan) |
+| 71 | GET | `/api/v1/stock-opnames` | Daftar dan filter sesi Stock Opname | Bearer | `opname:read` `(g)` | [stock-opnames.md](stock-opnames.md#51-get-apiv1stock-opnames--daftar-sesi) |
+| 72 | POST | `/api/v1/stock-opnames` | Buat sesi `DRAFT` | Bearer | `opname:manage` `(g)` | [stock-opnames.md](stock-opnames.md#52-post-apiv1stock-opnames--buat-sesi) |
+| 73 | GET | `/api/v1/stock-opnames/{opname_id}` | Detail sesi dan baris hitung | Bearer | `opname:read` `(g)` | [stock-opnames.md](stock-opnames.md#53-get-apiv1stock-opnamesopname_id--detail-sesi) |
+| 74 | PATCH | `/api/v1/stock-opnames/{opname_id}` | Revisi sesi `DRAFT` | Bearer | `opname:manage` `(g)` | [stock-opnames.md](stock-opnames.md#54-patch-apiv1stock-opnamesopname_id--revisi-sesi) |
+| 75 | POST | `/api/v1/stock-opnames/{opname_id}/start` | Ambil snapshot dan mulai sesi | Bearer | `opname:manage` `(g)` | [stock-opnames.md](stock-opnames.md#55-post-apiv1stock-opnamesopname_idstart--mulai-sesi) |
+| 76 | POST | `/api/v1/stock-opnames/{opname_id}/count` | Input atau revisi hasil hitung | Bearer | `opname:count` `(g)` | [stock-opnames.md](stock-opnames.md#56-input-hasil-hitung--post-opname_idcount) |
+| 77 | POST | `/api/v1/stock-opnames/{opname_id}/submit` | Ajukan hasil hitung | Bearer | `opname:count` `(g)` | [stock-opnames.md](stock-opnames.md#57-post-apiv1stock-opnamesopname_idsubmit--ajukan-persetujuan) |
+| 78 | POST | `/api/v1/stock-opnames/{opname_id}/approve` | Setujui dan terapkan selisih | Bearer | `opname:approve` `(g)` | [stock-opnames.md](stock-opnames.md#58-post-apiv1stock-opnamesopname_idapprove--setujui) |
+| 79 | POST | `/api/v1/stock-opnames/{opname_id}/reject` | Tolak dan minta hitung ulang | Bearer | `opname:approve` `(g)` | [stock-opnames.md](stock-opnames.md#59-post-apiv1stock-opnamesopname_idreject--tolak) |
+| 80 | POST | `/api/v1/stock-opnames/{opname_id}/cancel` | Batalkan sesi `DRAFT`/`IN_PROGRESS` | Bearer | `opname:manage` `(g)` | [stock-opnames.md](stock-opnames.md#510-post-apiv1stock-opnamesopname_idcancel--batalkan) |
+| 81 | GET | `/api/v1/menus/my-menu` | Ambil pohon menu aktif sesuai permission pengguna | Bearer | – (autentikasi saja) | [menus.md](menus.md#41-mengambil-pohon-menu-pengguna) |
+| 82 | GET | `/api/v1/menus` | Daftar katalog menu (pagination, filter, pencarian, sorting) | Bearer | `user:manage` | [menus.md](menus.md#42-membaca-katalog-menu) |
+| 83 | POST | `/api/v1/menus` | Buat menu navigasi | Bearer | `user:manage` | [menus.md](menus.md#43-membuat-menu) |
+| 84 | GET | `/api/v1/menus/{menu_id}` | Detail menu berdasarkan ID | Bearer | `user:manage` | [menus.md](menus.md#44-membaca-detail-menu) |
+| 85 | PATCH | `/api/v1/menus/{menu_id}` | Ubah atau nonaktifkan menu | Bearer | `user:manage` | [menus.md](menus.md#45-memperbarui-atau-menonaktifkan-menu) |
 
 ---
 
@@ -192,9 +190,30 @@ Seluruh temuan hasil tinjauan silang antara kode aktual, skema database, penguji
 6. **Master Data, Gudang, Lokasi Penyimpanan & Penegakan `ENTITY_IN_USE` / `WAREHOUSE_NOT_ASSIGNED` (Tahap M3)** — ✅ **Terverifikasi** ([master-data.md](master-data.md#8-catatan-dan-status-verifikasi), [warehouses.md](warehouses.md#8-catatan-dan-status-verifikasi)):
    * Seluruh 26 endpoint pada `master.py` dan `warehouses.py` telah diimplementasikan dan diuji di `tests/test_rbac_scoping.py` (`test_ac12_warehouse_scoping_assignment_and_access_enforcement` dan `test_master_data_and_warehouse_crud_deactivation_and_sku_immutability`).
    * Penonaktifan entitas yang masih bersaldo atau dipakai pada dokumen belum final ditolak dengan `409 ENTITY_IN_USE`, perubahan SKU/UoM barang setelah bertransaksi ditolak dengan `409 ENTITY_IN_USE`, dan pengelolaan lokasi pada gudang yang tidak ditugaskan ditolak dengan `403 WAREHOUSE_NOT_ASSIGNED`.
-7. **Verifikasi Akhir M8 — AC-01 sampai AC-14 & performa query** — ✅ **AC lulus; query di bawah 200 ms pada benchmark lokal**:
-   * Seluruh 21 test lulus dengan PostgreSQL sungguhan (`wms_test`), termasuk skenario AC-01 sampai AC-14 dan validasi `X-Request-ID`.
-   * `EXPLAIN ANALYZE` pada data benchmark sementara 10.000 saldo/barang dan 1.000.000 baris ledger mencatat 5,550 ms untuk halaman saldo per lokasi, 0,105 ms untuk halaman ledger 50 baris, dan 122,527 ms untuk hitung ledger rentang 30 hari setelah `VACUUM (ANALYZE)`. Query hitung memakai index-only scan; indeks relevan sudah tersedia pada migrasi 003.
-   * Tanpa `VACUUM`, query hitung pada pengukuran awal memakai parallel sequential scan dan memerlukan 271,429 ms. Pengukuran ini satu kali pada mesin lokal, bukan uji p95 API di bawah 20 pengguna bersamaan; performa produksi tetap perlu dikonfirmasi pada lingkungan dan pola pemeliharaan PostgreSQL produksi. Data benchmark telah dibersihkan dari `wms_test` setelah pengukuran.
-8. **Validasi `X-Request-ID` (PRD 7.6)** — ✅ **Terverifikasi** (`tests/test_request_id.py`): nilai aman hingga 128 karakter dipertahankan; nilai dengan karakter di luar whitelist atau panjang berlebih diganti dengan UUID agar tidak masuk ke log mentah.
+7. **Verifikasi Akhir M8 & Fase 1 — Seluruh AC-01 sampai AC-22 Lulus Penuh** — ✅ **34 Test Lulus 100%**:
+   * Seluruh 34 skenario pengujian otomatis lulus terhadap database PostgreSQL sungguhan (`wms_test`).
+   * Menguji penuh seluruh AC-01 s.d. AC-22:
+     * AC-01: Partial & Over-Receipt pada Goods Receipt
+     * AC-02: Pencegahan Saldo Negatif & Pembekuan Stok Opname
+     * AC-03: Konsistensi Transfer Antar-Gudang & Perhitungan In-Transit
+     * AC-04: Rekonsiliasi Stock Opname & Buku Besar Selisih
+     * AC-05: Penegakan RBAC & Audit Log Perubahan Hak Akses
+     * AC-06: Konkurensi Pengiriman Transfer Stok
+     * AC-07: Atomisitas Transaksi & Rollback Total saat Kegagalan
+     * AC-08: Imutabilitas Append-Only Tabel `stock_movements` & `audit_logs`
+     * AC-09: Penerimaan Transfer & Validasi Alasan Selisih
+     * AC-10: Pembekuan Lokasi (*Location Freeze*) saat Opname Berlangsung
+     * AC-11: Rotasi Refresh Token, Deteksi Pemakaian Ulang, & Logout
+     * AC-12: Penegakan Penugasan Gudang (*Warehouse Scoping*) untuk Staff, Manager, dan Purchasing
+     * AC-13: Konkurensi Posting GR & Pencegahan Double Posting
+     * AC-14: Pohon Menu Dinamis & Otomasi Hirarki Permission
+     * AC-15: Konkurensi Penomoran Dokumen Atomik & Rollover Bulanan
+     * AC-16: Paginasi, Whitelist Pengurutan, & Format Desimal String NUMERIC(18,4)
+     * AC-17: Korelasi Header `X-Request-ID`, Sanitasi Karakter, & Endpoint `/health`
+     * AC-18: Runner Migrasi Forward-Only, Pencatatan `schema_migrations`, & Idempotensi
+     * AC-19: Imutabilitas Master Data (SKU, allow_decimal UoM) & `ENTITY_IN_USE`
+     * AC-20: Validasi Kepemilikan Lokasi Gudang & Audit Perubahan `allow_negative_stock`
+     * AC-21: Penolakan Transisi Status Dokumen di Luar FSM (`INVALID_STATE_TRANSITION`)
+     * AC-22: Kelengkapan Audit Log, Sanitasi Rahasia/Password, & Otorisasi Pembacaan
+8. **Validasi `X-Request-ID` (PRD 7.6)** — ✅ **Terverifikasi** (`tests/test_request_id.py`, `tests/test_ac15_to_ac22.py`): nilai aman hingga 128 karakter dipertahankan; nilai dengan karakter di luar whitelist atau panjang berlebih diganti dengan UUID agar tidak masuk ke log mentah.
 9. **Menu navigasi dinamis (FR-01, AC-14)** — ✅ **Terverifikasi** (`tests/test_menus.py`): pohon menu tersaring menurut permission, parent tanpa anak terlihat disembunyikan, operasi katalog dibatasi `user:manage`, audit log tercatat, dan parent aktif tidak dapat dinonaktifkan selama memiliki anak aktif.

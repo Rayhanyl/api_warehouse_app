@@ -39,17 +39,20 @@ def list_warehouses(
     search: OptStrQuery = Query(default=None),
     sort_by: OptStrQuery = Query(default=None),
     sort_dir: OptStrQuery = Query(default=None),
-    _actor: dict[str, Any] = Depends(require_permission(MASTER_READ)),
+    purpose: OptStrQuery = Query(default=None),
+    actor: dict[str, Any] = Depends(require_permission(MASTER_READ)),
     conn: Connection[dict[str, Any]] = Depends(get_conn),
 ) -> Page[WarehouseOut]:
     page = warehouse_service.list_warehouses(
         conn,
+        actor=actor,
         limit=limit,
         offset=offset,
         is_active=is_active,
         search=search,
         sort_by=sort_by,
         sort_dir=sort_dir,
+        purpose=purpose,
     )
     return Page[WarehouseOut](**page)
 
@@ -81,10 +84,10 @@ def create_warehouse(
 @router.get("/warehouses/{warehouse_id}", response_model=WarehouseOut)
 def get_warehouse(
     warehouse_id: int,
-    _actor: dict[str, Any] = Depends(require_permission(MASTER_READ)),
+    actor: dict[str, Any] = Depends(require_permission(MASTER_READ)),
     conn: Connection[dict[str, Any]] = Depends(get_conn),
 ) -> WarehouseOut:
-    warehouse = warehouse_service.get_warehouse(conn, warehouse_id)
+    warehouse = warehouse_service.get_warehouse(conn, warehouse_id, actor=actor)
     return WarehouseOut(**warehouse)
 
 
@@ -125,11 +128,13 @@ def list_warehouse_locations(
     search: OptStrQuery = Query(default=None),
     sort_by: OptStrQuery = Query(default=None),
     sort_dir: OptStrQuery = Query(default=None),
-    _actor: dict[str, Any] = Depends(require_permission(MASTER_READ)),
+    purpose: OptStrQuery = Query(default=None),
+    actor: dict[str, Any] = Depends(require_permission(MASTER_READ)),
     conn: Connection[dict[str, Any]] = Depends(get_conn),
 ) -> Page[StorageLocationOut]:
     page = warehouse_service.list_locations(
         conn,
+        actor=actor,
         limit=limit,
         offset=offset,
         warehouse_id=warehouse_id,
@@ -138,6 +143,7 @@ def list_warehouse_locations(
         search=search,
         sort_by=sort_by,
         sort_dir=sort_dir,
+        purpose=purpose,
     )
     return Page[StorageLocationOut](**page)
 
@@ -175,11 +181,13 @@ def list_locations(
     search: OptStrQuery = Query(default=None),
     sort_by: OptStrQuery = Query(default=None),
     sort_dir: OptStrQuery = Query(default=None),
-    _actor: dict[str, Any] = Depends(require_permission(MASTER_READ)),
+    purpose: OptStrQuery = Query(default=None),
+    actor: dict[str, Any] = Depends(require_permission(MASTER_READ)),
     conn: Connection[dict[str, Any]] = Depends(get_conn),
 ) -> Page[StorageLocationOut]:
     page = warehouse_service.list_locations(
         conn,
+        actor=actor,
         limit=limit,
         offset=offset,
         warehouse_id=warehouse_id,
@@ -188,6 +196,7 @@ def list_locations(
         search=search,
         sort_by=sort_by,
         sort_dir=sort_dir,
+        purpose=purpose,
     )
     return Page[StorageLocationOut](**page)
 
@@ -218,10 +227,10 @@ def create_location(
 @router.get("/locations/{location_id}", response_model=StorageLocationOut)
 def get_location(
     location_id: int,
-    _actor: dict[str, Any] = Depends(require_permission(MASTER_READ)),
+    actor: dict[str, Any] = Depends(require_permission(MASTER_READ)),
     conn: Connection[dict[str, Any]] = Depends(get_conn),
 ) -> StorageLocationOut:
-    location = warehouse_service.get_location(conn, location_id)
+    location = warehouse_service.get_location(conn, location_id, actor=actor)
     return StorageLocationOut(**location)
 
 

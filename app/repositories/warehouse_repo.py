@@ -16,10 +16,21 @@ def list_warehouses(
     is_active: bool | None = None,
     search: str | None = None,
     order_by_sql: str = "w.id ASC",
+    scoped_warehouse_ids: list[int] | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
-    """Mengambil daftar gudang dengan filter, pencarian, dan pagination."""
+    """Mengambil daftar gudang dengan filter, pencarian, dan pagination.
+
+    `scoped_warehouse_ids` (bila tidak None) membatasi hasil pada gudang yang ditugaskan.
+    """
+    if scoped_warehouse_ids is not None and len(scoped_warehouse_ids) == 0:
+        return [], 0
+
     conditions: list[str] = []
     params: list[Any] = []
+
+    if scoped_warehouse_ids is not None:
+        conditions.append("w.id = ANY(%s)")
+        params.append(scoped_warehouse_ids)
 
     if is_active is not None:
         conditions.append("w.is_active = %s")
@@ -222,10 +233,26 @@ def list_locations(
     is_active: bool | None = None,
     search: str | None = None,
     order_by_sql: str = "sl.id ASC",
+    scoped_warehouse_ids: list[int] | None = None,
+    require_active_warehouse: bool = False,
 ) -> tuple[list[dict[str, Any]], int]:
-    """Mengambil daftar lokasi penyimpanan beserta kode & nama gudang."""
+    """Mengambil daftar lokasi penyimpanan beserta kode & nama gudang.
+
+    `scoped_warehouse_ids` (bila tidak None) membatasi hasil pada lokasi di gudang yang ditugaskan.
+    `require_active_warehouse` membatasi hasil pada lokasi yang gudangnya aktif.
+    """
+    if scoped_warehouse_ids is not None and len(scoped_warehouse_ids) == 0:
+        return [], 0
+
     conditions: list[str] = []
     params: list[Any] = []
+
+    if scoped_warehouse_ids is not None:
+        conditions.append("sl.warehouse_id = ANY(%s)")
+        params.append(scoped_warehouse_ids)
+
+    if require_active_warehouse:
+        conditions.append("w.is_active = TRUE")
 
     if warehouse_id is not None:
         conditions.append("sl.warehouse_id = %s")
@@ -243,7 +270,12 @@ def list_locations(
     where_sql = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
     count_row = conn.execute(
-        f"SELECT COUNT(*) AS total FROM storage_locations sl {where_sql}",
+        f"""
+        SELECT COUNT(*) AS total
+        FROM storage_locations sl
+        JOIN warehouses w ON w.id = sl.warehouse_id
+        {where_sql}
+        """,
         tuple(params),
     ).fetchone()
     total = int(count_row["total"]) if count_row else 0

@@ -46,11 +46,21 @@ def test_purchase_order_lifecycle_validations_rbac_and_audit(
         db_conn, sku="EL-002", name="Kabel NYM", category_id=cat["id"], uom_id=uom_m["id"]
     )
 
-    # Tugaskan staff_user hanya ke Gudang A
+    # Tugaskan staff_user hanya ke Gudang A; purchasing_user dan manager_user ke Gudang A & B
     client.put(
         f"/api/v1/users/{staff_user['id']}/warehouses",
         headers=superadmin_user["auth_headers"],
         json={"warehouse_ids": [wh_a["id"]]},
+    )
+    client.put(
+        f"/api/v1/users/{purchasing_user['id']}/warehouses",
+        headers=superadmin_user["auth_headers"],
+        json={"warehouse_ids": [wh_a["id"], wh_b["id"]]},
+    )
+    client.put(
+        f"/api/v1/users/{manager_user['id']}/warehouses",
+        headers=superadmin_user["auth_headers"],
+        json={"warehouse_ids": [wh_a["id"], wh_b["id"]]},
     )
 
     # 1. Validasi referensi nonaktif: membuat PO dengan pemasok nonaktif -> 422 INACTIVE_REFERENCE
@@ -293,11 +303,16 @@ def test_ac01_partial_receipt_over_receipt_and_po_fulfillment(
         db_conn, sku="MK-100", name="Bearing 6205", category_id=cat["id"], uom_id=uom_pcs["id"]
     )
 
-    # Tugaskan staff_user hanya ke Gudang A
+    # Tugaskan staff_user hanya ke Gudang A; purchasing_user ke Gudang A & B
     client.put(
         f"/api/v1/users/{staff_user['id']}/warehouses",
         headers=superadmin_user["auth_headers"],
         json={"warehouse_ids": [wh_a["id"]]},
+    )
+    client.put(
+        f"/api/v1/users/{purchasing_user['id']}/warehouses",
+        headers=superadmin_user["auth_headers"],
+        json={"warehouse_ids": [wh_a["id"], wh_b["id"]]},
     )
 
     # Validasi batas atas kuantitas NUMERIC(18,4) (< 10^14) -> ditolak 422 VALIDATION_ERROR
@@ -685,6 +700,11 @@ def test_ac07_gr_post_transaction_atomicity_rollback_on_failure(
         headers=superadmin_user["auth_headers"],
         json={"warehouse_ids": [wh["id"]]},
     )
+    client.put(
+        f"/api/v1/users/{purchasing_user['id']}/warehouses",
+        headers=superadmin_user["auth_headers"],
+        json={"warehouse_ids": [wh["id"]]},
+    )
 
     po = client.post(
         "/api/v1/purchase-orders",
@@ -817,6 +837,11 @@ def test_ac13_concurrent_gr_post_prevents_double_posting(
 
         main_client.put(
             f"/api/v1/users/{staff_user['id']}/warehouses",
+            headers=superadmin_user["auth_headers"],
+            json={"warehouse_ids": [wh["id"]]},
+        )
+        main_client.put(
+            f"/api/v1/users/{purchasing_user['id']}/warehouses",
             headers=superadmin_user["auth_headers"],
             json={"warehouse_ids": [wh["id"]]},
         )

@@ -697,11 +697,16 @@ def test_m4_inventory_apply_movement_concurrency_stock_views_and_ledger(
         db_conn, sku="ITM-KG-01", name="Kawat Tembaga", category_id=cat["id"], uom_id=uom_kg["id"]
     )
 
-    # Tugaskan staff_user hanya ke Gudang A
+    # Tugaskan staff_user hanya ke Gudang A; purchasing_user ke Gudang A dan Gudang B
     client.put(
         f"/api/v1/users/{staff_user['id']}/warehouses",
         headers=superadmin_user["auth_headers"],
         json={"warehouse_ids": [wh_a["id"]]},
+    )
+    client.put(
+        f"/api/v1/users/{purchasing_user['id']}/warehouses",
+        headers=superadmin_user["auth_headers"],
+        json={"warehouse_ids": [wh_a["id"], wh_b["id"]]},
     )
 
     # 1. Uji penomoran dokumen (FR-10)

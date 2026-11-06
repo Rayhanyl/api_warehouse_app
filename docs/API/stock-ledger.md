@@ -56,8 +56,8 @@ Modul ini menyediakan endpoint **baca-saja (*read-only*)** untuk memantau posisi
 
 | Permission | Endpoint | Peran Bawaan (Matriks 3.1) | Warehouse Scoping `(g)` |
 | --- | --- | --- | --- |
-| `stock:read` | `/balances`, `/by-location`, `/by-warehouse`, `/summary` | *Super Admin*, *Warehouse Manager*, *Purchasing Staff*, *Warehouse Staff*, *Auditor* | **Ya untuk Warehouse Staff** (otomatis difilter ke gudang yang ditugaskan; meminta `warehouse_id` di luar penugasan → `403 WAREHOUSE_NOT_ASSIGNED`). Peran lain tidak dibatasi. |
-| `ledger:read` | `/movements`, `/ledger` | *Super Admin*, *Warehouse Manager*, *Warehouse Staff*, *Auditor* | **Ya untuk Warehouse Staff** (otomatis difilter ke gudang yang ditugaskan; meminta `warehouse_id` di luar penugasan → `403 WAREHOUSE_NOT_ASSIGNED`). Peran lain tidak dibatasi. |
+| `stock:read` | `/balances`, `/by-location`, `/by-warehouse`, `/summary` | *Super Admin*, *Warehouse Manager*, *Purchasing Staff*, *Warehouse Staff*, *Auditor* | **Ya `(g)`** untuk *Warehouse Staff*, *Warehouse Manager*, dan *Purchasing Staff* (otomatis difilter ke gudang yang ditugaskan; meminta `warehouse_id` di luar penugasan → `403 WAREHOUSE_NOT_ASSIGNED`). *Super Admin* dan *Auditor* tidak dibatasi (unscoped). |
+| `ledger:read` | `/movements`, `/ledger` | *Super Admin*, *Warehouse Manager*, *Warehouse Staff*, *Auditor* | **Ya `(g)`** untuk *Warehouse Staff*, *Warehouse Manager*, dan *Purchasing Staff* (otomatis difilter ke gudang yang ditugaskan; meminta `warehouse_id` di luar penugasan → `403 WAREHOUSE_NOT_ASSIGNED`). *Super Admin* dan *Auditor* tidak dibatasi (unscoped). |
 
 ---
 

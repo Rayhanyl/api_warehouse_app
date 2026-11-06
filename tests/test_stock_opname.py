@@ -337,7 +337,7 @@ def test_ac10_location_freeze_during_opname_and_unfreeze_on_complete_or_cancel(
         db_conn, sku="FRZ-001", name="Barang Uji Freeze", category_id=cat["id"], uom_id=uom["id"]
     )
 
-    for usr in (manager_user, staff_user):
+    for usr in (manager_user, staff_user, purchasing_user):
         client.put(
             f"/api/v1/users/{usr['id']}/warehouses",
             headers=superadmin_user["auth_headers"],
@@ -570,4 +570,137 @@ def test_ac10_location_freeze_during_opname_and_unfreeze_on_complete_or_cancel(
         headers=staff_user["auth_headers"],
     ).json()
     assert list_opn["total"] == 2
+
+
+def test_ac02_opname_negative_stock_prevention(
+    client: TestClient,
+    db_conn: Connection[dict[str, Any]],
+    superadmin_user: dict[str, Any],
+    manager_user: dict[str, Any],
+    staff_user: dict[str, Any],
+) -> None:
+    """AC-02 (Stock Opname): Pencegahan saldo negatif saat rekonsiliasi opname
+    apabila allow_negative_stock = FALSE.
+    """
+    wh = factories.create_warehouse(db_conn, code="WH-AC02-OPN", name="Gudang Opname Neg", allow_negative_stock=False)
+    loc = factories.create_location(db_conn, warehouse_id=wh["id"], code="LOC-NEG", name="Lokasi Negatif")
+    cat = factories.create_category(db_conn, name="Kategori Negatif")
+    uom = factories.create_uom(db_conn, code="PCS-OP2", name="Pieces", allow_decimal=False)
+    item = factories.create_item(db_conn, sku="SKU-NEG-OP", name="Barang Uji Negatif", category_id=cat["id"], uom_id=uom["id"])
+
+    for usr in (manager_user, staff_user):
+        client.put(
+            f"/api/v1/users/{usr['id']}/warehouses",
+            headers=superadmin_user["auth_headers"],
+            json={"warehouse_ids": [wh["id"]]},
+        )
+
+    # Seed saldo awal 5 unit
+    _seed_stock(
+        db_conn,
+        warehouse_id=wh["id"],
+        location_id=loc["id"],
+        item_id=item["id"],
+        qty=Decimal("5.0000"),
+        actor_id=superadmin_user["id"],
+        ref_id=901,
+    )
+
+    # Buat dan mulai opname
+    opn = client.post(
+        "/api/v1/stock-opnames",
+        headers=manager_user["auth_headers"],
+        json={"warehouse_id": wh["id"], "location_id": loc["id"]},
+    ).json()
+
+    started = client.post(
+        f"/api/v1/stock-opnames/{opn['id']}/start",
+        headers=manager_user["auth_headers"],
+    ).json()
+
+    # Petugas mengisi fisik 2 (variance -3)
+    line_id = started["lines"][0]["id"]
+    client.post(
+        f"/api/v1/stock-opnames/{opn['id']}/count",
+        headers=staff_user["auth_headers"],
+        json={"lines": [{"line_id": line_id, "qty_physical": "2.0000"}]},
+    )
+    client.post(f"/api/v1/stock-opnames/{opn['id']}/submit", headers=staff_user["auth_headers"])
+
+    # Simulasikan stok berkurang di database secara langsung menjadi 1 unit sebelum approve
+    # sehingga penyesuaian -3 akan menghasilkan 1 - 3 = -2 (< 0)
+    db_conn.execute(
+        "UPDATE inventory_balances SET qty_on_hand = 1.0000 WHERE warehouse_id = %s AND location_id = %s AND item_id = %s",
+        (wh["id"], loc["id"], item["id"]),
+    )
+
+    # Warehouse Manager mencoba menyetujui -> Ditolak 409 INSUFFICIENT_STOCK
+    approve_res = client.post(
+        f"/api/v1/stock-opnames/{opn['id']}/approve",
+        headers=manager_user["auth_headers"],
+    )
+    assert approve_res.status_code == 409
+    assert approve_res.json()["error"]["code"] == "INSUFFICIENT_STOCK"
+
+    # Status opname tetap WAITING_APPROVAL (rollback)
+    opn_check = client.get(f"/api/v1/stock-opnames/{opn['id']}", headers=manager_user["auth_headers"]).json()
+    assert opn_check["status"] == "WAITING_APPROVAL"
+
+
+def test_ac12_opname_warehouse_scoping_enforcement(
+    client: TestClient,
+    db_conn: Connection[dict[str, Any]],
+    superadmin_user: dict[str, Any],
+    manager_user: dict[str, Any],
+    staff_user: dict[str, Any],
+) -> None:
+    """AC-12 (Stock Opname): Penegakan penugasan gudang pada modul Opname."""
+    wh_a = factories.create_warehouse(db_conn, code="WH-AC12-A", name="Gudang A")
+    wh_b = factories.create_warehouse(db_conn, code="WH-AC12-B", name="Gudang B")
+    loc_a = factories.create_location(db_conn, warehouse_id=wh_a["id"], code="LOC-12A", name="Lokasi 12A")
+    loc_b = factories.create_location(db_conn, warehouse_id=wh_b["id"], code="LOC-12B", name="Lokasi 12B")
+
+    # Staff user dan Manager user hanya ditugaskan ke Gudang A
+    client.put(
+        f"/api/v1/users/{staff_user['id']}/warehouses",
+        headers=superadmin_user["auth_headers"],
+        json={"warehouse_ids": [wh_a["id"]]},
+    )
+    client.put(
+        f"/api/v1/users/{manager_user['id']}/warehouses",
+        headers=superadmin_user["auth_headers"],
+        json={"warehouse_ids": [wh_a["id"]]},
+    )
+
+    # Manager user mencoba membuat Opname di Gudang B -> 403 WAREHOUSE_NOT_ASSIGNED
+    unassigned_res = client.post(
+        "/api/v1/stock-opnames",
+        headers=manager_user["auth_headers"],
+        json={"warehouse_id": wh_b["id"], "location_id": loc_b["id"]},
+    )
+    assert unassigned_res.status_code == 403
+    assert unassigned_res.json()["error"]["code"] == "WAREHOUSE_NOT_ASSIGNED"
+
+    # Superadmin membuat opname di Gudang B
+    opn_b = client.post(
+        "/api/v1/stock-opnames",
+        headers=superadmin_user["auth_headers"],
+        json={"warehouse_id": wh_b["id"], "location_id": loc_b["id"]},
+    ).json()
+
+    # Staff user mencoba membaca opname Gudang B secara spesifik -> 403 WAREHOUSE_NOT_ASSIGNED
+    get_b_res = client.get(
+        f"/api/v1/stock-opnames/{opn_b['id']}",
+        headers=staff_user["auth_headers"],
+    )
+    assert get_b_res.status_code == 403
+    assert get_b_res.json()["error"]["code"] == "WAREHOUSE_NOT_ASSIGNED"
+
+    # Staff user meminta list opname -> opname Gudang B tidak boleh muncul
+    list_res = client.get(
+        "/api/v1/stock-opnames",
+        headers=staff_user["auth_headers"],
+    ).json()
+    assert all(o["warehouse_id"] == wh_a["id"] for o in list_res["items"])
+
 

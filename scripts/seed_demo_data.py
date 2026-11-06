@@ -1072,8 +1072,8 @@ def seed_demo_data(password: str, db_url: str | None = None) -> dict[str, Any]:
         # Ringkasan akhir isi database melalui fungsi service resmi
         summary = {
             "users": user_service.list_users(conn)["total"],
-            "warehouses": warehouse_service.list_warehouses(conn)["total"],
-            "storage_locations": warehouse_service.list_locations(conn)["total"],
+            "warehouses": warehouse_service.list_warehouses(conn, actor=superadmin_actor)["total"],
+            "storage_locations": warehouse_service.list_locations(conn, actor=superadmin_actor)["total"],
             "categories_active": master_service.list_categories(conn, is_active=True)["total"],
             "uoms": master_service.list_uoms(conn)["total"],
             "suppliers": master_service.list_suppliers(conn)["total"],

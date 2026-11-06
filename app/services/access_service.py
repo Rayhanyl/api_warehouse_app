@@ -5,8 +5,11 @@ from typing import Any
 from psycopg import Connection
 
 from app.core.exceptions import WarehouseNotAssigned
-from app.core.permissions import ROLE_SUPER_ADMIN, ROLE_WAREHOUSE_STAFF
+from app.core.permissions import ROLE_AUDITOR, ROLE_SUPER_ADMIN
 from app.repositories import permission_repo
+
+# Peran yang membaca lintas gudang tanpa batasan user_warehouses (PRD 3.2 poin 2).
+UNSCOPED_READ_ROLES: frozenset[str] = frozenset({ROLE_SUPER_ADMIN, ROLE_AUDITOR})
 
 
 def ensure_warehouse_access(
@@ -38,12 +41,27 @@ def get_scoped_warehouse_ids_for_read(
     conn: Connection[dict[str, Any]],
     actor: dict[str, Any],
 ) -> list[int] | None:
-    """Mengembalikan batasan daftar ID gudang untuk operasi baca (PRD 3.2 poin 5 & 6).
+    """Mengembalikan batasan daftar ID gudang untuk operasi baca (PRD 3.2 poin 2).
 
-    - Warehouse Staff hanya boleh melihat dokumen & stok pada gudang yang ditugaskan -> mengembalikan list[int].
-    - Super Admin, Warehouse Manager, Purchasing Staff, dan Auditor tidak dibatasi penugasan pada aksi baca -> None.
+    - Super Admin dan Auditor membaca lintas gudang -> None.
+    - Peran lain (Warehouse Manager, Purchasing Staff, Warehouse Staff, dan peran kustom)
+      hanya membaca gudang pada user_warehouses -> list[int] (bisa kosong).
     """
-    if actor.get("role_name") == ROLE_WAREHOUSE_STAFF:
-        return permission_repo.get_user_warehouse_ids(conn, int(actor["id"]))
-    return None
+    if actor.get("role_name") in UNSCOPED_READ_ROLES:
+        return None
+    return permission_repo.get_user_warehouse_ids(conn, int(actor["id"]))
+
+
+def ensure_warehouse_read_access(
+    conn: Connection[dict[str, Any]],
+    actor: dict[str, Any],
+    warehouse_id: int,
+) -> None:
+    """Memastikan pengguna boleh membaca data milik gudang tertentu (PRD 3.2 poin 2).
+
+    Super Admin dan Auditor selalu lolos; peran lain wajib ditugaskan ke gudang tersebut.
+    """
+    if actor.get("role_name") in UNSCOPED_READ_ROLES:
+        return
+    ensure_warehouse_access(conn, actor, warehouse_id)
 
