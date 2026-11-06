@@ -2,11 +2,11 @@
 
 | Informasi | Nilai |
 | --- | --- |
-| Status | Baseline Fase 1 (MVP Single-Tenant Selesai) & Spesifikasi Terkunci Fase 2 (M9 Multi-Tenant SaaS) |
-| Versi | 2.1-general |
+| Status | Baseline Fase 1 (MVP Single-Tenant) dengan tambahan MST-F06; spesifikasi Fase 2 (M9 Multi-Tenant SaaS) |
+| Versi | 2.2-general |
 | Pemilik | Product / Business |
 | Sumber historis | PRD v2.0 (Single-Tenant) & PRD Modular v3.1 (Multi-Tenant SaaS) yang telah diaudit dan diintegrasikan |
-| Catatan | Fase 1 (M0–M8) telah selesai diimplementasikan dan diuji; Fase 2 (M9 Multi-Tenant SaaS: `TNT`, `CFG`, `tenant_id` + RLS) ditetapkan sebagai milestone langsung berikutnya sebelum Fase 3 (`ISS`, `RPT`) |
+| Catatan | Baseline Fase 1 (M0–M8) telah selesai diimplementasikan dan diuji. Tambahan Fase 1 MST-F06 (import massal item) masuk sebagai pekerjaan lanjutan sebelum M9; Fase 2 tetap mencakup `TNT`, `CFG`, `tenant_id` + RLS sebelum Fase 3 (`ISS`, `RPT`). |
 
 Dokumen ini adalah sumber utama requirement produk. Dokumen Backend, Frontend,
 Database, API, dan QA hanya menjabarkan konsekuensi requirement ini dan tidak boleh
@@ -80,7 +80,7 @@ dan jejak audit yang dapat diperiksa.
 | PLT | PLT-F01..F05 | Numbering, query convention, error, request ID/health, migration | Must Have |
 | IAM | IAM-F01..F09 | Auth, RBAC, user, warehouse scope, menu, profile | Must Have |
 | AUD | AUD-F01..F02 | Write/read audit log | Must Have |
-| MST | MST-F01..F05 | Category, UoM, item, supplier, deactivation | Must Have |
+| MST | MST-F01..F06 | Category, UoM, item, supplier, deactivation, import massal item | Must Have |
 | WHS | WHS-F01..F03 | Warehouse, location, validation | Must Have |
 | INV | INV-F01..F06 | Balance, ledger, movement gateway, negative stock, freeze enforcement | Must Have |
 | PUR | PUR-F01..F04 | PO lifecycle and fulfillment | Must Have |
@@ -272,6 +272,11 @@ success-shaped fallback atau perubahan sebagian.
 | BR-GLB-020 | *(Fase 2 — M9)* Satu akun `users` terikat ketat ke tepat satu `tenant_id`; `Platform Admin` dikelola pada tabel terpisah `platform_admins` (`scope: "platform"`, `tenant_id: null`) dan tidak boleh menggunakan token platform untuk memanggil endpoint operasional tenant. |
 | BR-GLB-021 | *(Fase 2 — M9)* Keunikan kode master (`categories`, `uoms`, `suppliers`, `items.sku`), `warehouses.code`, `users.username`, `users.email`, `roles.name`, `menus.code`, nomor dokumen (`PO`, `GR`, `TRF`, `OPN`), dan `document_sequences` berlaku per tenant `(tenant_id, ...)`. |
 | BR-GLB-022 | *(Fase 2 — M9)* Perubahan status tenant menjadi `SUSPENDED` atau `DEACTIVATED` mencabut seluruh sesi aktif tenant tersebut dan segera menolak setiap request operasional tenant dengan `403 TENANT_SUSPENDED`. |
+| BR-MST-001 | Import massal hanya membuat item baru; import tidak memperbarui item yang sudah ada dan tidak membuat saldo stok. |
+| BR-MST-002 | Validasi item impor mengikuti validasi pembuatan item tunggal. `sku` menjadi satu-satunya kode barang, unik case-insensitive; kategori dan UoM harus ditemukan serta aktif. |
+| BR-MST-003 | SKU duplikat dalam file, di database, atau akibat request bersamaan membuat baris terkait gagal dengan `DUPLICATE`; baris valid lainnya tetap dapat diimpor. |
+| BR-MST-004 | Semua baris yang berhasil dibuat dan audit event-nya commit dalam satu transaksi impor. Kesalahan infrastruktur membatalkan seluruh perubahan transaksi; kesalahan validasi per baris tidak membatalkan baris valid lain. |
+| BR-MST-005 | Hasil impor memberi nomor baris sumber, kolom, kode error katalog, dan alasan aman untuk setiap kesalahan validasi. |
 
 ## 6. Spesifikasi modul
 
@@ -372,6 +377,7 @@ pagination dan sorting daftar audit log.
 | MST-F03 | FR-MST-003 | Item dengan SKU unik dan satu base UoM | MVP |
 | MST-F04 | FR-MST-004 | Supplier | MVP |
 | MST-F05 | FR-MST-005 | Deactivation terkontrol tanpa hard delete | MVP |
+| MST-F06 | FR-MST-006 | Import massal item dari template Excel dengan validasi per baris dan hasil parsial | MVP |
 
 **Business rules:** nama kategori, kode UoM, SKU item, dan kode supplier harus unik;
 item wajib merujuk kategori dan base UoM yang aktif; kuantitas transaksi mengikuti
@@ -384,10 +390,64 @@ yang masih direferensikan PO non-final atau GR draft tidak dapat dinonaktifkan.
 **Data, permission, dependency:** `categories`, `uoms`, `items`, `suppliers`;
 `master:manage` dan `master:read`; dipakai INV, PUR, RCV, TRF, OPN.
 
+**MST-F06 — Import massal item:** Pengguna dengan `master:manage` mengunduh
+template `.xlsx` dan mengunggah satu workbook untuk membuat item baru. Template
+memiliki sheet `Items` dan kolom berurutan `sku`, `name`, `description`,
+`category_name`, `uom_code`, `is_active`. Header ada pada baris 1; data dimulai
+pada baris 2. Kolom template dan validasinya:
+
+| Header | Tipe sel Excel | Wajib | Validasi |
+| --- | --- | --- | --- |
+| `sku` | Teks | Ya | 1–64 karakter; unik tanpa membedakan kapitalisasi |
+| `name` | Teks | Ya | 1–200 karakter |
+| `description` | Teks | Tidak | Kosong menjadi `null` |
+| `category_name` | Teks | Ya | Maksimal 120 karakter; harus cocok case-insensitive dengan kategori aktif |
+| `uom_code` | Teks | Ya | Maksimal 20 karakter; harus cocok case-insensitive dengan UoM aktif |
+| `is_active` | Boolean | Tidak | Nilai boolean Excel; kosong menjadi `true` |
+
+SKU disimpan sebagai teks agar karakter awal seperti nol tidak hilang. Header
+harus tepat dan urut seperti tabel. Baris kosong dilewati; nomor error mengacu
+pada nomor baris workbook. Header atau struktur workbook yang tidak valid
+menolak seluruh file sebelum penyimpanan.
+
+Backend memvalidasi semua baris sebelum insert, mendeteksi SKU duplikat di file
+dan database, serta mengembalikan ringkasan `total_rows`, `imported_count`,
+`failed_count`, dan rincian kesalahan berisi nomor baris, field, kode, dan
+pesan. `total_rows` menghitung baris data non-kosong; `imported_count` menghitung
+item yang commit; `failed_count` menghitung baris yang memiliki satu atau lebih
+error. Baris valid dibuat meskipun baris lain gagal. Insert item dan audit
+`ITEM_CREATED` berada dalam satu transaksi; kegagalan infrastruktur me-rollback
+semua insert request tersebut. Tidak ada upsert, perubahan item lama, saldo,
+atau kategori/UoM baru. Validasi database menangani duplikasi konkuren.
+
+Untuk membatasi pemakaian memori dan query database, backend memproses workbook
+secara read-only, mengambil referensi dan SKU existing secara kelompok, dan
+menyimpan item secara batch berparameter tanpa query lookup per baris. Batas
+awal yang diusulkan adalah 1.000 baris data dan ukuran file 5 MiB; pemilik perlu
+menyetujui batas tersebut pada `CONF-010`. Parser `.xlsx` dan `multipart/form-data` memerlukan library yang belum
+tercantum pada dependensi proyek; library tersebut harus disetujui sebelum
+implementasi.
+
+**API:** `GET /api/v1/items/import-template` (permission
+`master:read`) mengunduh template; `POST /api/v1/items/import` (permission
+`master:manage`) menerima satu file `multipart/form-data`. Berkas rusak,
+header/sheet tidak cocok, atau batas file/baris terlampaui ditolak dengan
+`422 VALIDATION_ERROR` tanpa penyimpanan. File valid diproses dengan respons
+`200 OK`, termasuk bila hasilnya parsial. Rincian setiap baris menggunakan
+kode yang sudah ada (`DUPLICATE`, `NOT_FOUND`, `INACTIVE_REFERENCE`,
+`VALIDATION_ERROR`); tidak menambah kode error global.
+
+**Frontend:** halaman Master Data Barang menampilkan unduh template dan unggah
+file bagi pengguna berizin, status proses, ringkasan, serta tabel kesalahan
+baris. UI menyediakan loading, empty, dan error state serta tidak menampilkan
+baris berhasil sebelum respons backend diterima.
+
 **Acceptance:** `AC-19` duplikasi dan referensi nonaktif ditolak, aturan
 `allow_decimal` ditegakkan, perubahan SKU/UoM setelah item dipakai transaksi ditolak,
 dan penonaktifan entitas yang masih direferensikan ditolak (`ENTITY_IN_USE`); `AC-16`
-pencarian, filter, pagination, dan sort whitelist katalog master.
+pencarian, filter, pagination, dan sort whitelist katalog master; `AC-30`
+template dan impor massal memvalidasi baris, melaporkan hasil parsial dengan nomor
+baris, dan mencatat audit untuk setiap item yang berhasil dibuat.
 
 ### 6.5 WHS, Gudang dan Lokasi
 
@@ -812,6 +872,7 @@ Pada migrasi Fase 2 (`012_create_tenants_settings.sql` dan `013_add_tenant_scope
 | AC-27 | *(Fase 2 — M9)* Keunikan kode master/SKU/username dan urutan nomor dokumen (`document_sequences`) bersifat independen antar-tenant | PLT/MST/WHS/IAM | Mapped (Phase 2 - M9) |
 | AC-28 | *(Fase 2 — M9)* Pemisahan otorisasi `scope: "platform"` (`Platform Admin`) dan `scope: "tenant"` (`Tenant User`) menolak penggunaan token lintas cakupan | TNT/IAM | Mapped (Phase 2 - M9) |
 | AC-29 | *(Fase 2 — M9)* Provisioning tenant baru oleh `Platform Admin` membuat tenant, role/menu/setting awal, dan `Super Admin` pertama secara atomik (rollback total bila gagal) | TNT/IAM/CFG | Mapped (Phase 2 - M9) |
+| AC-30 | *(Tambahan Fase 1 — MST-F06)* Import item dari template Excel memvalidasi seluruh baris, mengimpor item valid saja, menangani SKU duplikat termasuk request konkuren, memberi ringkasan dan rincian error per baris, serta mencatat audit untuk item sukses secara atomik | MST/AUD | Mapped |
 
 ### 10.1 Spesifikasi acceptance criteria terpisah (numbering, query, platform, master, warehouse, dan audit)
 
@@ -827,6 +888,7 @@ hanya diuji secara tidak langsung melalui workflow dokumen lain.
 | `AC-19` | Master data (`MST-F01..F05`) | CRUD dan soft deactivate pada kategori, UoM, item, dan supplier; pembuatan item dengan kategori/UoM nonaktif; transaksi dengan UoM `allow_decimal = false` vs `true`; perubahan `sku`/`uom_id` atau `allow_decimal` setelah dipakai; penonaktifan entitas yang masih direferensikan | Duplikasi nama kategori, kode UoM, SKU item, atau kode supplier ditolak; referensi nonaktif ditolak; kuantitas pecahan pada UoM integer ditolak; `sku` dan `uom_id` dapat diubah sebelum bertransaksi tetapi ditolak setelah item memiliki transaksi/saldo; penonaktifan kategori/UoM yang dipakai item aktif, item bersaldo/berdokumen aktif, atau supplier dengan PO non-final ditolak tanpa hard delete | `DUPLICATE`, `INACTIVE_REFERENCE`, `VALIDATION_ERROR`, `ENTITY_IN_USE` |
 | `AC-20` | Warehouse dan location (`WHS-F01..F03`, contract `validate_location`) | CRUD warehouse dan storage location; perubahan `allow_negative_stock` oleh Super Admin vs role lain; penggunaan location dari warehouse berbeda atau location nonaktif pada transaksi; penonaktifan warehouse/location yang masih memiliki saldo atau dokumen aktif | Kode warehouse unik global dan kode location unik per warehouse; perubahan `allow_negative_stock` hanya diizinkan bagi pemegang `warehouse:manage` dan menghasilkan audit log (`old_values`/`new_values`); location milik warehouse lain ditolak oleh `validate_location`; location/warehouse dengan saldo non-nol atau referensi dokumen terbuka tidak dapat dinonaktifkan | `DUPLICATE`, `INACTIVE_REFERENCE`, `INVALID_LOCATION`, `PERMISSION_DENIED`, `ENTITY_IN_USE` |
 | `AC-22` | Audit log (`AUD-F01..F02`, contract `record`) | Eksekusi aksi perubahan data (master, warehouse, user/role/assignment/menu, status dokumen) dan autentikasi; pemeriksaan isi `old_values`/`new_values`; pembacaan dan pemfilteran daftar audit oleh `Auditor`/`Super Admin` vs role tanpa `audit:read` | Setiap perubahan yang commit mencatat baris `audit_logs` dengan `user_id`, `action`, `entity_type`, `entity_id`, `old_values`/`new_values`, `ip_address`, dan `created_at`; field sensitif (`password`, `hash`, `token`, secret) tidak pernah tersimpan di `old_values`/`new_values`; endpoint baca audit mendukung filter (`user_id`, `action`, `entity_type`, `entity_id`, rentang tanggal) dan menolak pengguna tanpa `audit:read` | `PERMISSION_DENIED`, `VALIDATION_ERROR` |
+| `AC-30` | Import massal item (`MST-F06`, `FR-MST-006`) | Unduh template; impor file valid dengan referensi aktif; baris dengan SKU duplikat di file/database dan SKU duplikat akibat request bersamaan; baris wajib kosong, nilai terlalu panjang, referensi hilang/nonaktif; file rusak, header/sheet salah, serta ukuran/row limit terlampaui; pengguna tanpa permission | Template `.xlsx` memiliki sheet dan header sesuai kontrak. Baris kosong dilewati; setiap baris data valid dibuat; baris invalid tidak dibuat dan hasil memuat nomor baris, field, kode error, dan alasan. SKU duplikat dilaporkan `DUPLICATE`; baris valid lain tetap berhasil. Respons merangkum total, sukses, dan gagal sesuai hasil commit. File struktural tidak valid ditolak tanpa insert. Semua item sukses dan audit `ITEM_CREATED` berada di satu transaksi; kegagalan infrastruktur me-rollback semua item pada request. Pengguna tanpa `master:manage` ditolak. Batas file dan jumlah baris mengikuti nilai yang disetujui pada `CONF-010`. | `DUPLICATE`, `NOT_FOUND`, `INACTIVE_REFERENCE`, `VALIDATION_ERROR`, `PERMISSION_DENIED` |
 
 ## 11. Requirement Traceability Matrix
 
@@ -874,6 +936,7 @@ pada dokumen bukti layer dan laporan QA.
 | `FR-MST-003` | `MST-F03` | `items`, `categories`, `uoms` | master service (item & proteksi SKU/UoM) | layar CRUD/katalog item | endpoint CRUD/list item dan item per kategori | `AC-16`, `AC-19`, `AC-22` | `Mapped` |
 | `FR-MST-004` | `MST-F04` | `suppliers` | master service (supplier) | layar CRUD supplier | endpoint CRUD/list supplier | `AC-16`, `AC-19`, `AC-22` | `Mapped` |
 | `FR-MST-005` | `MST-F05` | `categories`, `uoms`, `items`, `suppliers` | master service (open-reference guard & soft deactivate) | aksi aktivasi/deaktivasi master | endpoint update master (`is_active`) | `AC-19`, `AC-22` | `Mapped` |
+| `FR-MST-006` | `MST-F06` | `items`, `categories`, `uoms`, `audit_logs` (tanpa tabel/kolom baru) | master import service dengan validasi baris, pemeriksaan SKU batch, insert batch, dan transaksi/audit | unduh template, unggah workbook, ringkasan dan daftar error per baris | `GET /api/v1/items/import-template`, `POST /api/v1/items/import` | `AC-30` | `Mapped` |
 | `FR-WHS-001` | `WHS-F01` | `warehouses` | warehouse service | layar CRUD gudang dan pengaturan `allow_negative_stock` | endpoint CRUD/list warehouse | `AC-02`, `AC-12`, `AC-16`, `AC-20`, `AC-22` | `Mapped` |
 | `FR-WHS-002` | `WHS-F02` | `storage_locations`, `warehouses` | warehouse service | layar CRUD lokasi penyimpanan per gudang | endpoint CRUD/list storage location | `AC-12`, `AC-16`, `AC-20`, `AC-22` | `Mapped` |
 | `FR-WHS-003` | `WHS-F03` | `storage_locations`, `warehouses` | warehouse service (`validate_location`) | pemilihan lokasi terfilter berdasarkan gudang | seluruh endpoint dokumen dan stok yang menerima `location_id` | `AC-20` | `Mapped` |
@@ -932,14 +995,15 @@ Seluruh kebutuhan Fase 2 (M9) berikut telah disetujui pemilik proyek (`CONF-001`
 ### 12.1 Urutan tahapan pengembangan (Fase 1 -> Fase 2 -> Fase 3)
 
 ```text
-Fase 1 (M0–M8, Selesai):
+Fase 1 baseline (M0–M8, Selesai):
 PLT -> IAM/AUD -> MST/WHS -> INV -> (PUR + RCV), (TRF), (OPN) [Single-Tenant Baseline]
+Tambahan sebelum M9: MST-F06 (import massal item; memakai master service dan pola M3)
 
 Fase 2 (M9, Target Langsung Berikutnya — Multi-Tenant SaaS):
 M9a (Database & RLS: migrasi 012 & 013 + current_tenant context & pool reset)
  -> M9b (Modul TNT & CFG + Platform Admin Auth & Tenant Provisioning)
  -> M9c (Adaptasi login tenant ber-slug, kuota check_quota, & injeksi tenant_id di repository M0–M8)
- -> M9d (Verifikasi AC-23 s.d. AC-29 + regresi penuh AC-01 s.d. AC-22)
+ -> M9d (Verifikasi AC-23 s.d. AC-29 + regresi penuh AC-01 s.d. AC-22 dan AC-30)
 
 Fase 3 (M10, Pasca-M9):
 ISS (Goods Issue) & RPT (Pelaporan Operasional) di atas skema Multi-Tenant M9
@@ -967,7 +1031,7 @@ Audit lengkap, termasuk konflik dan gap, ada pada
 - Target benchmark belum final.
 - Status `Mapped` tidak sama dengan `Implemented`, `Tested`, atau `Verified`.
 
-### 13.3 Status Keputusan Produk (`CONF-001` s.d. `CONF-008`)
+### 13.3 Status Keputusan Produk (`CONF-001` s.d. `CONF-010`)
 
 | ID | Keputusan / Pertanyaan |
 | --- | --- |
@@ -979,6 +1043,8 @@ Audit lengkap, termasuk konflik dan gap, ada pada
 | CONF-006 | **Selesai pada baseline PRD:** AC terpisah untuk numbering (`AC-15`), query (`AC-16`), platform (`AC-17`, `AC-18`), master (`AC-19`), warehouse (`AC-20`), audit (`AC-22`), serta multi-tenant & konfigurasi Fase 2 (`AC-23` s.d. `AC-29`) telah ditetapkan |
 | CONF-007 | Dataset dan environment benchmark produksi final apa? |
 | CONF-008 | Kontrak penyimpanan refresh token pada frontend consumer apa (JSON body vs HttpOnly cookie)? |
+| CONF-009 | **Fitur MST-F06 disetujui untuk Fase 1.** Sebelum implementasi, setujui library untuk membaca/menulis `.xlsx` dan menerima `multipart/form-data`; dependensi proyek saat ini belum mencakup library tersebut. Rekomendasi teknis untuk ditinjau: `openpyxl` dan `python-multipart`; keduanya harus disetujui sebelum ditambahkan. |
+| CONF-010 | Setujui batas awal import 1.000 baris data dan 5 MiB, atau tetapkan batas berbeda setelah ukuran workload yang diharapkan dan hasil benchmark tersedia. |
 
 ## 14. Change impact dan validation
 
@@ -992,8 +1058,14 @@ perubahan lintas modul.
 - Seluruh modul dan fitur lama memiliki mapping.
 - Fase 1 (MVP M0–M8), Fase 2 (M9 Multi-Tenant SaaS), Fase 3 (`ISS`, `RPT`), Future Development, dan Out of Scope terpisah secara tegas.
 - Feature ID dan requirement ID unik serta memiliki owner.
-- Seluruh feature Fase 1 (`AC-01` s.d. `AC-22`) dan Fase 2 (`AC-23` s.d. `AC-29`) memiliki acceptance criteria eksplisit.
+- Seluruh feature Fase 1 (`AC-01` s.d. `AC-22`, serta tambahan `AC-30`) dan Fase 2 (`AC-23` s.d. `AC-29`) memiliki acceptance criteria eksplisit.
 - Konflik dan asumsi tidak diperlakukan sebagai fakta.
 - RTM menghubungkan database, backend, frontend, API, dan QA baik untuk Fase 1 maupun Fase 2 (M9).
 - Tidak ada klaim implementasi/test tanpa evidence.
 - Detail teknis tetap berada di dokumen layer.
+
+## Lampiran C — Riwayat Perubahan
+
+| Tanggal | Versi | Perubahan |
+| --- | --- | --- |
+| 2026-11-06 | 2.2-general | Menambahkan `FR-MST-006` / `MST-F06` import massal item Fase 1, aturan bisnis, `AC-30`, traceability, dan keputusan dependensi/batas impor `CONF-009`–`CONF-010`. Tidak ada perubahan skema database yang diusulkan. |

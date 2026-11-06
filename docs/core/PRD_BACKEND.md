@@ -23,10 +23,78 @@ repository, transaksi dibuka oleh service, dan route memanggil satu use case ser
 - Pagination: `limit` 1–200, default 50, dan `offset >= 0` bila endpoint mendukung.
 - Kuantitas: string desimal yang dipetakan ke `Decimal`, bukan `float`.
 - Error: `{ "error": { "code", "message", "details" } }`.
+- Import item menerima satu workbook `.xlsx` melalui `multipart/form-data`; batas awal
+  yang diusulkan adalah 1.000 baris data dan ukuran 5 MiB (`CONF-010`). Hasil per baris yang valid/tidak valid
+  dikembalikan pada satu respons ringkasan.
 
 Daftar endpoint aktual dan contoh payload berada di [API documentation](../API/README.md)
 dan [API Contract](API_CONTRACT.md). Dokumen ini hanya menetapkan kebutuhan
 implementasi, bukan menyalin seluruh katalog endpoint.
+
+### 2.1 Import massal item (`FR-MST-006`)
+
+| Method | Path | Permission | Kontrak |
+| --- | --- | --- | --- |
+| `GET` | `/api/v1/items/import-template` | `master:read` | Mengunduh workbook `.xlsx` dengan MIME type Excel dan nama file stabil. |
+| `POST` | `/api/v1/items/import` | `master:manage` | Menerima satu file workbook `.xlsx` pada field `file` (`multipart/form-data`). |
+
+Template memuat sheet `Items`, header pada baris 1, dan kolom berurutan berikut.
+
+| Header | Tipe sel | Wajib | Batas/validasi |
+| --- | --- | --- | --- |
+| `sku` | Teks | Ya | 1–64 karakter; unik tanpa membedakan kapitalisasi |
+| `name` | Teks | Ya | 1–200 karakter |
+| `description` | Teks | Tidak | Kosong menjadi `null` |
+| `category_name` | Teks | Ya | Maksimal 120 karakter; kategori ditemukan dan aktif |
+| `uom_code` | Teks | Ya | Maksimal 20 karakter; UoM ditemukan dan aktif |
+| `is_active` | Boolean Excel | Tidak | Kosong berarti `true` |
+
+SKU disimpan sebagai teks. Kategori dicocokkan berdasarkan nama dan UoM
+berdasarkan kode, tanpa membedakan kapitalisasi. Header harus sama persis dan
+berurutan. Data dimulai pada baris 2; baris kosong dilewati dan nomor error
+menggunakan nomor baris workbook. Workbook tanpa sheet/header yang tepat
+ditolak sebelum validasi data.
+
+Untuk workbook yang dapat dibaca, `POST` mengembalikan `200 OK` dengan
+`total_rows`, `imported_count`, `failed_count`, dan `errors[]`. Setiap error
+memuat nomor baris Excel, field, kode katalog, dan pesan aman. Baris kosong
+dilewati. `total_rows` menghitung baris data non-kosong, `imported_count`
+menghitung item yang commit, dan `failed_count` menghitung baris dengan satu
+atau lebih error. Baris valid diimpor meskipun baris lain gagal; respons tidak
+mengandung data sukses sebelum transaksi commit. File rusak, sheet/header tidak
+cocok, atau batas ukuran/baris yang disetujui terlampaui menghasilkan `422 VALIDATION_ERROR`
+dan tidak menyimpan item. MIME type unduhan template adalah
+`application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`.
+
+Contoh respons hasil parsial:
+
+```json
+{
+  "total_rows": 12,
+  "imported_count": 9,
+  "failed_count": 3,
+  "errors": [
+    {
+      "row": 4,
+      "field": "sku",
+      "code": "DUPLICATE",
+      "message": "SKU sudah terdaftar."
+    }
+  ]
+}
+```
+
+Service memvalidasi semua baris sebelum penyimpanan. Referensi dan SKU existing
+diambil secara kelompok, bukan melalui query per baris. Insert menggunakan
+operasi batch berparameter. Unique index SKU case-insensitive tetap menjadi
+sumber kebenaran; konflik konkuren dilaporkan sebagai `DUPLICATE` di baris
+terkait dan tidak menggagalkan insert valid lain. Item sukses dan satu event
+`ITEM_CREATED` per item berada di satu transaksi. Kegagalan infrastruktur
+membatalkan transaksi request. Tidak ada upsert atau pembuatan saldo.
+
+Implementasi membutuhkan parser/pembuat `.xlsx` dan parser
+`multipart/form-data`. Dependensi tersebut belum ada di daftar proyek dan
+memerlukan persetujuan eksplisit sebelum ditambahkan.
 
 ## 3. Arsitektur service dan persistence
 
@@ -108,7 +176,7 @@ Redis, queue, worker, atau integrasi eksternal dalam MVP.
 | `FR-PLT-001..005` | `PLT-F01..F05` | `numbering_service`, `utils/pagination`, `core/exceptions`, `core/middleware`, health route, `db/migrate` | `AC-15` s.d. `AC-18` |
 | `FR-IAM-001..009` | `IAM-F01..F09` | `auth_service`, `user_service`, `access_service`, `menu_service`, auth/user/menu routes & dependencies | `AC-05`, `AC-11`, `AC-12`, `AC-14` |
 | `FR-AUD-001..002` | `AUD-F01..F02` | `audit_service`, `audit_repo`, audit routes | `AC-05`, `AC-07`, `AC-08`, `AC-16`, `AC-22` |
-| `FR-MST-001..005` | `MST-F01..F05` | `master_service`, `master_repo`, category/uom/supplier/item routes | `AC-16`, `AC-19`, `AC-22` |
+| `FR-MST-001..006` | `MST-F01..F06` | `master_service`, `master_repo`, item import service/repository, category/uom/supplier/item routes | `AC-16`, `AC-19`, `AC-22`, `AC-30` |
 | `FR-WHS-001..003` | `WHS-F01..F03` | `warehouse_service`, `warehouse_repo`, warehouse/location routes | `AC-12`, `AC-16`, `AC-20`, `AC-22` |
 | `FR-INV-001..006` | `INV-F01..F06` | `inventory_service` (`apply_movement`), `stock_service`, `inventory_repo`, stock routes | `AC-02`, `AC-03`, `AC-04`, `AC-06`, `AC-08`, `AC-13`, `AC-16` |
 | `FR-PUR-001..004` | `PUR-F01..F04` | `po_service` (`apply_receipt`), `po_repo`, PO routes | `AC-01`, `AC-13`, `AC-15`, `AC-16`, `AC-21`, `AC-22` |

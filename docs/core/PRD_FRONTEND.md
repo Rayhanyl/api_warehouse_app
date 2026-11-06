@@ -19,7 +19,7 @@ secara lokal sebagai sumber kebenaran, atau menampilkan fitur di luar scope.
 | --- | --- |
 | Authentication | Login, session refresh, logout, change password, profile |
 | Administration | Users, roles/permissions, warehouse assignment, menu |
-| Master | Categories, UoM, items, suppliers |
+| Master | Categories, UoM, items (CRUD dan import massal), suppliers |
 | Warehouse | Warehouses, storage locations |
 | Inventory | Stock by location/warehouse, in-transit, movement ledger |
 | Purchasing | PO list/detail/create/edit/issue/cancel/close |
@@ -43,6 +43,20 @@ adalah pemetaan langsung dari FR, bukan daftar endpoint baru.
   error menampilkan pesan aman, kode error bila berguna, dan opsi retry.
 - Perubahan stok dan status harus memberi feedback sukses/gagal yang jelas.
 - Hindari menampilkan token, password, hash, SQL, atau stack trace.
+
+### 3.1 Import massal item (`MST-F06`)
+
+Pada halaman Master Data Barang, pengguna dengan `master:manage` dapat
+mengunduh template Excel dan memilih satu workbook untuk diimpor. Unggahan
+mengirim file ke backend; frontend tidak mengubah data item lokal sebagai
+pengganti hasil server. Pengguna tanpa permission tidak melihat aksi impor.
+
+Saat request berjalan, tampilkan loading state dan cegah submit berulang untuk
+file yang sama. Setelah respons diterima, tampilkan `total_rows`, jumlah sukses
+dan gagal, serta daftar error dengan nomor baris Excel, field, dan alasan.
+Baris valid tetap ditampilkan sebagai berhasil meskipun ada baris gagal.
+Workbook kosong menampilkan empty state; tipe/struktur/ukuran file yang ditolak
+dan kegagalan server menampilkan error state yang aman.
 
 ## 4. Komponen dan state
 
@@ -92,6 +106,7 @@ Alur request umum:
 | `FR-IAM-001..009` | `IAM-F01..F09` | Login, session refresh, profil, ganti password, manajemen user/role/assignment, sidebar menu dinamis | auth, user, role/permission, warehouse assignment, `my-menu` | `AC-05`, `AC-11`, `AC-12`, `AC-14` |
 | `FR-AUD-002` | `AUD-F02` | Penelusuran dan filter daftar audit log (`old_values`/`new_values`) | audit log list (`GET /api/v1/audit-logs`) | `AC-16`, `AC-22` |
 | `FR-MST-001..005` | `MST-F01..F05` | Layar CRUD dan aktivasi/deaktivasi kategori, UoM, item, supplier | master data CRUD dan list | `AC-16`, `AC-19` |
+| `FR-MST-006` | `MST-F06` | Aksi unduh template, unggah workbook, ringkasan hasil dan tabel error per baris | `GET /api/v1/items/import-template`, `POST /api/v1/items/import` | `AC-30` |
 | `FR-WHS-001..003` | `WHS-F01..F03` | Layar CRUD warehouse, pengaturan `allow_negative_stock`, lokasi penyimpanan | warehouse dan storage location CRUD/list | `AC-12`, `AC-16`, `AC-20` |
 | `FR-INV-001..003` | `INV-F01..F03` | Saldo per lokasi, per gudang, ringkasan, in-transit, dan movement ledger | stock balances, by-warehouse, summary, movements | `AC-03`, `AC-12`, `AC-16` |
 | `FR-PUR-001..003` | `PUR-F01..F03` | Daftar/detail PO, form draft, aksi issue/cancel/close, progres fulfillment | purchase order CRUD, list, dan action endpoints | `AC-01`, `AC-15`, `AC-16`, `AC-21` |

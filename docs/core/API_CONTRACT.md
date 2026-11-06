@@ -18,6 +18,37 @@ setiap endpoint. Detail operasional dan contoh request/response berada di
 - Error: objek `{ "error": { "code": "<ERROR_CODE>", "message": "<pesan>", "details": { ... } } }`.
 - Request ID: header `X-Request-ID` dipertahankan bila valid (`^[A-Za-z0-9._-]{1,128}$`) atau dibuat server (UUIDv4) pada setiap respons termasuk error.
 
+## Import massal item (`FR-MST-006`)
+
+- `GET /api/v1/items/import-template` memerlukan autentikasi dan permission
+  `master:read`, lalu mengunduh workbook `.xlsx` dengan MIME type
+  `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, sheet
+  `Items`, dan header berurutan: `sku`, `name`, `description`,
+  `category_name`, `uom_code`, `is_active`.
+- `POST /api/v1/items/import` memerlukan `master:manage` dan menerima tepat satu
+  workbook `.xlsx` melalui `multipart/form-data`, field `file`.
+- Batas awal yang diusulkan adalah 5 MiB dan 1.000 baris data (`CONF-010`);
+  baris kosong diabaikan.
+- File yang terbaca menghasilkan `200 OK` dan JSON ringkasan berisi
+  `total_rows`, `imported_count`, `failed_count`, serta `errors[]` dengan
+  nomor baris Excel, `field`, `code`, dan pesan aman. Respons `200` dapat
+  melaporkan hasil parsial; error per baris memakai kode katalog yang sudah
+  ada, seperti `DUPLICATE`, `NOT_FOUND`, `INACTIVE_REFERENCE`, dan
+  `VALIDATION_ERROR`.
+- `total_rows` menghitung baris data non-kosong, `imported_count` menghitung
+  item yang commit, dan `failed_count` menghitung baris dengan satu atau lebih
+  error. `errors[]` boleh memuat lebih dari satu kesalahan untuk satu baris.
+- File rusak, sheet/header tidak sesuai, batas ukuran/baris terlampaui, atau
+  bentuk request salah menghasilkan error envelope standar dengan
+  `422 VALIDATION_ERROR`; file tersebut tidak membuat item.
+- Semua baris valid yang berhasil dibuat dan audit `ITEM_CREATED` commit dalam
+  satu transaksi. Kegagalan infrastruktur me-rollback seluruh insert request.
+  Duplikasi SKU concurrent dilaporkan per baris dan tidak menghentikan baris
+  valid lainnya.
+- Endpoint tidak menambah kode error global, tabel, atau kolom. Parser XLSX dan
+  penerimaan multipart memerlukan dependensi yang belum tercantum di proyek;
+  penambahannya memerlukan persetujuan sebelum implementasi.
+
 ## Katalog kode error resmi
 
 Seluruh kode error bisnis (`DomainError` pada `app/core/exceptions.py`) dan handler
