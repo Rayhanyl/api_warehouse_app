@@ -1,8 +1,14 @@
 """Service logika bisnis untuk Master Data: Kategori, UoM, Pemasok, dan Barang (FR-02, PRD 6.3, 6.8)."""
 
 import re
+from collections import Counter
+from io import BytesIO
 from typing import Any
+from zipfile import BadZipFile
+from xml.etree.ElementTree import ParseError
 
+from openpyxl import Workbook, load_workbook
+from openpyxl.utils.exceptions import InvalidFileException
 from psycopg import Connection
 
 from app.core.exceptions import (
@@ -46,6 +52,248 @@ ITEM_SORT_COLUMNS: dict[str, str] = {
 EMAIL_REGEX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 CODE_REGEX = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
 PHONE_REGEX = re.compile(r"^[0-9+() -]{6,30}$")
+ITEM_IMPORT_HEADERS = (
+    "sku",
+    "name",
+    "description",
+    "category_name",
+    "uom_code",
+    "is_active",
+)
+ITEM_IMPORT_MAX_BYTES = 5 * 1024 * 1024
+ITEM_IMPORT_MAX_ROWS = 1000
+
+
+def _item_import_error(
+    row: int, field: str, code: str, message: str
+) -> dict[str, Any]:
+    return {"row": row, "field": field, "code": code, "message": message}
+
+
+def _item_import_cell_is_blank(value: Any) -> bool:
+    return value is None or (isinstance(value, str) and not value.strip())
+
+
+def build_item_import_template() -> bytes:
+    """Membuat template Excel sesuai kontrak MST-F06."""
+    workbook = Workbook()
+    worksheet = workbook.active
+    assert worksheet is not None
+    worksheet.title = "Items"
+    worksheet.append(ITEM_IMPORT_HEADERS)
+    for column, width in {
+        "A": 18,
+        "B": 30,
+        "C": 40,
+        "D": 24,
+        "E": 16,
+        "F": 14,
+    }.items():
+        worksheet.column_dimensions[column].width = width
+    for row_number in range(2, ITEM_IMPORT_MAX_ROWS + 2):
+        for column_number in range(1, len(ITEM_IMPORT_HEADERS)):
+            worksheet.cell(row=row_number, column=column_number).number_format = "@"
+    buffer = BytesIO()
+    workbook.save(buffer)
+    workbook.close()
+    return buffer.getvalue()
+
+
+def _parse_item_import_workbook(file_bytes: bytes) -> list[dict[str, Any]]:
+    if not file_bytes or len(file_bytes) > ITEM_IMPORT_MAX_BYTES:
+        raise ValidationDomainError(
+            "Ukuran file Excel tidak valid atau melebihi batas 5 MiB.",
+            details={"field": "file"},
+        )
+
+    try:
+        workbook = load_workbook(
+            BytesIO(file_bytes), read_only=True, data_only=False
+        )
+    except (BadZipFile, InvalidFileException, OSError, ParseError, ValueError, KeyError) as exc:
+        raise ValidationDomainError(
+            "File tidak dapat dibaca sebagai workbook Excel (.xlsx).",
+            details={"field": "file"},
+        ) from exc
+
+    try:
+        if workbook.sheetnames != ["Items"]:
+            raise ValidationDomainError(
+                "Workbook harus memiliki satu sheet bernama 'Items'.",
+                details={"field": "file"},
+            )
+
+        worksheet = workbook["Items"]
+        if (worksheet.max_column or 0) > len(ITEM_IMPORT_HEADERS):
+            raise ValidationDomainError(
+                "Workbook tidak boleh memiliki kolom di luar template.",
+                details={"field": "file"},
+            )
+        max_column = len(ITEM_IMPORT_HEADERS)
+        header_cells = next(
+            worksheet.iter_rows(min_row=1, max_row=1, max_col=max_column),
+            (),
+        )
+        actual_headers = [cell.value for cell in header_cells[: len(ITEM_IMPORT_HEADERS)]]
+        extra_headers = header_cells[len(ITEM_IMPORT_HEADERS) :]
+        if actual_headers != list(ITEM_IMPORT_HEADERS) or any(
+            not _item_import_cell_is_blank(cell.value) for cell in extra_headers
+        ):
+            raise ValidationDomainError(
+                "Header workbook tidak sesuai template import barang.",
+                details={"field": "file"},
+            )
+
+        records: list[dict[str, Any]] = []
+        for row_number, cells in enumerate(
+            worksheet.iter_rows(min_row=2, max_col=max_column), start=2
+        ):
+            values = [cell.value for cell in cells]
+            if all(_item_import_cell_is_blank(value) for value in values):
+                continue
+            if len(records) >= ITEM_IMPORT_MAX_ROWS:
+                raise ValidationDomainError(
+                    "Workbook melebihi batas 1.000 baris data.",
+                    details={"field": "file"},
+                )
+
+            errors: list[dict[str, Any]] = []
+            for index, cell in enumerate(cells[len(ITEM_IMPORT_HEADERS) :], start=len(ITEM_IMPORT_HEADERS)):
+                if not _item_import_cell_is_blank(cell.value):
+                    errors.append(
+                        _item_import_error(
+                            row_number,
+                            "row",
+                            ValidationDomainError.code,
+                            "Baris berisi nilai di luar kolom template.",
+                        )
+                    )
+                    break
+
+            row_cells = cells[: len(ITEM_IMPORT_HEADERS)]
+            for index, cell in enumerate(row_cells):
+                if cell.data_type == "f":
+                    errors.append(
+                        _item_import_error(
+                            row_number,
+                            ITEM_IMPORT_HEADERS[index],
+                            ValidationDomainError.code,
+                            "Formula Excel tidak diizinkan pada template import.",
+                        )
+                    )
+
+            def read_text(
+                index: int,
+                *,
+                required: bool,
+                max_length: int | None,
+            ) -> str | None:
+                cell = row_cells[index]
+                field = ITEM_IMPORT_HEADERS[index]
+                value = cell.value
+                if cell.data_type == "f":
+                    return None
+                if _item_import_cell_is_blank(value):
+                    if required:
+                        errors.append(
+                            _item_import_error(
+                                row_number,
+                                field,
+                                ValidationDomainError.code,
+                                f"Kolom {field} wajib diisi.",
+                            )
+                        )
+                    return None
+                if not isinstance(value, str):
+                    errors.append(
+                        _item_import_error(
+                            row_number,
+                            field,
+                            ValidationDomainError.code,
+                            f"Kolom {field} harus berupa teks.",
+                        )
+                    )
+                    return None
+                if max_length is not None and len(value) > max_length:
+                    errors.append(
+                        _item_import_error(
+                            row_number,
+                            field,
+                            ValidationDomainError.code,
+                            f"Kolom {field} maksimal {max_length} karakter.",
+                        )
+                    )
+                    return None
+                clean_value = value.strip()
+                if required and not clean_value:
+                    errors.append(
+                        _item_import_error(
+                            row_number,
+                            field,
+                            ValidationDomainError.code,
+                            f"Kolom {field} wajib diisi.",
+                        )
+                    )
+                    return None
+                return clean_value or None
+
+            sku = read_text(0, required=True, max_length=64)
+            if sku is not None:
+                try:
+                    sku = _validate_code_format(
+                        sku, field_name="sku", label="SKU barang"
+                    )
+                except ValidationDomainError as exc:
+                    errors.append(
+                        _item_import_error(
+                            row_number, "sku", exc.code, exc.message
+                        )
+                    )
+                    sku = None
+            name = read_text(1, required=True, max_length=200)
+            description = read_text(2, required=False, max_length=1000)
+            category_name = read_text(3, required=True, max_length=120)
+            uom_code = read_text(4, required=True, max_length=20)
+
+            active_cell = row_cells[5]
+            if active_cell.data_type == "f":
+                is_active = True
+            elif _item_import_cell_is_blank(active_cell.value):
+                is_active = True
+            elif isinstance(active_cell.value, bool):
+                is_active = active_cell.value
+            else:
+                is_active = True
+                errors.append(
+                    _item_import_error(
+                        row_number,
+                        "is_active",
+                        ValidationDomainError.code,
+                        "Kolom is_active harus berisi nilai boolean Excel TRUE atau FALSE.",
+                    )
+                )
+
+            records.append(
+                {
+                    "row": row_number,
+                    "sku": sku,
+                    "sku_key": sku.lower() if sku is not None else None,
+                    "name": name,
+                    "description": description,
+                    "category_name": category_name,
+                    "uom_code": uom_code,
+                    "is_active": is_active,
+                    "errors": errors,
+                }
+            )
+        return records
+    except (BadZipFile, InvalidFileException, OSError, ParseError, ValueError, KeyError) as exc:
+        raise ValidationDomainError(
+            "Struktur workbook Excel tidak valid.",
+            details={"field": "file"},
+        ) from exc
+    finally:
+        workbook.close()
 
 
 def _validate_code_format(value: str, *, field_name: str, label: str) -> str:
@@ -841,6 +1089,186 @@ def create_item(
             ip_address=ip_address,
         )
         return created
+
+
+def import_items_from_excel(
+    conn: Connection[dict[str, Any]],
+    *,
+    file_name: str | None,
+    file_bytes: bytes,
+    actor: dict[str, Any],
+    ip_address: str | None = None,
+) -> dict[str, Any]:
+    """Validasi dan buat item dari workbook Excel dengan hasil parsial per baris."""
+    if not file_name or not file_name.lower().endswith(".xlsx"):
+        raise ValidationDomainError(
+            "File harus menggunakan format .xlsx.",
+            details={"field": "file"},
+        )
+    records = _parse_item_import_workbook(file_bytes)
+    if not records:
+        return {
+            "total_rows": 0,
+            "imported_count": 0,
+            "failed_count": 0,
+            "errors": [],
+        }
+
+    sku_counts = Counter(
+        record["sku_key"] for record in records if record["sku_key"] is not None
+    )
+    for record in records:
+        sku_key = record["sku_key"]
+        if sku_key is not None and sku_counts[sku_key] > 1:
+            record["errors"].append(
+                _item_import_error(
+                    record["row"],
+                    "sku",
+                    DuplicateError.code,
+                    "SKU muncul lebih dari satu kali di dalam file.",
+                )
+            )
+
+    category_names = sorted(
+        {
+            record["category_name"].lower()
+            for record in records
+            if record["category_name"] is not None
+        }
+    )
+    uom_codes = sorted(
+        {
+            record["uom_code"].lower()
+            for record in records
+            if record["uom_code"] is not None
+        }
+    )
+    sku_keys = sorted(
+        {
+            record["sku_key"]
+            for record in records
+            if record["sku_key"] is not None
+        }
+    )
+
+    with conn.transaction():
+        categories = master_repo.list_item_import_categories(conn, category_names)
+        uoms = master_repo.list_item_import_uoms(conn, uom_codes)
+        existing_sku_keys = master_repo.list_existing_item_sku_keys(conn, sku_keys)
+        category_by_name = {str(row["name"]).lower(): row for row in categories}
+        uom_by_code = {str(row["code"]).lower(): row for row in uoms}
+
+        for record in records:
+            category_name = record["category_name"]
+            if category_name is not None:
+                category = category_by_name.get(category_name.lower())
+                if category is None:
+                    record["errors"].append(
+                        _item_import_error(
+                            record["row"],
+                            "category_name",
+                            NotFoundError.code,
+                            "Kategori tidak ditemukan.",
+                        )
+                    )
+                elif not category["is_active"]:
+                    record["errors"].append(
+                        _item_import_error(
+                            record["row"],
+                            "category_name",
+                            InactiveReferenceError.code,
+                            "Kategori yang dipilih berstatus tidak aktif.",
+                        )
+                    )
+                else:
+                    record["category_id"] = int(category["id"])
+
+            uom_code = record["uom_code"]
+            if uom_code is not None:
+                uom = uom_by_code.get(uom_code.lower())
+                if uom is None:
+                    record["errors"].append(
+                        _item_import_error(
+                            record["row"],
+                            "uom_code",
+                            NotFoundError.code,
+                            "Satuan ukur (UoM) tidak ditemukan.",
+                        )
+                    )
+                elif not uom["is_active"]:
+                    record["errors"].append(
+                        _item_import_error(
+                            record["row"],
+                            "uom_code",
+                            InactiveReferenceError.code,
+                            "Satuan ukur (UoM) yang dipilih berstatus tidak aktif.",
+                        )
+                    )
+                else:
+                    record["uom_id"] = int(uom["id"])
+
+            sku_key = record["sku_key"]
+            if sku_key is not None and sku_key in existing_sku_keys:
+                record["errors"].append(
+                    _item_import_error(
+                        record["row"],
+                        "sku",
+                        DuplicateError.code,
+                        "SKU sudah terdaftar.",
+                    )
+                )
+
+        valid_records = [record for record in records if not record["errors"]]
+        inserted_items = master_repo.insert_items_batch(
+            conn,
+            items=valid_records,
+            created_by=int(actor["id"]),
+        )
+        inserted_keys = {str(item["sku_key"]) for item in inserted_items}
+        for record in valid_records:
+            if record["sku_key"] not in inserted_keys:
+                record["errors"].append(
+                    _item_import_error(
+                        record["row"],
+                        "sku",
+                        DuplicateError.code,
+                        "SKU sudah terdaftar.",
+                    )
+                )
+
+        audit_service.record_many(
+            conn,
+            [
+                {
+                    "user_id": int(actor["id"]),
+                    "action": "ITEM_CREATED",
+                    "entity_type": "items",
+                    "entity_id": item["id"],
+                    "old_values": None,
+                    "new_values": {
+                        "id": item["id"],
+                        "sku": item["sku"],
+                        "name": item["name"],
+                        "description": item["description"],
+                        "category_id": item["category_id"],
+                        "uom_id": item["uom_id"],
+                        "is_active": item["is_active"],
+                    },
+                    "ip_address": ip_address,
+                }
+                for item in inserted_items
+            ],
+        )
+
+    row_errors = [error for record in records for error in record["errors"]]
+    failed_rows = {error["row"] for error in row_errors}
+    row_errors.sort(key=lambda error: (error["row"], error["field"], error["code"]))
+    return {
+        "total_rows": len(records),
+        "imported_count": len(inserted_items),
+        "failed_count": len(failed_rows),
+        "errors": row_errors,
+    }
 
 
 def update_item(

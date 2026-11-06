@@ -27,7 +27,7 @@ setiap endpoint. Detail operasional dan contoh request/response berada di
   `category_name`, `uom_code`, `is_active`.
 - `POST /api/v1/items/import` memerlukan `master:manage` dan menerima tepat satu
   workbook `.xlsx` melalui `multipart/form-data`, field `file`.
-- Batas awal yang diusulkan adalah 5 MiB dan 1.000 baris data (`CONF-010`);
+- Batas yang disetujui adalah 5 MiB dan 1.000 baris data (`CONF-010`);
   baris kosong diabaikan.
 - File yang terbaca menghasilkan `200 OK` dan JSON ringkasan berisi
   `total_rows`, `imported_count`, `failed_count`, serta `errors[]` dengan

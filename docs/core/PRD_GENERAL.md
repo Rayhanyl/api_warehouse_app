@@ -6,7 +6,7 @@
 | Versi | 2.2-general |
 | Pemilik | Product / Business |
 | Sumber historis | PRD v2.0 (Single-Tenant) & PRD Modular v3.1 (Multi-Tenant SaaS) yang telah diaudit dan diintegrasikan |
-| Catatan | Baseline Fase 1 (M0–M8) telah selesai diimplementasikan dan diuji. Tambahan Fase 1 MST-F06 (import massal item) masuk sebagai pekerjaan lanjutan sebelum M9; Fase 2 tetap mencakup `TNT`, `CFG`, `tenant_id` + RLS sebelum Fase 3 (`ISS`, `RPT`). |
+| Catatan | Baseline Fase 1 (M0–M8) telah selesai diimplementasikan dan diuji. Tambahan MST-F06 kini diimplementasikan; seluruh 40 tes backend lulus, termasuk AC-30. Fase 2 tetap mencakup `TNT`, `CFG`, `tenant_id` + RLS sebelum Fase 3 (`ISS`, `RPT`). |
 
 Dokumen ini adalah sumber utama requirement produk. Dokumen Backend, Frontend,
 Database, API, dan QA hanya menjabarkan konsekuensi requirement ini dan tidak boleh
@@ -406,9 +406,9 @@ pada baris 2. Kolom template dan validasinya:
 | `is_active` | Boolean | Tidak | Nilai boolean Excel; kosong menjadi `true` |
 
 SKU disimpan sebagai teks agar karakter awal seperti nol tidak hilang. Header
-harus tepat dan urut seperti tabel. Baris kosong dilewati; nomor error mengacu
-pada nomor baris workbook. Header atau struktur workbook yang tidak valid
-menolak seluruh file sebelum penyimpanan.
+harus tepat dan urut seperti tabel; kolom di luar F ditolak. Baris kosong
+dilewati; nomor error mengacu pada nomor baris workbook. Header atau struktur
+workbook yang tidak valid menolak seluruh file sebelum penyimpanan.
 
 Backend memvalidasi semua baris sebelum insert, mendeteksi SKU duplikat di file
 dan database, serta mengembalikan ringkasan `total_rows`, `imported_count`,
@@ -423,10 +423,10 @@ atau kategori/UoM baru. Validasi database menangani duplikasi konkuren.
 Untuk membatasi pemakaian memori dan query database, backend memproses workbook
 secara read-only, mengambil referensi dan SKU existing secara kelompok, dan
 menyimpan item secara batch berparameter tanpa query lookup per baris. Batas
-awal yang diusulkan adalah 1.000 baris data dan ukuran file 5 MiB; pemilik perlu
-menyetujui batas tersebut pada `CONF-010`. Parser `.xlsx` dan `multipart/form-data` memerlukan library yang belum
-tercantum pada dependensi proyek; library tersebut harus disetujui sebelum
-implementasi.
+yang disetujui adalah 1.000 baris data dan ukuran file 5 MiB. Parser memakai
+`openpyxl` untuk workbook `.xlsx` dan `python-multipart` untuk
+`multipart/form-data`; kedua dependensi telah disetujui dan tercantum pada
+konfigurasi proyek.
 
 **API:** `GET /api/v1/items/import-template` (permission
 `master:read`) mengunduh template; `POST /api/v1/items/import` (permission
@@ -1043,8 +1043,8 @@ Audit lengkap, termasuk konflik dan gap, ada pada
 | CONF-006 | **Selesai pada baseline PRD:** AC terpisah untuk numbering (`AC-15`), query (`AC-16`), platform (`AC-17`, `AC-18`), master (`AC-19`), warehouse (`AC-20`), audit (`AC-22`), serta multi-tenant & konfigurasi Fase 2 (`AC-23` s.d. `AC-29`) telah ditetapkan |
 | CONF-007 | Dataset dan environment benchmark produksi final apa? |
 | CONF-008 | Kontrak penyimpanan refresh token pada frontend consumer apa (JSON body vs HttpOnly cookie)? |
-| CONF-009 | **Fitur MST-F06 disetujui untuk Fase 1.** Sebelum implementasi, setujui library untuk membaca/menulis `.xlsx` dan menerima `multipart/form-data`; dependensi proyek saat ini belum mencakup library tersebut. Rekomendasi teknis untuk ditinjau: `openpyxl` dan `python-multipart`; keduanya harus disetujui sebelum ditambahkan. |
-| CONF-010 | Setujui batas awal import 1.000 baris data dan 5 MiB, atau tetapkan batas berbeda setelah ukuran workload yang diharapkan dan hasil benchmark tersedia. |
+| CONF-009 | **Selesai / Disetujui:** Fitur MST-F06 dan dependensi `openpyxl` serta `python-multipart` disetujui pemilik proyek dan ditambahkan ke konfigurasi proyek. |
+| CONF-010 | **Selesai / Disetujui:** Batas import ditetapkan pada 1.000 baris data dan ukuran file 5 MiB. |
 
 ## 14. Change impact dan validation
 
@@ -1068,4 +1068,4 @@ perubahan lintas modul.
 
 | Tanggal | Versi | Perubahan |
 | --- | --- | --- |
-| 2026-11-06 | 2.2-general | Menambahkan `FR-MST-006` / `MST-F06` import massal item Fase 1, aturan bisnis, `AC-30`, traceability, dan keputusan dependensi/batas impor `CONF-009`–`CONF-010`. Tidak ada perubahan skema database yang diusulkan. |
+| 2026-11-06 | 2.2-general | Menambahkan `FR-MST-006` / `MST-F06` import massal item Fase 1, aturan bisnis, `AC-30`, traceability; menyelesaikan `CONF-009`–`CONF-010`; dan mencatat implementasi yang lulus 40 tes backend. Tidak ada perubahan skema database. |

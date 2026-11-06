@@ -11,6 +11,8 @@ dependencies = [
     "pydantic-settings",
     "argon2-cffi",
     "pyjwt",
+    "openpyxl",
+    "python-multipart",
 ]
 
 [project.optional-dependencies]

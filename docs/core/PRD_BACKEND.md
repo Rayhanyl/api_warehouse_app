@@ -23,8 +23,8 @@ repository, transaksi dibuka oleh service, dan route memanggil satu use case ser
 - Pagination: `limit` 1–200, default 50, dan `offset >= 0` bila endpoint mendukung.
 - Kuantitas: string desimal yang dipetakan ke `Decimal`, bukan `float`.
 - Error: `{ "error": { "code", "message", "details" } }`.
-- Import item menerima satu workbook `.xlsx` melalui `multipart/form-data`; batas awal
-  yang diusulkan adalah 1.000 baris data dan ukuran 5 MiB (`CONF-010`). Hasil per baris yang valid/tidak valid
+- Import item menerima satu workbook `.xlsx` melalui `multipart/form-data`; batas yang
+  disetujui adalah 1.000 baris data dan ukuran 5 MiB (`CONF-010`). Hasil per baris yang valid/tidak valid
   dikembalikan pada satu respons ringkasan.
 
 Daftar endpoint aktual dan contoh payload berada di [API documentation](../API/README.md)
@@ -51,7 +51,7 @@ Template memuat sheet `Items`, header pada baris 1, dan kolom berurutan berikut.
 
 SKU disimpan sebagai teks. Kategori dicocokkan berdasarkan nama dan UoM
 berdasarkan kode, tanpa membedakan kapitalisasi. Header harus sama persis dan
-berurutan. Data dimulai pada baris 2; baris kosong dilewati dan nomor error
+berurutan, tanpa kolom di luar template. Data dimulai pada baris 2; baris kosong dilewati dan nomor error
 menggunakan nomor baris workbook. Workbook tanpa sheet/header yang tepat
 ditolak sebelum validasi data.
 

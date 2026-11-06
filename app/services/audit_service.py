@@ -110,6 +110,24 @@ def record(
     )
 
 
+def record_many(conn: Connection[dict[str, Any]], events: list[dict[str, Any]]) -> None:
+    """Sanitasi dan tulis beberapa event create dalam satu operasi repository batch."""
+    cleaned_events: list[dict[str, Any]] = []
+    for event in events:
+        cleaned_events.append(
+            {
+                "user_id": event["user_id"],
+                "action": event["action"],
+                "entity_type": event["entity_type"],
+                "entity_id": event["entity_id"],
+                "old_values": _sanitize_payload(event.get("old_values")),
+                "new_values": _sanitize_payload(event.get("new_values")),
+                "ip_address": event["ip_address"],
+            }
+        )
+    audit_repo.insert_audit_logs_batch(conn, cleaned_events)
+
+
 def list_audit_logs(
     conn: Connection[dict[str, Any]],
     *,

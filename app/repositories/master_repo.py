@@ -660,6 +660,115 @@ def get_item_by_sku(
     ).fetchone()
 
 
+def list_item_import_categories(
+    conn: Connection[dict[str, Any]], names: list[str]
+) -> list[dict[str, Any]]:
+    """Mencari kategori impor sekaligus dan mengunci status aktif sampai transaksi selesai."""
+    if not names:
+        return []
+    rows = conn.execute(
+        """
+        SELECT id, name, is_active
+        FROM categories
+        WHERE LOWER(name) = ANY(%s)
+        ORDER BY id
+        FOR SHARE
+        """,
+        (names,),
+    ).fetchall()
+    return list(rows)
+
+
+def list_item_import_uoms(
+    conn: Connection[dict[str, Any]], codes: list[str]
+) -> list[dict[str, Any]]:
+    """Mencari UoM impor sekaligus dan mengunci status aktif sampai transaksi selesai."""
+    if not codes:
+        return []
+    rows = conn.execute(
+        """
+        SELECT id, code, is_active
+        FROM uoms
+        WHERE LOWER(code) = ANY(%s)
+        ORDER BY id
+        FOR SHARE
+        """,
+        (codes,),
+    ).fetchall()
+    return list(rows)
+
+
+def list_existing_item_sku_keys(
+    conn: Connection[dict[str, Any]], sku_keys: list[str]
+) -> set[str]:
+    """Mengambil seluruh SKU yang sudah terdaftar dengan satu query."""
+    if not sku_keys:
+        return set()
+    rows = conn.execute(
+        """
+        SELECT LOWER(sku) AS sku_key
+        FROM items
+        WHERE LOWER(sku) = ANY(%s)
+        """,
+        (sku_keys,),
+    ).fetchall()
+    return {str(row["sku_key"]) for row in rows}
+
+
+def insert_items_batch(
+    conn: Connection[dict[str, Any]],
+    *,
+    items: list[dict[str, Any]],
+    created_by: int,
+) -> list[dict[str, Any]]:
+    """Membuat item valid dalam satu statement; konflik SKU konkuren diabaikan per item."""
+    if not items:
+        return []
+    rows = conn.execute(
+        """
+        INSERT INTO items (
+            sku, name, description, category_id, uom_id, is_active, created_by
+        )
+        SELECT
+            source.sku,
+            source.name,
+            source.description,
+            source.category_id,
+            source.uom_id,
+            source.is_active,
+            %s
+        FROM UNNEST(
+            %s::text[],
+            %s::text[],
+            %s::text[],
+            %s::bigint[],
+            %s::bigint[],
+            %s::boolean[]
+        ) AS source(sku, name, description, category_id, uom_id, is_active)
+        ON CONFLICT DO NOTHING
+        RETURNING
+            id,
+            sku,
+            LOWER(sku) AS sku_key,
+            name,
+            description,
+            category_id,
+            uom_id,
+            is_active
+        """,
+        (
+            created_by,
+            [item["sku"] for item in items],
+            [item["name"] for item in items],
+            [item["description"] for item in items],
+            [item["category_id"] for item in items],
+            [item["uom_id"] for item in items],
+            [item["is_active"] for item in items],
+        ),
+    ).fetchall()
+    return list(rows)
+
+
 def insert_item(
     conn: Connection[dict[str, Any]],
     *,

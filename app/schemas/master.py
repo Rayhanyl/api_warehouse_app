@@ -156,3 +156,17 @@ class ItemOut(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+
+class ItemImportErrorOut(BaseModel):
+    row: int
+    field: str
+    code: str
+    message: str
+
+
+class ItemImportOut(BaseModel):
+    total_rows: int
+    imported_count: int
+    failed_count: int
+    errors: list[ItemImportErrorOut]
+

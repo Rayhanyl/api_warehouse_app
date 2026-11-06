@@ -68,8 +68,10 @@ Modul Master Data menyediakan pengelolaan entitas referensi dasar yang digunakan
 | 12 | PATCH | `/api/v1/suppliers/{supplier_id}` | Perbarui atau nonaktifkan pemasok | Bearer | `master:manage` |
 | 13 | GET | `/api/v1/items` | Daftar barang / SKU (paginasi, filter kategori/UoM/aktif, pencarian, urut) | Bearer | `master:read` |
 | 14 | POST | `/api/v1/items` | Buat barang (SKU) baru | Bearer | `master:manage` |
-| 15 | GET | `/api/v1/items/{item_id}` | Detail barang (SKU) berdasarkan ID | Bearer | `master:read` |
-| 16 | PATCH | `/api/v1/items/{item_id}` | Perbarui atau nonaktifkan barang (SKU) | Bearer | `master:manage` |
+| 15 | GET | `/api/v1/items/import-template` | Unduh template Excel import barang | Bearer | `master:read` |
+| 16 | POST | `/api/v1/items/import` | Import item secara massal dari workbook Excel | Bearer | `master:manage` |
+| 17 | GET | `/api/v1/items/{item_id}` | Detail barang (SKU) berdasarkan ID | Bearer | `master:read` |
+| 18 | PATCH | `/api/v1/items/{item_id}` | Perbarui atau nonaktifkan barang (SKU) | Bearer | `master:manage` |
 
 ---
 
@@ -331,6 +333,48 @@ Modul Master Data menyediakan pengelolaan entitas referensi dasar yang digunakan
   * `409 DUPLICATE` — `sku` sudah terdaftar.
   * `422 INACTIVE_REFERENCE` — Kategori atau UoM yang dipilih berstatus tidak aktif (`is_active = false`).
   * `422 VALIDATION_ERROR` — Payload tidak valid.
+
+#### GET `/api/v1/items/import-template` — Unduh Template Import Barang
+* **Autentikasi & Permission:** Bearer Token, `master:read`
+* **Response Berhasil:** `200 OK`, workbook `.xlsx` dengan MIME type
+  `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` dan
+  nama berkas `template_import_barang.xlsx`.
+* Workbook memiliki sheet `Items` dan header baris pertama:
+  `sku`, `name`, `description`, `category_name`, `uom_code`, `is_active`.
+
+#### POST `/api/v1/items/import` — Import Barang Massal
+* **Autentikasi & Permission:** Bearer Token, `master:manage`
+* **Request:** `multipart/form-data`, field `file`, satu berkas `.xlsx`, maksimal
+  1.000 baris data dan 5 MiB.
+* **Validasi:** Header dan urutan kolom harus sesuai template. SKU dan nama wajib
+  berupa teks dengan panjang masing-masing 1–64 dan 1–200 karakter. Deskripsi
+  opsional (maksimal 1.000 karakter). Kategori dicocokkan berdasarkan nama
+  (maksimal 120 karakter), UoM berdasarkan kode (maksimal 20 karakter); keduanya
+  harus ditemukan dan aktif. SKU harus unik tanpa membedakan kapitalisasi.
+  `is_active` menerima sel boolean Excel dan default `true`.
+* **Response Berhasil:** `200 OK`, termasuk untuk hasil parsial:
+```json
+{
+  "total_rows": 3,
+  "imported_count": 2,
+  "failed_count": 1,
+  "errors": [
+    {
+      "row": 3,
+      "field": "sku",
+      "code": "DUPLICATE",
+      "message": "SKU sudah terdaftar."
+    }
+  ]
+}
+```
+  Nomor `row` mengikuti baris workbook. `failed_count` menghitung baris dengan
+  satu atau lebih error; `errors` dapat memuat beberapa error untuk satu baris.
+* **Kemungkinan Error:** `422 VALIDATION_ERROR` untuk workbook tidak valid atau
+  batas file/baris terlampaui; `403 PERMISSION_DENIED` bila permission tidak ada.
+  SKU duplikat, termasuk konflik konkuren, dilaporkan per baris sebagai
+  `DUPLICATE`; item valid lainnya tetap dibuat. Item yang berhasil dan audit
+  `ITEM_CREATED` disimpan dalam satu transaksi.
 
 #### GET `/api/v1/items/{item_id}` — Detail Barang
 * **Autentikasi & Permission:** Bearer Token, `master:read`

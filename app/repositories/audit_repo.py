@@ -65,6 +65,47 @@ def insert_audit_log(
     return row
 
 
+def insert_audit_logs_batch(
+    conn: Connection[dict[str, Any]], events: list[dict[str, Any]]
+) -> None:
+    """Menyisipkan sekumpulan event audit tanpa mengubah baris append-only."""
+    if not events:
+        return
+    with conn.cursor() as cursor:
+        cursor.executemany(
+            """
+            INSERT INTO audit_logs (
+                user_id,
+                action,
+                entity_type,
+                entity_id,
+                old_values,
+                new_values,
+                ip_address
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
+            [
+                (
+                    event["user_id"],
+                    event["action"],
+                    event["entity_type"],
+                    str(event["entity_id"])
+                    if event["entity_id"] is not None
+                    else None,
+                    Jsonb(event["old_values"])
+                    if event["old_values"] is not None
+                    else None,
+                    Jsonb(event["new_values"])
+                    if event["new_values"] is not None
+                    else None,
+                    event["ip_address"],
+                )
+                for event in events
+            ],
+        )
+
+
 def list_audit_logs(
     conn: Connection[dict[str, Any]],
     *,

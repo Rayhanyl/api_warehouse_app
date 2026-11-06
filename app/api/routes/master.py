@@ -2,7 +2,8 @@
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, File, Query, Request, UploadFile, status
+from fastapi.responses import StreamingResponse
 from psycopg import Connection
 
 from app.api.deps import get_client_ip
@@ -14,6 +15,7 @@ from app.schemas.master import (
     CategoryOut,
     CategoryUpdate,
     ItemCreate,
+    ItemImportOut,
     ItemOut,
     ItemUpdate,
     SupplierCreate,
@@ -325,6 +327,38 @@ def create_item(
         ip_address=get_client_ip(request),
     )
     return ItemOut(**created)
+
+
+@router.get("/items/import-template")
+def download_item_import_template(
+    _actor: dict[str, Any] = Depends(require_permission(MASTER_READ)),
+) -> StreamingResponse:
+    template = master_service.build_item_import_template()
+    return StreamingResponse(
+        iter([template]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": 'attachment; filename="template_import_barang.xlsx"'
+        },
+    )
+
+
+@router.post("/items/import", response_model=ItemImportOut)
+def import_items(
+    request: Request,
+    file: UploadFile = File(...),
+    actor: dict[str, Any] = Depends(require_permission(MASTER_MANAGE)),
+    conn: Connection[dict[str, Any]] = Depends(get_conn),
+) -> ItemImportOut:
+    file_bytes = file.file.read(master_service.ITEM_IMPORT_MAX_BYTES + 1)
+    result = master_service.import_items_from_excel(
+        conn,
+        file_name=file.filename,
+        file_bytes=file_bytes,
+        actor=actor,
+        ip_address=get_client_ip(request),
+    )
+    return ItemImportOut(**result)
 
 
 @router.get("/items/{item_id}", response_model=ItemOut)
