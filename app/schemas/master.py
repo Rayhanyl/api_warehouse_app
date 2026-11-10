@@ -170,3 +170,17 @@ class ItemImportOut(BaseModel):
     failed_count: int
     errors: list[ItemImportErrorOut]
 
+
+class SupplierImportErrorOut(BaseModel):
+    row: int
+    field: str
+    code: str
+    message: str
+
+
+class SupplierImportOut(BaseModel):
+    total_rows: int
+    imported_count: int
+    failed_count: int
+    errors: list[SupplierImportErrorOut]
+

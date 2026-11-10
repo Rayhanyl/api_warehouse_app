@@ -438,6 +438,81 @@ def get_supplier_by_code(
     ).fetchone()
 
 
+def list_existing_supplier_code_keys(
+    conn: Connection[dict[str, Any]], code_keys: list[str]
+) -> set[str]:
+    """Mengambil seluruh kode supplier yang sudah terdaftar dalam satu query."""
+    if not code_keys:
+        return set()
+    rows = conn.execute(
+        """
+        SELECT LOWER(code) AS code_key
+        FROM suppliers
+        WHERE LOWER(code) = ANY(%s)
+        """,
+        (code_keys,),
+    ).fetchall()
+    return {str(row["code_key"]) for row in rows}
+
+
+def insert_suppliers_batch(
+    conn: Connection[dict[str, Any]],
+    *,
+    suppliers: list[dict[str, Any]],
+    created_by: int,
+) -> list[dict[str, Any]]:
+    """Membuat supplier valid dalam satu statement; konflik kode konkuren diabaikan per baris."""
+    if not suppliers:
+        return []
+    rows = conn.execute(
+        """
+        INSERT INTO suppliers (
+            code, name, contact_person, phone, email, address, is_active, created_by
+        )
+        SELECT
+            source.code,
+            source.name,
+            source.contact_person,
+            source.phone,
+            source.email,
+            source.address,
+            source.is_active,
+            %s
+        FROM UNNEST(
+            %s::text[],
+            %s::text[],
+            %s::text[],
+            %s::text[],
+            %s::text[],
+            %s::text[],
+            %s::boolean[]
+        ) AS source(code, name, contact_person, phone, email, address, is_active)
+        ON CONFLICT DO NOTHING
+        RETURNING
+            id,
+            code,
+            LOWER(code) AS code_key,
+            name,
+            contact_person,
+            phone,
+            email,
+            address,
+            is_active
+        """,
+        (
+            created_by,
+            [supplier["code"] for supplier in suppliers],
+            [supplier["name"] for supplier in suppliers],
+            [supplier["contact_person"] for supplier in suppliers],
+            [supplier["phone"] for supplier in suppliers],
+            [supplier["email"] for supplier in suppliers],
+            [supplier["address"] for supplier in suppliers],
+            [supplier["is_active"] for supplier in suppliers],
+        ),
+    ).fetchall()
+    return list(rows)
+
+
 def insert_supplier(
     conn: Connection[dict[str, Any]],
     *,
@@ -679,21 +754,51 @@ def list_item_import_categories(
     return list(rows)
 
 
-def list_item_import_uoms(
-    conn: Connection[dict[str, Any]], codes: list[str]
+def list_active_item_import_categories(
+    conn: Connection[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Mencari UoM impor sekaligus dan mengunci status aktif sampai transaksi selesai."""
-    if not codes:
+    """Mengambil kategori aktif untuk sheet referensi template import."""
+    rows = conn.execute(
+        """
+        SELECT name
+        FROM categories
+        WHERE is_active = TRUE
+        ORDER BY LOWER(name), id
+        """
+    ).fetchall()
+    return list(rows)
+
+
+def list_active_item_import_uoms(
+    conn: Connection[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Mengambil nama dan kode UoM aktif untuk sheet referensi template import."""
+    rows = conn.execute(
+        """
+        SELECT name, code
+        FROM uoms
+        WHERE is_active = TRUE
+        ORDER BY LOWER(name), code, id
+        """
+    ).fetchall()
+    return list(rows)
+
+
+def list_item_import_uoms(
+    conn: Connection[dict[str, Any]], names: list[str]
+) -> list[dict[str, Any]]:
+    """Mencari UoM impor berdasarkan nama dan mengunci status sampai transaksi selesai."""
+    if not names:
         return []
     rows = conn.execute(
         """
-        SELECT id, code, is_active
+        SELECT id, name, code, is_active
         FROM uoms
-        WHERE LOWER(code) = ANY(%s)
+        WHERE LOWER(name) = ANY(%s)
         ORDER BY id
         FOR SHARE
         """,
-        (codes,),
+        (names,),
     ).fetchall()
     return list(rows)
 

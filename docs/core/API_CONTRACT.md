@@ -22,11 +22,14 @@ setiap endpoint. Detail operasional dan contoh request/response berada di
 
 - `GET /api/v1/items/import-template` memerlukan autentikasi dan permission
   `master:read`, lalu mengunduh workbook `.xlsx` dengan MIME type
-  `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, sheet
-  `Items`, dan header berurutan: `sku`, `name`, `description`,
-  `category_name`, `uom_code`, `is_active`.
+  `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`. Sheet
+  `Items` memiliki header `sku`, `name`, `description`, `category_name`,
+  `uom_name`, `is_active`; sheet `Referensi` memiliki header
+  `category_name`, `uom_name`, `uom_code` dan berisi pilihan master aktif.
 - `POST /api/v1/items/import` memerlukan `master:manage` dan menerima tepat satu
   workbook `.xlsx` melalui `multipart/form-data`, field `file`.
+- Dropdown kategori/UoM mengacu ke sheet `Referensi`. `is_active` menerima
+  `active`/`inactive` atau boolean Excel; kosong berarti `true`.
 - Batas yang disetujui adalah 5 MiB dan 1.000 baris data (`CONF-010`);
   baris kosong diabaikan.
 - File yang terbaca menghasilkan `200 OK` dan JSON ringkasan berisi
@@ -34,20 +37,48 @@ setiap endpoint. Detail operasional dan contoh request/response berada di
   nomor baris Excel, `field`, `code`, dan pesan aman. Respons `200` dapat
   melaporkan hasil parsial; error per baris memakai kode katalog yang sudah
   ada, seperti `DUPLICATE`, `NOT_FOUND`, `INACTIVE_REFERENCE`, dan
-  `VALIDATION_ERROR`.
+  `VALIDATION_ERROR`. Nama kategori/UoM dicocokkan case-insensitive ke
+  database; nama ambigu menghasilkan `VALIDATION_ERROR`, tanpa pemilihan
+  otomatis. Pesan nama UoM ambigu menyertakan kode kandidat.
 - `total_rows` menghitung baris data non-kosong, `imported_count` menghitung
   item yang commit, dan `failed_count` menghitung baris dengan satu atau lebih
   error. `errors[]` boleh memuat lebih dari satu kesalahan untuk satu baris.
 - File rusak, sheet/header tidak sesuai, batas ukuran/baris terlampaui, atau
   bentuk request salah menghasilkan error envelope standar dengan
   `422 VALIDATION_ERROR`; file tersebut tidak membuat item.
+- Sheet referensi hanya panduan dan bukan sumber ID; backend menyelesaikan
+  `category_id` dan `uom_id` dari data master terkini.
 - Semua baris valid yang berhasil dibuat dan audit `ITEM_CREATED` commit dalam
   satu transaksi. Kegagalan infrastruktur me-rollback seluruh insert request.
   Duplikasi SKU concurrent dilaporkan per baris dan tidak menghentikan baris
   valid lainnya.
 - Endpoint tidak menambah kode error global, tabel, atau kolom. Parser XLSX dan
-  penerimaan multipart memerlukan dependensi yang belum tercantum di proyek;
-  penambahannya memerlukan persetujuan sebelum implementasi.
+  penerimaan multipart memakai dependensi `openpyxl` dan `python-multipart` yang
+  telah disetujui.
+
+## Import massal supplier (`FR-MST-007`)
+
+- `GET /api/v1/suppliers/import-template` memerlukan `master:read` dan
+  mengunduh workbook `.xlsx` bernama `template_import_supplier.xlsx`, dengan
+  satu sheet `Suppliers` dan header `code`, `name`, `contact_person`, `phone`,
+  `email`, `address`, `is_active`.
+- `POST /api/v1/suppliers/import` memerlukan `master:manage` dan menerima satu
+  file di field `file` (`multipart/form-data`). Batasnya 5 MiB dan 1.000 baris
+  data; baris kosong dilewati.
+- Kolom mengikuti aturan `SupplierCreate`: code 1–50 karakter, name 1–150,
+  contact person 120, phone 30, email 255, address 1.000. Format code, phone,
+  dan email divalidasi; email dinormalisasi ke huruf kecil. `is_active` menerima
+  `active`/`inactive` atau boolean Excel, kosong berarti `true`.
+- File yang terbaca menghasilkan `200 OK` dan ringkasan parsial
+  `total_rows`, `imported_count`, `failed_count`, serta `errors[]` dengan nomor
+  baris Excel, `field`, `code`, dan pesan aman. Kode duplikat dalam file,
+  database, atau request konkuren dilaporkan sebagai `DUPLICATE`; seluruh baris
+  yang mengulang kode di dalam file gagal, sedangkan baris valid lain tetap
+  dapat dibuat.
+- Workbook rusak, header/sheet salah, atau batas terlampaui menghasilkan
+  `422 VALIDATION_ERROR` tanpa insert. Pembuatan supplier dan audit
+  `SUPPLIER_CREATED` commit dalam satu transaksi. Endpoint tidak menambah kode
+  error, tabel, atau kolom.
 
 ## Katalog kode error resmi
 

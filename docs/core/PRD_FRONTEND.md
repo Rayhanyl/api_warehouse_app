@@ -58,6 +58,24 @@ Baris valid tetap ditampilkan sebagai berhasil meskipun ada baris gagal.
 Workbook kosong menampilkan empty state; tipe/struktur/ukuran file yang ditolak
 dan kegagalan server menampilkan error state yang aman.
 
+Frontend menggunakan template dari endpoint backend apa adanya. Sheet `Items`
+meminta `category_name` dan `uom_name`; pilihan dropdown dan daftar aktif
+tersedia pada sheet `Referensi` (`category_name`, `uom_name`, `uom_code`).
+Frontend tidak perlu mencari atau mengirim ID kategori/UoM. Hasil error dapat
+menunjuk field `category_name` atau `uom_name`, termasuk nama yang ambigu.
+Kolom `is_active` menerima `active`/`inactive` atau boolean Excel; kosong berarti
+aktif.
+
+### 3.2 Import massal supplier (`MST-F07`)
+
+Pada halaman Master Data Supplier, pengguna dengan `master:manage` dapat
+mengunduh template dari backend dan mengunggah workbook melalui endpoint import.
+Template memiliki sheet `Suppliers`; frontend mengirim file apa adanya pada
+field `file` dalam `multipart/form-data`. Setelah respons diterima, tampilkan
+ringkasan total/sukses/gagal dan rincian error per baris. Kode duplikat dan
+validasi field ditampilkan bersama nomor baris serta nama field. Nilai status
+`active`/`inactive` dan boolean Excel didukung; field opsional kosong diterima.
+
 ## 4. Komponen dan state
 
 Komponen bersama minimum: authenticated shell, navigation/menu tree, data table,
@@ -107,6 +125,7 @@ Alur request umum:
 | `FR-AUD-002` | `AUD-F02` | Penelusuran dan filter daftar audit log (`old_values`/`new_values`) | audit log list (`GET /api/v1/audit-logs`) | `AC-16`, `AC-22` |
 | `FR-MST-001..005` | `MST-F01..F05` | Layar CRUD dan aktivasi/deaktivasi kategori, UoM, item, supplier | master data CRUD dan list | `AC-16`, `AC-19` |
 | `FR-MST-006` | `MST-F06` | Aksi unduh template, unggah workbook, ringkasan hasil dan tabel error per baris | `GET /api/v1/items/import-template`, `POST /api/v1/items/import` | `AC-30` |
+| `FR-MST-007` | `MST-F07` | Aksi unduh template supplier, unggah workbook, ringkasan hasil dan tabel error per baris | `GET /api/v1/suppliers/import-template`, `POST /api/v1/suppliers/import` | `AC-31` |
 | `FR-WHS-001..003` | `WHS-F01..F03` | Layar CRUD warehouse, pengaturan `allow_negative_stock`, lokasi penyimpanan | warehouse dan storage location CRUD/list | `AC-12`, `AC-16`, `AC-20` |
 | `FR-INV-001..003` | `INV-F01..F03` | Saldo per lokasi, per gudang, ringkasan, in-transit, dan movement ledger | stock balances, by-warehouse, summary, movements | `AC-03`, `AC-12`, `AC-16` |
 | `FR-PUR-001..003` | `PUR-F01..F03` | Daftar/detail PO, form draft, aksi issue/cancel/close, progres fulfillment | purchase order CRUD, list, dan action endpoints | `AC-01`, `AC-15`, `AC-16`, `AC-21` |

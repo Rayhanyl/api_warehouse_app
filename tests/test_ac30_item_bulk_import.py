@@ -21,9 +21,10 @@ HEADERS = [
     "name",
     "description",
     "category_name",
-    "uom_code",
+    "uom_name",
     "is_active",
 ]
+REFERENCE_HEADERS = ["category_name", "uom_name", "uom_code"]
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
@@ -40,6 +41,9 @@ def make_workbook(
     worksheet.append(headers or HEADERS)
     for row in rows:
         worksheet.append(list(row))
+    reference_sheet = workbook.create_sheet("Referensi")
+    reference_sheet.append(REFERENCE_HEADERS)
+    reference_sheet.append(["Kategori Referensi", "Unit Referensi", "REF"])
     output = BytesIO()
     workbook.save(output)
     workbook.close()
@@ -60,7 +64,17 @@ def upload(
     )
 
 
-def test_ac30_template_contract_and_permission(client, purchasing_user, staff_user):
+def test_ac30_template_contract_and_permission(
+    client, db_conn, purchasing_user, staff_user
+):
+    category = factories.create_category(db_conn, name="Kategori Template")
+    uom = factories.create_uom(db_conn, code="TMP", name="Unit Template")
+    factories.create_category(
+        db_conn, name="Kategori Nonaktif Template", is_active=False
+    )
+    factories.create_uom(
+        db_conn, code="INACTIVE-TMP", name="Unit Nonaktif Template", is_active=False
+    )
     response = client.get(
         "/api/v1/items/import-template", headers=purchasing_user["auth_headers"]
     )
@@ -68,10 +82,22 @@ def test_ac30_template_contract_and_permission(client, purchasing_user, staff_us
     assert response.headers["content-type"] == XLSX_MIME
     assert "template_import_barang.xlsx" in response.headers["content-disposition"]
 
-    workbook = load_workbook(BytesIO(response.content), read_only=True)
-    assert workbook.sheetnames == ["Items"]
+    workbook = load_workbook(BytesIO(response.content))
+    assert workbook.sheetnames == ["Items", "Referensi"]
     assert list(workbook["Items"].values)[0] == tuple(HEADERS)
     assert workbook["Items"]["A2"].number_format == "@"
+    assert workbook["Referensi"].cell(2, 1).value == category["name"]
+    assert workbook["Referensi"].cell(2, 2).value == uom["name"]
+    assert workbook["Referensi"].cell(2, 3).value == uom["code"]
+    assert "Kategori Nonaktif Template" not in [
+        row[0] for row in workbook["Referensi"].iter_rows(min_row=2, values_only=True)
+    ]
+    assert "Unit Nonaktif Template" not in [
+        row[1] for row in workbook["Referensi"].iter_rows(min_row=2, values_only=True)
+    ]
+    assert len(workbook["Items"].data_validations.dataValidation) == 3
+    assert "ActiveCategories" in workbook.defined_names
+    assert "ActiveUomNames" in workbook.defined_names
     workbook.close()
 
     no_manage = upload(client, make_workbook([]), staff_user["auth_headers"])
@@ -86,11 +112,11 @@ def test_ac30_partial_import_validation_duplicates_and_audit(
     uom = factories.create_uom(db_conn, code="IMP", name="Unit Impor")
     workbook = make_workbook(
         [
-            ("ITEM-01", "Barang pertama", None, "kategori impor", "imp", True),
-            ("item-01", "SKU duplikat", None, "Kategori Impor", "IMP", True),
+            ("ITEM-01", "Barang pertama", None, "kategori impor", "unit impor", "active"),
+            ("item-01", "SKU duplikat", None, "Kategori Impor", "Unit Impor", True),
             (None, None, None, None, None, None),
-            ("ITEM-02", "Barang kedua", "Catatan", "Kategori Impor", "IMP", False),
-            ("ITEM-03", "", None, "Tidak ada", "NONE", "yes"),
+            ("ITEM-02", "Barang kedua", "Catatan", "Kategori Impor", "Unit Impor", "inactive"),
+            ("ITEM-03", "", None, "Tidak ada", "None", "yes"),
         ]
     )
 
@@ -146,13 +172,13 @@ def test_ac30_existing_duplicate_and_inactive_references_are_row_errors(
         client,
         make_workbook(
             [
-                ("db-item-01", "SKU sudah ada", None, "Kategori Aktif", "AKT", True),
+                ("db-item-01", "SKU sudah ada", None, "Kategori Aktif", "Aktif", True),
                 (
                     "ITEM-INACTIVE",
                     "Referensi nonaktif",
                     None,
                     "Kategori Nonaktif",
-                    "NON",
+                    "Nonaktif",
                     True,
                 ),
             ]
@@ -223,13 +249,43 @@ def test_ac30_rejects_invalid_workbook_and_limits_without_writes(
     assert db_conn.execute("SELECT COUNT(*) AS total FROM items").fetchone()["total"] == 0
 
 
+def test_ac30_ambiguous_uom_name_is_reported_without_insert(
+    client, db_conn, purchasing_user
+):
+    factories.create_category(db_conn, name="Kategori Unit Ambigu")
+    factories.create_uom(db_conn, code="PCS", name="Unit Ambigu")
+    factories.create_uom(db_conn, code="PKT", name="Unit Ambigu")
+
+    response = upload(
+        client,
+        make_workbook(
+            [("AMBIGUOUS-ITEM", "Barang ambigu", None, "Kategori Unit Ambigu", "Unit Ambigu", True)]
+        ),
+        purchasing_user["auth_headers"],
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["imported_count"] == 0
+    assert result["failed_count"] == 1
+    assert result["errors"] == [
+        {
+            "row": 2,
+            "field": "uom_name",
+            "code": "VALIDATION_ERROR",
+            "message": "Nama satuan ambigu; kode yang cocok: PCS, PKT.",
+        }
+    ]
+    assert db_conn.execute("SELECT COUNT(*) AS total FROM items").fetchone()["total"] == 0
+
+
 def test_ac30_concurrent_same_sku_import_only_creates_one(
     setup_test_database, db_conn, purchasing_user, monkeypatch
 ):
     category = factories.create_category(db_conn, name="Kategori Concurrent")
     uom = factories.create_uom(db_conn, code="CON", name="Concurrent")
     content = make_workbook(
-        [("RACE-ITEM-01", "Barang Konkuren", None, "Kategori Concurrent", "CON", True)]
+        [("RACE-ITEM-01", "Barang Konkuren", None, "Kategori Concurrent", "Concurrent", True)]
     )
     original_lookup = master_repo.list_existing_item_sku_keys
     barrier = Barrier(2)
@@ -294,7 +350,7 @@ def test_ac30_infrastructure_failure_rolls_back_item_and_audit(
                             "Barang rollback",
                             None,
                             "Kategori Rollback",
-                            "ROLL",
+                            "Rollback",
                             True,
                         )
                     ]

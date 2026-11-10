@@ -19,6 +19,7 @@ from app.schemas.master import (
     ItemOut,
     ItemUpdate,
     SupplierCreate,
+    SupplierImportOut,
     SupplierOut,
     SupplierUpdate,
     UomCreate,
@@ -240,6 +241,38 @@ def create_supplier(
     return SupplierOut(**created)
 
 
+@router.get("/suppliers/import-template")
+def download_supplier_import_template(
+    _actor: dict[str, Any] = Depends(require_permission(MASTER_READ)),
+) -> StreamingResponse:
+    template = master_service.build_supplier_import_template()
+    return StreamingResponse(
+        iter([template]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": 'attachment; filename="template_import_supplier.xlsx"'
+        },
+    )
+
+
+@router.post("/suppliers/import", response_model=SupplierImportOut)
+def import_suppliers(
+    request: Request,
+    file: UploadFile = File(...),
+    actor: dict[str, Any] = Depends(require_permission(MASTER_MANAGE)),
+    conn: Connection[dict[str, Any]] = Depends(get_conn),
+) -> SupplierImportOut:
+    file_bytes = file.file.read(master_service.SUPPLIER_IMPORT_MAX_BYTES + 1)
+    result = master_service.import_suppliers_from_excel(
+        conn,
+        file_name=file.filename,
+        file_bytes=file_bytes,
+        actor=actor,
+        ip_address=get_client_ip(request),
+    )
+    return SupplierImportOut(**result)
+
+
 @router.get("/suppliers/{supplier_id}", response_model=SupplierOut)
 def get_supplier(
     supplier_id: int,
@@ -332,8 +365,9 @@ def create_item(
 @router.get("/items/import-template")
 def download_item_import_template(
     _actor: dict[str, Any] = Depends(require_permission(MASTER_READ)),
+    conn: Connection[dict[str, Any]] = Depends(get_conn),
 ) -> StreamingResponse:
-    template = master_service.build_item_import_template()
+    template = master_service.build_item_import_template(conn)
     return StreamingResponse(
         iter([template]),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

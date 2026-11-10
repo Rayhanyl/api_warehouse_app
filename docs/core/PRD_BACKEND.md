@@ -38,7 +38,8 @@ implementasi, bukan menyalin seluruh katalog endpoint.
 | `GET` | `/api/v1/items/import-template` | `master:read` | Mengunduh workbook `.xlsx` dengan MIME type Excel dan nama file stabil. |
 | `POST` | `/api/v1/items/import` | `master:manage` | Menerima satu file workbook `.xlsx` pada field `file` (`multipart/form-data`). |
 
-Template memuat sheet `Items`, header pada baris 1, dan kolom berurutan berikut.
+Template memuat sheet `Items` dan `Referensi`. Header masing-masing berada pada
+baris 1. Sheet `Items` memiliki kolom berurutan berikut.
 
 | Header | Tipe sel | Wajib | Batas/validasi |
 | --- | --- | --- | --- |
@@ -46,14 +47,22 @@ Template memuat sheet `Items`, header pada baris 1, dan kolom berurutan berikut.
 | `name` | Teks | Ya | 1–200 karakter |
 | `description` | Teks | Tidak | Kosong menjadi `null` |
 | `category_name` | Teks | Ya | Maksimal 120 karakter; kategori ditemukan dan aktif |
-| `uom_code` | Teks | Ya | Maksimal 20 karakter; UoM ditemukan dan aktif |
-| `is_active` | Boolean Excel | Tidak | Kosong berarti `true` |
+| `uom_name` | Teks | Ya | Maksimal 60 karakter; nama cocok dengan tepat satu UoM aktif |
+| `is_active` | Teks/boolean Excel | Tidak | `active`/`inactive` atau boolean; kosong berarti `true` |
 
-SKU disimpan sebagai teks. Kategori dicocokkan berdasarkan nama dan UoM
-berdasarkan kode, tanpa membedakan kapitalisasi. Header harus sama persis dan
-berurutan, tanpa kolom di luar template. Data dimulai pada baris 2; baris kosong dilewati dan nomor error
-menggunakan nomor baris workbook. Workbook tanpa sheet/header yang tepat
-ditolak sebelum validasi data.
+Sheet `Referensi` memiliki header `category_name`, `uom_name`, `uom_code`, dan
+berisi kategori serta UoM aktif saat template dibuat. Sheet ini memberi daftar
+referensi dan dropdown, tetapi backend tidak mempercayai nilainya untuk
+menentukan relasi. Backend mencocokkan nama kategori dan UoM ke database saat
+import. Pencocokan case-insensitive setelah trim; nama yang cocok ke lebih dari
+satu referensi ditolak dengan `VALIDATION_ERROR`. Untuk nama UoM ambigu, pesan
+error menyertakan kode kandidat. Kategori dan UoM yang tidak ditemukan memakai
+`NOT_FOUND`; referensi tunggal yang nonaktif memakai `INACTIVE_REFERENCE`.
+
+SKU disimpan sebagai teks. Header harus sama persis dan berurutan, tanpa kolom
+di luar template. Data item dimulai pada baris 2; baris kosong dilewati dan
+nomor error menggunakan nomor baris workbook. Workbook tanpa sheet/header yang
+tepat ditolak sebelum validasi data.
 
 Untuk workbook yang dapat dibaca, `POST` mengembalikan `200 OK` dengan
 `total_rows`, `imported_count`, `failed_count`, dan `errors[]`. Setiap error
@@ -92,9 +101,35 @@ terkait dan tidak menggagalkan insert valid lain. Item sukses dan satu event
 `ITEM_CREATED` per item berada di satu transaksi. Kegagalan infrastruktur
 membatalkan transaksi request. Tidak ada upsert atau pembuatan saldo.
 
-Implementasi membutuhkan parser/pembuat `.xlsx` dan parser
-`multipart/form-data`. Dependensi tersebut belum ada di daftar proyek dan
-memerlukan persetujuan eksplisit sebelum ditambahkan.
+Implementasi memakai `openpyxl` untuk workbook `.xlsx` dan `python-multipart`
+untuk `multipart/form-data`; kedua dependensi telah disetujui dan tercantum pada
+konfigurasi proyek.
+
+### 2.2 Import massal supplier (`FR-MST-007`)
+
+| Method | Path | Permission | Kontrak |
+| --- | --- | --- | --- |
+| `GET` | `/api/v1/suppliers/import-template` | `master:read` | Mengunduh template `.xlsx` bernama `template_import_supplier.xlsx`. |
+| `POST` | `/api/v1/suppliers/import` | `master:manage` | Menerima satu workbook `.xlsx` di field `file` (`multipart/form-data`). |
+
+Template memiliki satu sheet `Suppliers` dan header berurutan
+`code`, `name`, `contact_person`, `phone`, `email`, `address`, `is_active`.
+Batas field mengikuti `SupplierCreate`: kode 1–50, nama 1–150, contact person
+maksimal 120, telepon maksimal 30, email maksimal 255, alamat maksimal 1.000.
+Kode mengikuti format kode master. Telepon mengikuti `PHONE_REGEX` dan minimal
+memiliki enam digit. Email divalidasi dengan `EMAIL_REGEX` dan dinormalisasi ke
+huruf kecil. Field opsional kosong menjadi `null`; `is_active` menerima teks
+`active`/`inactive` atau boolean Excel dan default `true`.
+
+Kode supplier dicocokkan case-insensitive ke database. Kode berulang dalam
+workbook menandai semua baris yang memakai kode tersebut sebagai `DUPLICATE`;
+kode yang sudah ada atau konflik konkuren ditandai per baris. Baris valid lain
+tetap dibuat. Parser memvalidasi workbook sebelum membuka transaksi; insert
+batch dan event audit `SUPPLIER_CREATED` per baris berhasil berada pada satu
+transaksi. Batas file dan data adalah 5 MiB dan 1.000 baris. File rusak,
+header/sheet salah, dan batas terlampaui menghasilkan `422 VALIDATION_ERROR`
+tanpa penyimpanan. Workbook yang terbaca menghasilkan ringkasan parsial
+`total_rows`, `imported_count`, `failed_count`, dan `errors[]`.
 
 ## 3. Arsitektur service dan persistence
 

@@ -64,14 +64,16 @@ Modul Master Data menyediakan pengelolaan entitas referensi dasar yang digunakan
 | 8 | PATCH | `/api/v1/uoms/{uom_id}` | Perbarui atau nonaktifkan satuan ukur (UoM) | Bearer | `master:manage` |
 | 9 | GET | `/api/v1/suppliers` | Daftar pemasok (paginasi, filter `is_active`, pencarian, urut) | Bearer | `master:read` |
 | 10 | POST | `/api/v1/suppliers` | Buat pemasok baru | Bearer | `master:manage` |
-| 11 | GET | `/api/v1/suppliers/{supplier_id}` | Detail pemasok berdasarkan ID | Bearer | `master:read` |
-| 12 | PATCH | `/api/v1/suppliers/{supplier_id}` | Perbarui atau nonaktifkan pemasok | Bearer | `master:manage` |
-| 13 | GET | `/api/v1/items` | Daftar barang / SKU (paginasi, filter kategori/UoM/aktif, pencarian, urut) | Bearer | `master:read` |
-| 14 | POST | `/api/v1/items` | Buat barang (SKU) baru | Bearer | `master:manage` |
-| 15 | GET | `/api/v1/items/import-template` | Unduh template Excel import barang | Bearer | `master:read` |
-| 16 | POST | `/api/v1/items/import` | Import item secara massal dari workbook Excel | Bearer | `master:manage` |
-| 17 | GET | `/api/v1/items/{item_id}` | Detail barang (SKU) berdasarkan ID | Bearer | `master:read` |
-| 18 | PATCH | `/api/v1/items/{item_id}` | Perbarui atau nonaktifkan barang (SKU) | Bearer | `master:manage` |
+| 11 | GET | `/api/v1/suppliers/import-template` | Unduh template Excel import supplier | Bearer | `master:read` |
+| 12 | POST | `/api/v1/suppliers/import` | Import supplier massal dari workbook Excel | Bearer | `master:manage` |
+| 13 | GET | `/api/v1/suppliers/{supplier_id}` | Detail pemasok berdasarkan ID | Bearer | `master:read` |
+| 14 | PATCH | `/api/v1/suppliers/{supplier_id}` | Perbarui atau nonaktifkan pemasok | Bearer | `master:manage` |
+| 15 | GET | `/api/v1/items` | Daftar barang / SKU (paginasi, filter kategori/UoM/aktif, pencarian, urut) | Bearer | `master:read` |
+| 16 | POST | `/api/v1/items` | Buat barang (SKU) baru | Bearer | `master:manage` |
+| 17 | GET | `/api/v1/items/import-template` | Unduh template Excel import barang | Bearer | `master:read` |
+| 18 | POST | `/api/v1/items/import` | Import item secara massal dari workbook Excel | Bearer | `master:manage` |
+| 19 | GET | `/api/v1/items/{item_id}` | Detail barang (SKU) berdasarkan ID | Bearer | `master:read` |
+| 20 | PATCH | `/api/v1/items/{item_id}` | Perbarui atau nonaktifkan barang (SKU) | Bearer | `master:manage` |
 
 ---
 
@@ -253,6 +255,50 @@ Modul Master Data menyediakan pengelolaan entitas referensi dasar yang digunakan
 * **Response Berhasil:** `201 Created` (`SupplierOut`). Mencatat `SUPPLIER_CREATED` pada `audit_logs`.
 * **Kemungkinan Error:** `409 DUPLICATE` (kode pemasok sudah ada), `422 VALIDATION_ERROR` (termasuk format email tidak valid).
 
+#### GET `/api/v1/suppliers/import-template` — Unduh Template Import Supplier
+* **Autentikasi & Permission:** Bearer Token, `master:read`
+* **Response Berhasil:** `200 OK`, workbook `.xlsx` dengan MIME type
+  `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` dan nama
+  berkas `template_import_supplier.xlsx`.
+* Sheet `Suppliers` memiliki header baris pertama:
+  `code`, `name`, `contact_person`, `phone`, `email`, `address`, `is_active`.
+  Kolom teks disimpan sebagai teks; `is_active` memiliki dropdown `active` dan
+  `inactive`.
+
+#### POST `/api/v1/suppliers/import` — Import Supplier Massal
+* **Autentikasi & Permission:** Bearer Token, `master:manage`
+* **Request:** `multipart/form-data`, field `file`, satu berkas `.xlsx`, maksimal
+  1.000 baris data dan 5 MiB.
+* **Validasi:** Kode wajib teks 1–50 karakter dengan format kode master dan unik
+  case-insensitive; nama wajib 1–150 karakter; contact person opsional maksimal
+  120; telepon opsional maksimal 30 karakter dan minimal enam digit; email
+  opsional maksimal 255 dan harus sesuai format email; alamat opsional maksimal
+  1.000 karakter. `is_active` menerima boolean Excel atau `active`/`inactive`;
+  kosong berarti `true`. Baris kosong dilewati.
+* **Response Berhasil:** `200 OK`, termasuk hasil parsial:
+```json
+{
+  "total_rows": 3,
+  "imported_count": 2,
+  "failed_count": 1,
+  "errors": [
+    {
+      "row": 3,
+      "field": "code",
+      "code": "DUPLICATE",
+      "message": "Kode pemasok sudah terdaftar."
+    }
+  ]
+}
+```
+  `failed_count` menghitung baris dengan satu atau lebih error. Semua baris
+  dengan kode sama di dalam workbook gagal sebagai `DUPLICATE`; konflik kode
+  database atau request konkuren ditandai per baris. Supplier valid lain tetap
+  dibuat dan masing-masing dicatat sebagai `SUPPLIER_CREATED` dalam transaksi
+  yang sama.
+* **Kemungkinan Error:** `422 VALIDATION_ERROR` untuk workbook tidak valid atau
+  batas file/baris terlampaui; `403 PERMISSION_DENIED` bila permission tidak ada.
+
 #### GET `/api/v1/suppliers/{supplier_id}` — Detail Pemasok
 * **Autentikasi & Permission:** Bearer Token, `master:read`
 * **Response Berhasil:** `200 OK` (`SupplierOut`).
@@ -339,19 +385,25 @@ Modul Master Data menyediakan pengelolaan entitas referensi dasar yang digunakan
 * **Response Berhasil:** `200 OK`, workbook `.xlsx` dengan MIME type
   `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` dan
   nama berkas `template_import_barang.xlsx`.
-* Workbook memiliki sheet `Items` dan header baris pertama:
-  `sku`, `name`, `description`, `category_name`, `uom_code`, `is_active`.
+* Workbook memiliki sheet `Items` dan `Referensi`. Header `Items` pada baris
+  pertama adalah `sku`, `name`, `description`, `category_name`, `uom_name`,
+  `is_active`. Sheet `Referensi` memuat `category_name`, `uom_name`, dan
+  `uom_code` untuk kategori/UoM aktif saat template dibuat.
+* Dropdown kategori dan UoM memakai sheet `Referensi`. Sheet itu hanya snapshot
+  panduan; backend tetap mencocokkan data ke master terbaru saat import.
 
 #### POST `/api/v1/items/import` — Import Barang Massal
 * **Autentikasi & Permission:** Bearer Token, `master:manage`
 * **Request:** `multipart/form-data`, field `file`, satu berkas `.xlsx`, maksimal
   1.000 baris data dan 5 MiB.
-* **Validasi:** Header dan urutan kolom harus sesuai template. SKU dan nama wajib
+* **Validasi:** Kedua sheet dan header harus sesuai template. SKU dan nama wajib
   berupa teks dengan panjang masing-masing 1–64 dan 1–200 karakter. Deskripsi
   opsional (maksimal 1.000 karakter). Kategori dicocokkan berdasarkan nama
-  (maksimal 120 karakter), UoM berdasarkan kode (maksimal 20 karakter); keduanya
-  harus ditemukan dan aktif. SKU harus unik tanpa membedakan kapitalisasi.
-  `is_active` menerima sel boolean Excel dan default `true`.
+  (maksimal 120 karakter), UoM berdasarkan nama (maksimal 60 karakter); keduanya
+  harus ditemukan dan aktif. Nama yang cocok ke beberapa master ditolak sebagai
+  `VALIDATION_ERROR`; pesan ambiguitas UoM menampilkan kode kandidat. SKU harus
+  unik tanpa membedakan kapitalisasi. `is_active` menerima boolean Excel atau
+  teks `active`/`inactive` dan default `true`.
 * **Response Berhasil:** `200 OK`, termasuk untuk hasil parsial:
 ```json
 {
