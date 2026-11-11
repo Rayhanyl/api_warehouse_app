@@ -59,10 +59,10 @@ Workbook kosong menampilkan empty state; tipe/struktur/ukuran file yang ditolak
 dan kegagalan server menampilkan error state yang aman.
 
 Frontend menggunakan template dari endpoint backend apa adanya. Sheet `Items`
-meminta `category_name` dan `uom_name`; pilihan dropdown dan daftar aktif
+meminta `sku`, `barcode` (opsional), `name`, `description` (opsional), `category_name`, `uom_name`, dan `is_active`; pilihan dropdown dan daftar aktif
 tersedia pada sheet `Referensi` (`category_name`, `uom_name`, `uom_code`).
 Frontend tidak perlu mencari atau mengirim ID kategori/UoM. Hasil error dapat
-menunjuk field `category_name` atau `uom_name`, termasuk nama yang ambigu.
+menunjuk field `sku`, `barcode`, `category_name`, atau `uom_name`, termasuk nama yang ambigu.
 Kolom `is_active` menerima `active`/`inactive` atau boolean Excel; kosong berarti
 aktif.
 

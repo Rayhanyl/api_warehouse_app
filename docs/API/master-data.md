@@ -390,7 +390,7 @@ Modul Master Data menyediakan pengelolaan entitas referensi dasar yang digunakan
   `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` dan
   nama berkas `template_import_barang.xlsx`.
 * Workbook memiliki sheet `Items` dan `Referensi`. Header `Items` pada baris
-  pertama adalah `sku`, `name`, `description`, `category_name`, `uom_name`,
+  pertama adalah `sku`, `barcode`, `name`, `description`, `category_name`, `uom_name`,
   `is_active`. Sheet `Referensi` memuat `category_name`, `uom_name`, dan
   `uom_code` untuk kategori/UoM aktif saat template dibuat.
 * Dropdown kategori dan UoM memakai sheet `Referensi`. Sheet itu hanya snapshot
@@ -401,11 +401,12 @@ Modul Master Data menyediakan pengelolaan entitas referensi dasar yang digunakan
 * **Request:** `multipart/form-data`, field `file`, satu berkas `.xlsx`, maksimal
   1.000 baris data dan 5 MiB.
 * **Validasi:** Kedua sheet dan header harus sesuai template. SKU dan nama wajib
-  berupa teks dengan panjang masing-masing 1–64 dan 1–200 karakter. Deskripsi
+  berupa teks dengan panjang masing-masing 1–64 dan 1–200 karakter. Barcode
+  opsional (teks 1–64 karakter, unik tanpa membedakan kapitalisasi). Deskripsi
   opsional (maksimal 1.000 karakter). Kategori dicocokkan berdasarkan nama
   (maksimal 120 karakter), UoM berdasarkan nama (maksimal 60 karakter); keduanya
   harus ditemukan dan aktif. Nama yang cocok ke beberapa master ditolak sebagai
-  `VALIDATION_ERROR`; pesan ambiguitas UoM menampilkan kode kandidat. SKU harus
+  `VALIDATION_ERROR`; pesan ambiguitas UoM menampilkan kode kandidat. SKU dan barcode (jika diisi) harus
   unik tanpa membedakan kapitalisasi. `is_active` menerima boolean Excel atau
   teks `active`/`inactive` dan default `true`.
 * **Response Berhasil:** `200 OK`, termasuk untuk hasil parsial:

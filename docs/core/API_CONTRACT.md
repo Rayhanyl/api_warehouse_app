@@ -23,12 +23,12 @@ setiap endpoint. Detail operasional dan contoh request/response berada di
 - `GET /api/v1/items/import-template` memerlukan autentikasi dan permission
   `master:read`, lalu mengunduh workbook `.xlsx` dengan MIME type
   `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`. Sheet
-  `Items` memiliki header `sku`, `name`, `description`, `category_name`,
+  `Items` memiliki header `sku`, `barcode`, `name`, `description`, `category_name`,
   `uom_name`, `is_active`; sheet `Referensi` memiliki header
   `category_name`, `uom_name`, `uom_code` dan berisi pilihan master aktif.
 - `POST /api/v1/items/import` memerlukan `master:manage` dan menerima tepat satu
   workbook `.xlsx` melalui `multipart/form-data`, field `file`.
-- Dropdown kategori/UoM mengacu ke sheet `Referensi`. `is_active` menerima
+- Dropdown kategori/UoM mengacu ke sheet `Referensi`. `barcode` bersifat opsional (teks 1–64 karakter bila diisi, unik case-insensitive). `is_active` menerima
   `active`/`inactive` atau boolean Excel; kosong berarti `true`.
 - Batas yang disetujui adalah 5 MiB dan 1.000 baris data (`CONF-010`);
   baris kosong diabaikan.

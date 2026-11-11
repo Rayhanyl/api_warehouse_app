@@ -159,6 +159,7 @@ def create_item(
     conn: Connection[dict[str, Any]],
     *,
     sku: str = "SKU-001",
+    barcode: str | None = None,
     name: str = "Barang Uji 001",
     category_id: int,
     uom_id: int,
@@ -167,11 +168,11 @@ def create_item(
     """Membuat barang uji di database `wms_test`."""
     row = conn.execute(
         """
-        INSERT INTO items (sku, name, category_id, uom_id, is_active)
-        VALUES (%s, %s, %s, %s, %s)
-        RETURNING id, sku, name, category_id, uom_id, is_active, created_at, updated_at
+        INSERT INTO items (sku, barcode, name, category_id, uom_id, is_active)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        RETURNING id, sku, barcode, name, category_id, uom_id, is_active, created_at, updated_at
         """,
-        (sku, name, category_id, uom_id, is_active),
+        (sku, barcode, name, category_id, uom_id, is_active),
     ).fetchone()
     assert row is not None
     return row

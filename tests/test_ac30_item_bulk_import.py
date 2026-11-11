@@ -18,6 +18,7 @@ from tests import factories
 
 HEADERS = [
     "sku",
+    "barcode",
     "name",
     "description",
     "category_name",
@@ -86,6 +87,7 @@ def test_ac30_template_contract_and_permission(
     assert workbook.sheetnames == ["Items", "Referensi"]
     assert list(workbook["Items"].values)[0] == tuple(HEADERS)
     assert workbook["Items"]["A2"].number_format == "@"
+    assert workbook["Items"]["B2"].number_format == "@"
     assert workbook["Referensi"].cell(2, 1).value == category["name"]
     assert workbook["Referensi"].cell(2, 2).value == uom["name"]
     assert workbook["Referensi"].cell(2, 3).value == uom["code"]
@@ -112,11 +114,11 @@ def test_ac30_partial_import_validation_duplicates_and_audit(
     uom = factories.create_uom(db_conn, code="IMP", name="Unit Impor")
     workbook = make_workbook(
         [
-            ("ITEM-01", "Barang pertama", None, "kategori impor", "unit impor", "active"),
-            ("item-01", "SKU duplikat", None, "Kategori Impor", "Unit Impor", True),
-            (None, None, None, None, None, None),
-            ("ITEM-02", "Barang kedua", "Catatan", "Kategori Impor", "Unit Impor", "inactive"),
-            ("ITEM-03", "", None, "Tidak ada", "None", "yes"),
+            ("ITEM-01", "8991002101012", "Barang pertama", None, "kategori impor", "unit impor", "active"),
+            ("item-01", None, "SKU duplikat", None, "Kategori Impor", "Unit Impor", True),
+            (None, None, None, None, None, None, None),
+            ("ITEM-02", "8991002101029", "Barang kedua", "Catatan", "Kategori Impor", "Unit Impor", "inactive"),
+            ("ITEM-03", None, "", None, "Tidak ada", "None", "yes"),
         ]
     )
 
@@ -133,11 +135,12 @@ def test_ac30_partial_import_validation_duplicates_and_audit(
     assert any(error["field"] == "is_active" for error in result["errors"])
 
     created = db_conn.execute(
-        "SELECT sku, category_id, uom_id, is_active FROM items"
+        "SELECT sku, barcode, category_id, uom_id, is_active FROM items"
     ).fetchall()
     assert created == [
         {
             "sku": "ITEM-02",
+            "barcode": "8991002101029",
             "category_id": category["id"],
             "uom_id": uom["id"],
             "is_active": False,
@@ -163,6 +166,7 @@ def test_ac30_existing_duplicate_and_inactive_references_are_row_errors(
     factories.create_item(
         db_conn,
         sku="DB-ITEM-01",
+        barcode="8990001112223",
         name="Item Existing",
         category_id=active_category["id"],
         uom_id=active_uom["id"],
@@ -172,9 +176,19 @@ def test_ac30_existing_duplicate_and_inactive_references_are_row_errors(
         client,
         make_workbook(
             [
-                ("db-item-01", "SKU sudah ada", None, "Kategori Aktif", "Aktif", True),
+                ("db-item-01", None, "SKU sudah ada", None, "Kategori Aktif", "Aktif", True),
+                (
+                    "ITEM-BARCODE-DUP",
+                    "8990001112223",
+                    "Barcode sudah ada",
+                    None,
+                    "Kategori Aktif",
+                    "Aktif",
+                    True,
+                ),
                 (
                     "ITEM-INACTIVE",
+                    None,
                     "Referensi nonaktif",
                     None,
                     "Kategori Nonaktif",
@@ -188,8 +202,9 @@ def test_ac30_existing_duplicate_and_inactive_references_are_row_errors(
     assert response.status_code == 200
     result = response.json()
     assert result["imported_count"] == 0
-    assert result["failed_count"] == 2
-    assert any(error["code"] == "DUPLICATE" for error in result["errors"])
+    assert result["failed_count"] == 3
+    assert sum(error["code"] == "DUPLICATE" for error in result["errors"]) == 2
+    assert any(error["field"] == "barcode" and error["code"] == "DUPLICATE" for error in result["errors"])
     assert sum(error["code"] == "INACTIVE_REFERENCE" for error in result["errors"]) == 2
     assert db_conn.execute("SELECT COUNT(*) AS total FROM items").fetchone()["total"] == 1
 
@@ -238,7 +253,7 @@ def test_ac30_rejects_invalid_workbook_and_limits_without_writes(
         client,
         make_workbook(
             [
-                (f"ITEM-{i:04}", f"Barang {i}", None, "X", "Y", True)
+                (f"ITEM-{i:04}", None, f"Barang {i}", None, "X", "Y", True)
                 for i in range(1, 1002)
             ]
         ),
@@ -259,7 +274,7 @@ def test_ac30_ambiguous_uom_name_is_reported_without_insert(
     response = upload(
         client,
         make_workbook(
-            [("AMBIGUOUS-ITEM", "Barang ambigu", None, "Kategori Unit Ambigu", "Unit Ambigu", True)]
+            [("AMBIGUOUS-ITEM", None, "Barang ambigu", None, "Kategori Unit Ambigu", "Unit Ambigu", True)]
         ),
         purchasing_user["auth_headers"],
     )
@@ -285,7 +300,7 @@ def test_ac30_concurrent_same_sku_import_only_creates_one(
     category = factories.create_category(db_conn, name="Kategori Concurrent")
     uom = factories.create_uom(db_conn, code="CON", name="Concurrent")
     content = make_workbook(
-        [("RACE-ITEM-01", "Barang Konkuren", None, "Kategori Concurrent", "Concurrent", True)]
+        [("RACE-ITEM-01", None, "Barang Konkuren", None, "Kategori Concurrent", "Concurrent", True)]
     )
     original_lookup = master_repo.list_existing_item_sku_keys
     barrier = Barrier(2)
@@ -347,6 +362,7 @@ def test_ac30_infrastructure_failure_rolls_back_item_and_audit(
                     [
                         (
                             "ROLLBACK-01",
+                            None,
                             "Barang rollback",
                             None,
                             "Kategori Rollback",

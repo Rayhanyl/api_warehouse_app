@@ -44,6 +44,7 @@ baris 1. Sheet `Items` memiliki kolom berurutan berikut.
 | Header | Tipe sel | Wajib | Batas/validasi |
 | --- | --- | --- | --- |
 | `sku` | Teks | Ya | 1–64 karakter; unik tanpa membedakan kapitalisasi |
+| `barcode` | Teks | Tidak | Kosong menjadi `null`; bila diisi, 1–64 karakter dan unik tanpa membedakan kapitalisasi |
 | `name` | Teks | Ya | 1–200 karakter |
 | `description` | Teks | Tidak | Kosong menjadi `null` |
 | `category_name` | Teks | Ya | Maksimal 120 karakter; kategori ditemukan dan aktif |

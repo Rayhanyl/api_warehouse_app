@@ -57,6 +57,7 @@ CODE_REGEX = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
 PHONE_REGEX = re.compile(r"^[0-9+() -]{6,30}$")
 ITEM_IMPORT_HEADERS = (
     "sku",
+    "barcode",
     "name",
     "description",
     "category_name",
@@ -102,15 +103,16 @@ def build_item_import_template(conn: Connection[dict[str, Any]]) -> bytes:
     worksheet.append(ITEM_IMPORT_HEADERS)
     for column, width in {
         "A": 18,
-        "B": 30,
-        "C": 40,
-        "D": 24,
+        "B": 22,
+        "C": 30,
+        "D": 40,
         "E": 24,
-        "F": 14,
+        "F": 24,
+        "G": 14,
     }.items():
         worksheet.column_dimensions[column].width = width
     worksheet.freeze_panes = "A2"
-    worksheet.auto_filter.ref = f"A1:F{ITEM_IMPORT_MAX_ROWS + 1}"
+    worksheet.auto_filter.ref = f"A1:G{ITEM_IMPORT_MAX_ROWS + 1}"
     for row_number in range(2, ITEM_IMPORT_MAX_ROWS + 2):
         for column_number in range(1, len(ITEM_IMPORT_HEADERS)):
             worksheet.cell(row=row_number, column=column_number).number_format = "@"
@@ -154,7 +156,7 @@ def build_item_import_template(conn: Connection[dict[str, Any]]) -> bytes:
     category_validation.errorTitle = "Kategori tidak tersedia"
     category_validation.showErrorMessage = True
     worksheet.add_data_validation(category_validation)
-    category_validation.add(f"D2:D{ITEM_IMPORT_MAX_ROWS + 1}")
+    category_validation.add(f"E2:E{ITEM_IMPORT_MAX_ROWS + 1}")
 
     uom_validation = DataValidation(
         type="list", formula1="=ActiveUomNames", allow_blank=False
@@ -163,14 +165,14 @@ def build_item_import_template(conn: Connection[dict[str, Any]]) -> bytes:
     uom_validation.errorTitle = "Satuan tidak tersedia"
     uom_validation.showErrorMessage = True
     worksheet.add_data_validation(uom_validation)
-    uom_validation.add(f"E2:E{ITEM_IMPORT_MAX_ROWS + 1}")
+    uom_validation.add(f"F2:F{ITEM_IMPORT_MAX_ROWS + 1}")
 
     active_validation = DataValidation(
         type="list", formula1='"active,inactive"', allow_blank=True
     )
     active_validation.showErrorMessage = True
     worksheet.add_data_validation(active_validation)
-    active_validation.add(f"F2:F{ITEM_IMPORT_MAX_ROWS + 1}")
+    active_validation.add(f"G2:G{ITEM_IMPORT_MAX_ROWS + 1}")
     buffer = BytesIO()
     workbook.save(buffer)
     workbook.close()
@@ -384,12 +386,25 @@ def _parse_item_import_workbook(file_bytes: bytes) -> list[dict[str, Any]]:
                         )
                     )
                     sku = None
-            name = read_text(1, required=True, max_length=200)
-            description = read_text(2, required=False, max_length=1000)
-            category_name = read_text(3, required=True, max_length=120)
-            uom_name = read_text(4, required=True, max_length=60)
+            barcode = read_text(1, required=False, max_length=64)
+            if barcode is not None:
+                try:
+                    barcode = _validate_code_format(
+                        barcode, field_name="barcode", label="Barcode barang"
+                    )
+                except ValidationDomainError as exc:
+                    errors.append(
+                        _item_import_error(
+                            row_number, "barcode", exc.code, exc.message
+                        )
+                    )
+                    barcode = None
+            name = read_text(2, required=True, max_length=200)
+            description = read_text(3, required=False, max_length=1000)
+            category_name = read_text(4, required=True, max_length=120)
+            uom_name = read_text(5, required=True, max_length=60)
 
-            active_cell = row_cells[5]
+            active_cell = row_cells[6]
             if active_cell.data_type == "f":
                 is_active = True
             elif _item_import_cell_is_blank(active_cell.value):
@@ -417,6 +432,8 @@ def _parse_item_import_workbook(file_bytes: bytes) -> list[dict[str, Any]]:
                     "row": row_number,
                     "sku": sku,
                     "sku_key": sku.lower() if sku is not None else None,
+                    "barcode": barcode,
+                    "barcode_key": barcode.lower() if barcode is not None else None,
                     "name": name,
                     "description": description,
                     "category_name": category_name,
@@ -1608,6 +1625,9 @@ def import_items_from_excel(
     sku_counts = Counter(
         record["sku_key"] for record in records if record["sku_key"] is not None
     )
+    barcode_counts = Counter(
+        record["barcode_key"] for record in records if record["barcode_key"] is not None
+    )
     for record in records:
         sku_key = record["sku_key"]
         if sku_key is not None and sku_counts[sku_key] > 1:
@@ -1617,6 +1637,16 @@ def import_items_from_excel(
                     "sku",
                     DuplicateError.code,
                     "SKU muncul lebih dari satu kali di dalam file.",
+                )
+            )
+        barcode_key = record["barcode_key"]
+        if barcode_key is not None and barcode_counts[barcode_key] > 1:
+            record["errors"].append(
+                _item_import_error(
+                    record["row"],
+                    "barcode",
+                    DuplicateError.code,
+                    "Barcode muncul lebih dari satu kali di dalam file.",
                 )
             )
 
@@ -1641,11 +1671,19 @@ def import_items_from_excel(
             if record["sku_key"] is not None
         }
     )
+    barcode_keys = sorted(
+        {
+            record["barcode_key"]
+            for record in records
+            if record["barcode_key"] is not None
+        }
+    )
 
     with conn.transaction():
         categories = master_repo.list_item_import_categories(conn, category_names)
         uoms = master_repo.list_item_import_uoms(conn, uom_names)
         existing_sku_keys = master_repo.list_existing_item_sku_keys(conn, sku_keys)
+        existing_barcode_keys = master_repo.list_existing_item_barcode_keys(conn, barcode_keys)
         category_by_name: dict[str, list[dict[str, Any]]] = {}
         for row in categories:
             category_by_name.setdefault(str(row["name"]).lower(), []).append(row)
@@ -1734,6 +1772,17 @@ def import_items_from_excel(
                     )
                 )
 
+            barcode_key = record["barcode_key"]
+            if barcode_key is not None and barcode_key in existing_barcode_keys:
+                record["errors"].append(
+                    _item_import_error(
+                        record["row"],
+                        "barcode",
+                        DuplicateError.code,
+                        "Barcode sudah terdaftar.",
+                    )
+                )
+
         valid_records = [record for record in records if not record["errors"]]
         inserted_items = master_repo.insert_items_batch(
             conn,
@@ -1764,6 +1813,7 @@ def import_items_from_excel(
                     "new_values": {
                         "id": item["id"],
                         "sku": item["sku"],
+                        "barcode": item["barcode"],
                         "name": item["name"],
                         "description": item["description"],
                         "category_id": item["category_id"],

@@ -843,22 +843,40 @@ def list_existing_item_sku_keys(
     return {str(row["sku_key"]) for row in rows}
 
 
+def list_existing_item_barcode_keys(
+    conn: Connection[dict[str, Any]], barcode_keys: list[str]
+) -> set[str]:
+    """Mengambil seluruh barcode yang sudah terdaftar dengan satu query."""
+    if not barcode_keys:
+        return set()
+    rows = conn.execute(
+        """
+        SELECT LOWER(barcode) AS barcode_key
+        FROM items
+        WHERE barcode IS NOT NULL AND LOWER(barcode) = ANY(%s)
+        """,
+        (barcode_keys,),
+    ).fetchall()
+    return {str(row["barcode_key"]) for row in rows}
+
+
 def insert_items_batch(
     conn: Connection[dict[str, Any]],
     *,
     items: list[dict[str, Any]],
     created_by: int,
 ) -> list[dict[str, Any]]:
-    """Membuat item valid dalam satu statement; konflik SKU konkuren diabaikan per item."""
+    """Membuat item valid dalam satu statement; konflik SKU/barcode konkuren diabaikan per item."""
     if not items:
         return []
     rows = conn.execute(
         """
         INSERT INTO items (
-            sku, name, description, category_id, uom_id, is_active, created_by
+            sku, barcode, name, description, category_id, uom_id, is_active, created_by
         )
         SELECT
             source.sku,
+            source.barcode,
             source.name,
             source.description,
             source.category_id,
@@ -869,15 +887,18 @@ def insert_items_batch(
             %s::text[],
             %s::text[],
             %s::text[],
+            %s::text[],
             %s::bigint[],
             %s::bigint[],
             %s::boolean[]
-        ) AS source(sku, name, description, category_id, uom_id, is_active)
+        ) AS source(sku, barcode, name, description, category_id, uom_id, is_active)
         ON CONFLICT DO NOTHING
         RETURNING
             id,
             sku,
             LOWER(sku) AS sku_key,
+            barcode,
+            LOWER(barcode) AS barcode_key,
             name,
             description,
             category_id,
@@ -887,6 +908,7 @@ def insert_items_batch(
         (
             created_by,
             [item["sku"] for item in items],
+            [item["barcode"] for item in items],
             [item["name"] for item in items],
             [item["description"] for item in items],
             [item["category_id"] for item in items],
