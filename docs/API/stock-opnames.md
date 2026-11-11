@@ -55,6 +55,15 @@ stateDiagram-v2
   2. Operasi mutasi stok normal — yaitu posting GR ke lokasi tersebut, pengiriman Transfer dari lokasi tersebut, dan penerimaan Transfer ke lokasi tersebut — ditolak oleh `inventory_service.apply_movement()` dengan `409 LOCATION_FROZEN`.
   3. Saat persetujuan Opname (`approve`), `apply_movement()` dipanggil dengan tipe `ADJUSTMENT_PLUS` / `ADJUSTMENT_MINUS` yang secara desain melewati pemeriksaan pembekuan karena penyesuaian justru dieksekusi sebelum sesi ditandai `COMPLETED`.
 
+### 2.4 Integrasi Pemindai Barcode / QR Scanner pada Hitung Fisik (AC-33)
+
+* **Pemindai Barcode / QR Scanner (AC-33):**
+  * Pada layar detail opname saat status **`IN_PROGRESS`**, tersedia bilah pemindai barcode (`BarcodeScanBar`) yang dapat dioperasikan menggunakan kamera bawaan (`BarcodeDetector`) maupun perangkat *USB/Bluetooth HID barcode scanner gun*.
+  * Ketika operator memindai barcode produk atau kode SKU:
+    1. Sistem mencocokkan kode terhadap baris *snapshot* opname (`item_barcode` atau `item_sku`). Jika cocok, hasil fisik (`qty_physical`) baris tersebut otomatis ditambah `+1`.
+    2. Jika barang belum ada di daftar snapshot (misalnya barang temuan di gudang atau penginputan saldo awal), sistem mencocokkannya ke master data barang dan menambahkannya ke daftar temuan (*found items*) dengan kuantitas `1`.
+  * Operator dapat menyimpan draft penghitungan bertahap (`saveCounts`) sebelum mengajukan laporan hasil hitung fisik ke peninjauan manajer (`submit`).
+
 ---
 
 ## 3. Autentikasi dan Otorisasi

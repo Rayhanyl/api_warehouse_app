@@ -323,8 +323,9 @@ Modul Master Data menyediakan pengelolaan entitas referensi dasar yang digunakan
   * `category_id` (integer, opsional) — Filter berdasarkan ID kategori.
   * `uom_id` (integer, opsional) — Filter berdasarkan ID satuan ukur.
   * `is_active` (boolean, opsional) — Filter status aktif.
-  * `search` (string, opsional) — Pencarian `ILIKE` pada `sku`, `name`, atau `description`.
-  * `sort_by` (string, default `"id"`) — Whitelist: `"id"`, `"sku"`, `"name"`, `"created_at"`.
+  * `search` (string, opsional) — Pencarian `ILIKE` pada `sku`, `barcode`, `name`, atau `description`.
+  * `barcode` (string, opsional) — Pencarian eksak kode barcode/EAN/UPC/QR barang.
+  * `sort_by` (string, default `"id"`) — Whitelist: `"id"`, `"sku"`, `"barcode"`, `"name"`, `"created_at"`.
   * `sort_dir` (`"asc"` | `"desc"`, default `"asc"`).
 * **Response Berhasil (`200 OK` — `Page[ItemOut]`):** Mengembalikan data barang beserta hasil `JOIN` kategori (`category_name`) dan UoM (`uom_code`, `uom_name`, `allow_decimal`).
 ```json
@@ -333,6 +334,7 @@ Modul Master Data menyediakan pengelolaan entitas referensi dasar yang digunakan
     {
       "id": 1,
       "sku": "ELK-MCU-001",
+      "barcode": "8991002101012",
       "name": "Microcontroller ESP32",
       "description": "Dual-core Wi-Fi & BLE MCU",
       "category_id": 1,
@@ -357,6 +359,7 @@ Modul Master Data menyediakan pengelolaan entitas referensi dasar yang digunakan
 * **Autentikasi & Permission:** Bearer Token, `master:manage`
 * **Request Body (`ItemCreate`):**
   * `sku` (string, wajib, `1..64` karakter, unik *case-insensitive*).
+  * `barcode` (string | null, opsional, `1..64` karakter, unik *case-insensitive* bila diisi, regex `^[A-Za-z0-9._-]+$`).
   * `name` (string, wajib, `1..200` karakter).
   * `description` (string | null, opsional).
   * `category_id` (integer, wajib — harus merujuk ke kategori yang ada dan `is_active = true`).
@@ -366,6 +369,7 @@ Modul Master Data menyediakan pengelolaan entitas referensi dasar yang digunakan
 ```json
 {
   "sku": "ELK-MCU-001",
+  "barcode": "8991002101012",
   "name": "Microcontroller ESP32",
   "description": "Dual-core Wi-Fi & BLE MCU",
   "category_id": 1,
@@ -376,7 +380,7 @@ Modul Master Data menyediakan pengelolaan entitas referensi dasar yang digunakan
 * **Response Berhasil:** `201 Created` (`ItemOut`). Mencatat `ITEM_CREATED` pada `audit_logs`.
 * **Kemungkinan Error:**
   * `404 NOT_FOUND` — `category_id` atau `uom_id` tidak ditemukan.
-  * `409 DUPLICATE` — `sku` sudah terdaftar.
+  * `409 DUPLICATE` — `sku` atau `barcode` sudah terdaftar.
   * `422 INACTIVE_REFERENCE` — Kategori atau UoM yang dipilih berstatus tidak aktif (`is_active = false`).
   * `422 VALIDATION_ERROR` — Payload tidak valid.
 
@@ -435,9 +439,10 @@ Modul Master Data menyediakan pengelolaan entitas referensi dasar yang digunakan
 
 #### PATCH `/api/v1/items/{item_id}` — Perbarui / Nonaktifkan Barang
 * **Autentikasi & Permission:** Bearer Token, `master:manage`
-* **Request Body (`ItemUpdate`):** Seluruh field opsional (`sku`, `name`, `description`, `category_id`, `uom_id`, `is_active`).
+* **Request Body (`ItemUpdate`):** Seluruh field opsional (`sku`, `barcode`, `name`, `description`, `category_id`, `uom_id`, `is_active`).
 * **Aturan Bisnis:**
   * **Imutabilitas SKU & UoM Dasar:** Apabila `sku` atau `uom_id` diubah ke nilai baru, sistem memeriksa `master_repo.is_item_used_in_transactions()`. Jika barang sudah pernah tercatat di `po_lines`, `stock_transfer_lines`, `stock_opname_lines`, `stock_movements`, atau memiliki `inventory_balances.qty_on_hand <> 0`, perubahan ditolak dengan `409 ENTITY_IN_USE`.
+  * **Pembaruan Barcode:** `barcode` dapat diubah atau dikosongkan (`null`). Jika diisi nilai non-null, wajib unik *case-insensitive* (`409 DUPLICATE` bila sudah dipakai barang lain).
   * **Validasi Referensi:** Perubahan `category_id` atau `uom_id` wajib menunjuk entitas yang ada (`404 NOT_FOUND`) dan aktif (`422 INACTIVE_REFERENCE`).
   * **Penonaktifan (`is_active: true -> false`):** Ditolak dengan `409 ENTITY_IN_USE` apabila barang masih memiliki `qty_on_hand <> 0` di `inventory_balances` atau tercantum pada dokumen PO/GR/Transfer/Opname yang belum berstatus final (`master_repo.is_item_in_use()`).
   * Mencatat `ITEM_DEACTIVATED` atau `ITEM_UPDATED` pada `audit_logs`.
@@ -447,12 +452,12 @@ Modul Master Data menyediakan pengelolaan entitas referensi dasar yang digunakan
 
 ## 6. Relasi dan Ketergantungan
 
-| Tabel | Kunci & Constraint Utama (`002_create_master_tables.sql`) | Relasi & Dampak |
+| Tabel | Kunci & Constraint Utama (`002_create_master_tables.sql`, `012_add_barcode_to_items.sql`) | Relasi & Dampak |
 | --- | --- | --- |
 | `categories` | `pk_categories (id)`, `uq_categories_name (name)` | Dirujuk oleh `items.category_id` (`ON DELETE RESTRICT`). |
 | `uoms` | `pk_uoms (id)`, `uq_uoms_code (code)` | Dirujuk oleh `items.uom_id` (`ON DELETE RESTRICT`). Menyimpan atribut `allow_decimal`. |
 | `suppliers` | `pk_suppliers (id)`, `uq_suppliers_code (code)` | Dirujuk oleh `purchase_orders.supplier_id` (`ON DELETE RESTRICT`). |
-| `items` | `pk_items (id)`, `uq_items_sku (sku)` | Dirujuk oleh `inventory_balances`, `stock_movements`, `po_lines`, `stock_transfer_lines`, `stock_opname_lines` (`ON DELETE RESTRICT`). |
+| `items` | `pk_items (id)`, `uq_items_sku (sku)`, `uq_items_barcode (LOWER(barcode))` | Dirujuk oleh `inventory_balances`, `stock_movements`, `po_lines`, `stock_transfer_lines`, `stock_opname_lines` (`ON DELETE RESTRICT`). Kolom `barcode` opsional, unik parsial, dan dapat dipindai via Barcode Gun/Kamera (AC-33). |
 
 Alur lapisan: `routes/master.py` → `master_service.py` (`with conn.transaction():` + `audit_service.record()`) → `master_repo.py` → PostgreSQL.
 

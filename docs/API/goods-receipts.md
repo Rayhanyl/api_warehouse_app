@@ -51,6 +51,15 @@ Saat `POST /api/v1/goods-receipts/{gr_id}/post` dipanggil, seluruh langkah dijal
 > [!IMPORTANT]
 > Sesuai PRD 2.2 dan 5.1, tidak ada fitur pembalikan (*reversal*) untuk GR yang sudah `POSTED`. Koreksi atas kesalahan fisik pasca-posting dilakukan melalui mekanisme [Stock Opname](stock-opnames.md).
 
+### 2.4 Dokumen Fisik Cetak & Integrasi Barcode Scanner (AC-32 & AC-33)
+
+* **Bukti Penerimaan Barang / Goods Receipt Note (GRN — AC-32):**
+  * Dokumen fisik resmi GRN tersedia untuk dicetak (`window.print()` / styling cetak kertas `@media print` A4) pada dokumen GR yang telah berstatus **`POSTED`**.
+  * Lembar cetak memuat identitas perusahaan, nomor GR, nomor PO acuan, tanggal terima, pemasok, gudang tujuan, tabel rincian barang (SKU, barcode produk, nama barang, kuantitas terima, lokasi penyimpanan, dan catatan), serta 3 blok tanda tangan: *"Diserahkan Oleh (Kurir/Pemasok)"*, *"Diterima & Diperiksa Oleh (Petugas Gudang)"*, dan *"Diketahui Oleh (Kepala Gudang)"*.
+* **Pemindai Barcode / QR Scanner (AC-33):**
+  * Antarmuka input GR (`GoodsReceiptForm`) menyediakan bilah pemindaian barcode (`BarcodeScanBar`) yang kompatibel dengan kamera perangkat (`BarcodeDetector`) dan pemindai fisik *USB/Bluetooth HID barcode gun*.
+  * Memindai barcode atau SKU barang yang tercantum pada PO secara instan mencocokkan baris PO, menambahkan kuantitas terima (`+1` hingga batas sisa pesanan PO), dan otomatis mengalokasikan lokasi penyimpanan aktif default jika belum dipilih.
+
 ---
 
 ## 3. Autentikasi dan Otorisasi
@@ -205,6 +214,7 @@ Membuat dokumen Goods Receipt baru berstatus `DRAFT` untuk suatu PO. Gudang tuju
       "po_line_id": 31,
       "item_id": 17,
       "item_sku": "BRG-017",
+      "item_barcode": "8991234567890",
       "item_name": "Kabel NYM",
       "uom_id": 1,
       "uom_code": "ROLL",

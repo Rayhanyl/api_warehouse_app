@@ -220,6 +220,7 @@ Membuat dokumen Purchase Order baru dengan status awal `DRAFT`.
       "po_id": 14,
       "item_id": 17,
       "item_sku": "BRG-017",
+      "item_barcode": "8991234567890",
       "item_name": "Kabel NYM",
       "uom_id": 1,
       "uom_code": "ROLL",

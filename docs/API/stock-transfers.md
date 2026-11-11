@@ -52,6 +52,15 @@ stateDiagram-v2
   * Jika `qty_received < qty` (termasuk `0`) → `variance_reason` wajib diisi (tidak boleh kosong/`null`, `422 VALIDATION_ERROR`).
   * Selisih (`qty - qty_received`) **tidak dikembalikan ke gudang asal** dan **tidak menghasilkan baris ledger tambahan**; jejak selisih tersimpan pada kolom `qty_received` dan `variance_reason` di `stock_transfer_lines` serta terbaca dari pasangan ledger `OUT_TRANSFER` dan `IN_TRANSFER`.
 
+### 2.4 Dokumen Fisik Cetak & Integrasi Barcode Scanner (AC-32 & AC-33)
+
+* **Surat Jalan Transfer Stok Fisik (AC-32):**
+  * Surat Jalan resmi tersedia untuk dicetak (`window.print()` / styling cetak `@media print` A4) pada dokumen Transfer berstatus **`APPROVED`**, **`SHIPPED`**, maupun **`RECEIVED`**.
+  * Lembar cetak memuat identitas perusahaan, nomor transfer, tanggal dokumen, gudang & lokasi asal, gudang & lokasi tujuan, tabel rincian barang (SKU, barcode produk, nama barang, kuantitas dikirim, kuantitas diterima, catatan), serta 3 blok tanda tangan resmi: *"Diserahkan Oleh (Gudang Asal)"*, *"Dibawa Oleh (Ekspedisi/Driver)"*, dan *"Diterima Oleh (Gudang/Toko Cabang Tujuan)"*.
+* **Pemindai Barcode / QR Scanner (AC-33):**
+  * Antarmuka penyusunan transfer (`TransferForm`) menyediakan bilah pemindaian barcode (`BarcodeScanBar`) yang mendukung kamera perangkat (`BarcodeDetector`) dan pemindai fisik *USB/Bluetooth HID barcode gun*.
+  * Memindai barcode atau SKU barang secara otomatis menambahkan baris transfer baru dengan kuantitas `1` atau menambah kuantitas (`+1`) apabila barang tersebut sudah ada di dalam daftar transfer.
+
 ---
 
 ## 3. Autentikasi dan Otorisasi
@@ -201,7 +210,7 @@ Mengambil detail lengkap satu Transfer Stok beserta daftar baris (`lines`).
 * **HTTP Method & URL:** `GET /api/v1/stock-transfers/{transfer_id}`
 * **Autentikasi & Permission:** Bearer Token, `transfer:read`
 * **Path Parameter:** `transfer_id` (integer, wajib).
-* **Response Berhasil (`200 OK` — `StockTransferOut`):** Memuat seluruh field ringkasan ditambah `lines` (`id`, `transfer_id`, `item_id`, `item_sku`, `item_name`, `uom_id`, `uom_code`, `allow_decimal`, `qty`, `qty_received`, `qty_variance`, `variance_reason`, `notes`, `created_by`, `created_at`, `updated_at`).
+* **Response Berhasil (`200 OK` — `StockTransferOut`):** Memuat seluruh field ringkasan ditambah `lines` (`id`, `transfer_id`, `item_id`, `item_sku`, `item_barcode`, `item_name`, `uom_id`, `uom_code`, `allow_decimal`, `qty`, `qty_received`, `qty_variance`, `variance_reason`, `notes`, `created_by`, `created_at`, `updated_at`).
 * **Kemungkinan Error:** `401 AUTH_TOKEN_INVALID`, `403 PERMISSION_DENIED`, `403 WAREHOUSE_NOT_ASSIGNED` (jika *Warehouse Staff* tidak ditugaskan ke gudang asal maupun gudang tujuan), `404 NOT_FOUND`.
 
 ---

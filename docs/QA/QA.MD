@@ -71,6 +71,10 @@ Gunakan matriks ini sebagai daftar regresi wajib. Nama test ditulis sesuai imple
 | AC-20 | Validasi keunikan gudang/lokasi, validasi kepemilikan lokasi (`INVALID_LOCATION`), audit `allow_negative_stock`, dan proteksi deaktivasi | `tests/test_rbac_scoping.py`, `tests/test_goods_receipt.py`, `tests/test_stock_transfer.py` |
 | AC-21 | Penolakan transisi status dokumen di luar matriks bagian 7.5 (`INVALID_STATE_TRANSITION`) tanpa efek samping parsial | `tests/test_goods_receipt.py`, `tests/test_stock_transfer.py`, `tests/test_stock_opname.py` |
 | AC-22 | Kelengkapan atribut audit log, sanitasi field sensitif, dan pembatasan akses `audit:read` | `tests/test_rbac_scoping.py`, `tests/test_auth.py`, `tests/test_immutability.py` |
+| AC-30 | Import massal barang melalui berkas Excel dengan validasi per baris dan proteksi duplikasi SKU | `tests/test_ac30_item_import.py` |
+| AC-31 | Import massal pemasok melalui berkas Excel dengan validasi per baris dan proteksi duplikasi kode pemasok | `tests/test_ac31_supplier_import.py` |
+| AC-32 | Cetak dokumen fisik Bukti Penerimaan Barang (GRN) pada GR `POSTED` dan Surat Jalan Transfer Stok pada Transfer `APPROVED`/`SHIPPED`/`RECEIVED` dengan layout A4 dan 3 kolom tanda tangan | `warehouse_app/src/features/goods-receipts/print-documents.test.tsx` |
+| AC-33 | Pemindai Barcode / QR Scanner (kamera `BarcodeDetector` dan hardware barcode gun USB/Bluetooth HID) serta penyimpanan barcode unik barang pada seluruh transaksi operasional | `tests/test_ac33_item_barcode.py` (backend), `warehouse_app/src/features/goods-receipts/barcode-scanner.test.tsx` (frontend) |
 
 Test AC-06 dan AC-13 harus tetap diuji dengan konkurensi nyata: koneksi database terpisah dan sinkronisasi dua request. Jangan menggantinya dengan test berurutan atau mock, karena itu tidak menguji perlombaan transaksi.
 
@@ -106,9 +110,9 @@ Catatan M8 di `docs/API/README.md` memuat benchmark lokal yang pernah dilakukan.
 
 ### 2.5. Kriteria selesai QA backend
 
-- Seluruh AC yang terdampak perubahan lulus; sebelum rilis, suite `AC-01` s.d. `AC-22`, `AC-30`, dan `AC-31` lulus.
+- Seluruh AC yang terdampak perubahan lulus; sebelum rilis, suite `AC-01` s.d. `AC-22`, `AC-30`, `AC-31`, dan `AC-33` lulus.
 - AC-14 menguji menu pada PostgreSQL nyata; permission menu hanya menyaring navigasi dan tidak menggantikan otorisasi endpoint backend.
-- Status run backend: 47 tes lulus di `wms_test`, mencakup seluruh skenario `AC-01` s.d. `AC-22`, `AC-30` (import massal item), dan `AC-31` (import massal supplier).
+- Status run backend: 49 tes lulus di `wms_test`, mencakup seluruh skenario `AC-01` s.d. `AC-22`, `AC-30` (import massal item), `AC-31` (import massal supplier), dan `AC-33` (master data barcode unik & serialisasi transaksi).
 - Tidak ada temuan terbuka yang mengancam integritas saldo/ledger, autentikasi, atau pembatasan akses.
 - Pemeriksaan saldo, ledger, audit, dan rollback konsisten dengan PRD.
 - Kinerja dilaporkan dengan lingkungan, ukuran data, metode, dan hasil p95; klaim target hanya dibuat bila hasilnya memang terukur.
@@ -120,15 +124,17 @@ Catatan M8 di `docs/API/README.md` memuat benchmark lokal yang pernah dilakukan.
 
 Aplikasi frontend dikembangkan pada folder `warehouse_app/` berbasis React 19, TypeScript, Vite, dan pengujian unit/integrasi menggunakan **Vitest + React Testing Library + MSW**.
 
-Rangkaian pengujian frontend yang aktif mencakup:
+Rangkaian pengujian frontend yang aktif mencakup 10 test suite (36 tes lulus):
 - `App.test.tsx` (routing & inisialisasi aplikasi shell).
 - `features/auth/auth.test.tsx` (login form, validasi kredensial, state sesi, dan penanganan error autentikasi).
 - `features/master-data/categories/categories.test.tsx` (CRUD kategori, validasi, dan penonaktifan).
-- `features/master-data/stocks/stocks.test.tsx` (katalog barang, pencarian/filter, dan dialog import barang).
+- `features/master-data/stocks/stocks.test.tsx` (katalog barang, pencarian/filter barcode/SKU, dan dialog form).
 - `features/master-data/storage-locations/storageLocations.test.tsx` (lokasi per gudang, filter, dan dialog).
 - `features/master-data/suplliers/suppliers.test.tsx` (daftar pemasok, dialog form, dan pencarian).
 - `features/master-data/uoms/uoms.test.tsx` (satuan ukur, flag allow_decimal, dan dialog).
 - `features/master-data/warehouses/Warehouses.test.tsx` (manajemen gudang dan toggle stok negatif).
+- `features/goods-receipts/print-documents.test.tsx` (AC-32: verifikasi cetak Bukti Penerimaan Barang / GRN dan Surat Jalan Transfer Stok).
+- `features/goods-receipts/barcode-scanner.test.tsx` (AC-33: verifikasi pemindai barcode kamera, input HID gun, form GR, form Transfer, dan Stock Opname).
 
 ### 3.2. Skenario alur pengguna yang diverifikasi
 

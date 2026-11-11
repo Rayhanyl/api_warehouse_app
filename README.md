@@ -11,17 +11,19 @@ Layanan REST API manajemen gudang multi-lokasi (*multi-warehouse & bin location*
    * Penguncian akun sementara setelah 5 kali gagal login berturut-turut.
    * 5 Peran (*Super Admin*, *Warehouse Manager*, *Purchasing Staff*, *Warehouse Staff*, *Auditor*) dengan 24 kode *permission* granular dan pembatasan penugasan gudang (*warehouse scoping*).
 2. **Master Data:**
-   * Kategori, Satuan Ukur (*UoM* dengan pengaturan `allow_decimal`), Barang (*Item* dengan SKU unik), Pemasok (*Supplier*), Gudang (*Warehouse* dengan pengaturan `allow_negative_stock`), dan Lokasi Penyimpanan (*Storage Location / Bin*).
+   * Kategori, Satuan Ukur (*UoM* dengan pengaturan `allow_decimal`), Barang (*Item* dengan SKU unik dan Barcode EAN/UPC opsional unik via `012_add_barcode_to_items.sql`), Pemasok (*Supplier*), Gudang (*Warehouse* dengan pengaturan `allow_negative_stock`), dan Lokasi Penyimpanan (*Storage Location / Bin*).
    * Tanpa penghapusan permanen (*soft deactivate* via `is_active` dengan validasi saldo & dokumen aktif).
 3. **Purchase Order (PO) & Goods Receipt (GR):**
    * Siklus PO (`DRAFT` → `ISSUED` → `PARTIALLY_RECEIVED` / `RECEIVED` / `CLOSED` / `CANCELLED`).
    * Penerimaan barang bertahap (parsial) maupun penuh terhadap PO dengan pencegahan *over-receipt* di bawah penguncian baris (`SELECT ... FOR UPDATE`).
+   * **Cetak Bukti Penerimaan Barang / GRN (AC-32)** berstandar fisik resmi dan **Pemindai Barcode / QR (AC-33)** saat penerimaan.
 4. **Transfer Stok Antar-Gudang / Antar-Lokasi:**
    * Siklus dua tahap fisik eksplisit (`DRAFT` → `APPROVED` → `SHIPPED` → `RECEIVED` / `CANCELLED`) untuk melacak stok dalam perjalanan (*in-transit*).
    * Pencatatan selisih penerimaan (`qty_received < qty`) dengan kewajiban alasan selisih (`variance_reason`).
+   * **Cetak Surat Jalan Transfer Stok Fisik (AC-32)** bertanda tangan resmi dan **Pemindai Barcode / QR (AC-33)** saat penyiapan barang transfer.
 5. **Stock Opname & Saldo Awal:**
    * Pengambilan *snapshot* `qty_system` dan **pembekuan lokasi** otomatis selama sesi berlangsung (`IN_PROGRESS` / `WAITING_APPROVAL`).
-   * Rekonsiliasi stok fisik dengan persetujuan *Warehouse Manager* (`COMPLETED` menghasilkan penyesuaian `ADJUSTMENT_PLUS` / `ADJUSTMENT_MINUS`), sekaligus menjadi mekanisme input saldo awal gudang.
+   * Rekonsiliasi stok fisik dengan persetujuan *Warehouse Manager* (`COMPLETED` menghasilkan penyesuaian `ADJUSTMENT_PLUS` / `ADJUSTMENT_MINUS`), input temuan/saldo awal berbasis scan barcode, sekaligus menjadi mekanisme input saldo awal gudang.
 6. **Imutabilitas Buku Besar & Audit Log:**
    * Tabel `stock_movements` dan `audit_logs` bersifat *append-only*, dilindungi oleh *trigger* PostgreSQL serta pencabutan hak `UPDATE`/`DELETE`/`TRUNCATE` pada role database aplikasi (`wms_app`).
 
@@ -54,6 +56,7 @@ Pengembangan dilakukan bertahap sesuai urutan milestone pada [`docs/CORE/FOLDER_
 | **M6** | Stock Transfer Dua Tahap (`DRAFT` → `APPROVED` → `SHIPPED` → `RECEIVED`) | ✅ **Selesai** | `AC-02`, `AC-03`, `AC-06`, `AC-09` |
 | **M7** | Stock Opname, Pembekuan Lokasi, & Rekonsiliasi Stok | ✅ **Selesai** | `AC-04`, `AC-10` |
 | **M8** | Tinjauan akhir AC, performa query stok/ledger, logging, dan request ID | ✅ **Selesai** | `AC-01` s.d. `AC-13`; hasil benchmark lokal diringkas di indeks API |
+| **Fase 1 Ekstensi** | Import Excel (Item/Supplier), Kolom Barcode Barang (`012_add_barcode_to_items.sql`), Cetak Fisik (Surat Jalan & GRN), dan Integrasi Pemindai Barcode/QR | ✅ **Selesai** | `AC-30`, `AC-31`, `AC-32`, `AC-33` |
 
 ---
 
