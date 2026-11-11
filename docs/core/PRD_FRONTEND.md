@@ -110,6 +110,11 @@ Untuk mendukung kecepatan operasional toko cabang dan kasir retail:
   3. *Stock Opname:* Scan barcode barang untuk mengakumulasi hitungan fisik (+1) pada baris snapshot maupun menambahkannya ke daftar temuan.
   4. *Katalog Stok:* Scan barcode langsung memfilter kartu stok barang terkait.
 - **Pindai Cek Barang & Posisi Rak Gudang (`INV-F08`, `AC-34`):** Tombol cepat di Topbar Navigasi / Header dan halaman stok yang membuka `StockLookupModal`. Operator gudang cukup men-scan barcode barang fisik di lantai gudang, dan sistem seketika memuat kartu ringkasan barang (SKU, nama, barcode, kategori, UoM, total stok) dan tabel sebaran posisi fisik rak di seluruh gudang (`warehouse_name`, `location_code`, `location_name`, `qty_on_hand`, `qty_in_transit`).
+- **Visualisasi Gambar Barcode SVG & Cetak Label Stiker Fisik (`MST-F10`, `AC-35`):**
+  - Komponen `BarcodeVisual` merender kode `barcode` atau `sku` menjadi grafik vektor `<svg>` 1D berstandar **EAN-13** (bila 13 digit valid) atau **Code-128B** (untuk SKU/alfanumerik) secara instan di browser tanpa menyimpan file gambar di database.
+  - Pratinjau visual barcode tampil langsung di `StockFormDialog` (saat mengetik/generate barcode) dan `StockDetailDialog`.
+  - `StockDetailDialog` menyediakan aksi **"Cetak Label Barcode"** dengan layout stiker thermal standar (`50x30 mm`) yang siap ditempel pada kemasan fisik barang.
+  - Dokumen cetak Bukti Penerimaan Barang (`GoodsReceiptPrintSheet`) dan Surat Jalan Transfer (`StockTransferPrintSheet`) turut menampilkan barcode visual dokumen untuk mempercepat proses verifikasi scan.
 
 ## 4. Komponen dan state
 

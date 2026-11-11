@@ -91,6 +91,8 @@ setiap endpoint. Detail operasional dan contoh request/response berada di
 - **Pindai Cek Barang & Posisi Rak Gudang (`FR-INV-008`, `AC-34`):**
   - Pemindaian barcode produk fisik di lantai gudang memanggil `GET /api/v1/stock/by-location?search=<barcode_or_sku>` untuk mengembalikan sebaran rak gudang aktual (`location_code`, `location_name`, `warehouse_name`, `qty_on_hand`, `qty_in_transit`).
   - Digabungkan dengan profil master barang (`GET /api/v1/items?barcode=<barcode>` atau hasil pencarian) ke dalam modal `StockLookupModal` untuk menampilkan kartu identitas barang dan posisi rak secara instan.
+- **Visualisasi Barcode Vektor & Cetak Label Stiker (`FR-MST-010`, `AC-35`):**
+  - Database hanya menyimpan string `barcode` dan `sku`; gambar batang barcode (`<svg>` EAN-13 / Code-128) dirender secara deterministik *on-the-fly* di sisi klien (frontend) baik untuk pratinjau layar maupun pencetakan stiker fisik (`50x30 mm`).
 
 ## Kontrak cetak dokumen fisik (`FR-RCV-005`, `FR-TRF-006`, `AC-32`)
 
