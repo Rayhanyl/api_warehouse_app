@@ -2,11 +2,11 @@
 
 | Informasi | Nilai |
 | --- | --- |
-| Status | Baseline Fase 1 (MVP Single-Tenant) dengan tambahan MST-F06, MST-F07, MST-F08 (Barcode), RCV-F05 (Cetak GRN), TRF-F06 (Cetak Surat Jalan), dan INV-F07 (Barcode/QR Scanner); spesifikasi Fase 2 (M9 Multi-Tenant SaaS) |
-| Versi | 2.4-general |
+| Status | Baseline Fase 1 (MVP Single-Tenant) dengan tambahan MST-F06, MST-F07, MST-F08 (Barcode), MST-F09 (Auto-Generate Barcode), RCV-F05 (Cetak GRN), TRF-F06 (Cetak Surat Jalan), INV-F07 (Barcode/QR Scanner), dan INV-F08 (Pindai Cek Stok & Posisi Rak — AC-34); spesifikasi Fase 2 (M9 Multi-Tenant SaaS) |
+| Versi | 2.5-general |
 | Pemilik | Product / Business |
 | Sumber historis | PRD v2.0 (Single-Tenant) & PRD Modular v3.1 (Multi-Tenant SaaS) yang telah diaudit dan diintegrasikan |
-| Catatan | Baseline Fase 1 (M0–M8) beserta tambahan fitur retail/toko cabang/B2B (MST-F06, MST-F07, MST-F08, RCV-F05, TRF-F06, INV-F07) menjadi scope MVP aktif. Status RTM pada dokumen ini tetap `Mapped` sesuai aturan bagian 11.1; klaim implementasi dan hasil test (terakhir dilaporkan 47 tes backend lulus, termasuk AC-30 dan AC-31, pada 2026-11-06) wajib dibuktikan pada [QA.MD](../QA/QA.MD). Fase 2 tetap mencakup `TNT`, `CFG`, `tenant_id` + RLS sebelum Fase 3 (`ISS`, `RPT`). |
+| Catatan | Baseline Fase 1 (M0–M8) beserta tambahan fitur retail/toko cabang/B2B (MST-F06 s.d. MST-F09, RCV-F05, TRF-F06, INV-F07, INV-F08) menjadi scope MVP aktif. Status RTM pada dokumen ini tetap `Mapped` sesuai aturan bagian 11.1; klaim implementasi dan hasil test wajib dibuktikan pada [QA.MD](../QA/QA.MD). Fase 2 tetap mencakup `TNT`, `CFG`, `tenant_id` + RLS sebelum Fase 3 (`ISS`, `RPT`). |
 
 Dokumen ini adalah sumber utama requirement produk. Dokumen Backend, Frontend,
 Database, API, dan QA hanya menjabarkan konsekuensi requirement ini dan tidak boleh
@@ -80,9 +80,9 @@ dan jejak audit yang dapat diperiksa.
 | PLT | PLT-F01..F05 | Numbering, query convention, error, request ID/health, migration | Must Have |
 | IAM | IAM-F01..F09 | Auth, RBAC, user, warehouse scope, menu, profile | Must Have |
 | AUD | AUD-F01..F02 | Write/read audit log | Must Have |
-| MST | MST-F01..F08 | Category, UoM, item, supplier, deactivation, import massal item, import massal supplier, barcode barang | Must Have |
+| MST | MST-F01..F09 | Category, UoM, item, supplier, deactivation, import massal item, import massal supplier, barcode barang, auto-generate barcode | Must Have |
 | WHS | WHS-F01..F03 | Warehouse, location, validation | Must Have |
-| INV | INV-F01..F07 | Balance, ledger, movement gateway, negative stock, freeze enforcement, integrasi pemindaian barcode/QR | Must Have |
+| INV | INV-F01..F08 | Balance, ledger, movement gateway, negative stock, freeze enforcement, integrasi pemindaian barcode/QR, pindai cek stok & posisi rak | Must Have |
 | PUR | PUR-F01..F04 | PO lifecycle and fulfillment | Must Have |
 | RCV | RCV-F01..F05 | Goods receipt, posting, cetak bukti penerimaan barang fisik (GRN) | Must Have |
 | TRF | TRF-F01..F06 | Transfer lifecycle, in-transit, cetak surat jalan transfer fisik | Must Have |
@@ -380,6 +380,7 @@ pagination dan sorting daftar audit log.
 | MST-F06 | FR-MST-006 | Import massal item dari template Excel dengan validasi per baris dan hasil parsial | MVP |
 | MST-F07 | FR-MST-007 | Import massal supplier dari template Excel dengan validasi per baris dan hasil parsial | MVP |
 | MST-F08 | FR-MST-008 | Dukungan kode barcode unik per item dan lookup scanner | MVP |
+| MST-F09 | FR-MST-009 | Generator barcode internal otomatis (EAN-13 GS1 Internal Prefix 200..299 / Code-128) | MVP |
 
 **Business rules:** nama kategori, kode UoM, SKU item, dan kode supplier harus unik;
 item wajib merujuk kategori dan base UoM yang aktif; kuantitas transaksi mengikuti
@@ -475,6 +476,8 @@ insert pada request tersebut.
 
 **MST-F08 — Manajemen Barcode Barang:** Setiap barang dapat memiliki kode barcode (`barcode`, VARCHAR 64, opsional) yang unik tanpa membedakan kapitalisasi (`uq_items_barcode_lower`). Barcode merepresentasikan kode EAN-13, UPC, atau format barcode kemasan pabrikan/retail. Bila `barcode` tidak diisi, sistem menggunakan `sku` sebagai pengenal pemindaian default. Endpoint pencarian dan lookup barang mendukung query berdasarkan `barcode` atau `sku` untuk kebutuhan pemindai barcode / QR. Format barcode divalidasi tidak memuat spasi kosong tak beraturan atau karakter berbahaya.
 
+**MST-F09 — Generator Barcode Internal Otomatis:** Untuk produk polos, *re-pack*, barang curah, atau produk *private label* yang tidak memiliki barcode fisik dari pabrik, sistem menyediakan fungsi pembuatan barcode internal otomatis pada form Master Data Barang. Generator menghasilkan kode barcode unik berstandar EAN-13 dengan prefix internal GS1 (`200` s.d. `299` dilengkapi digit pemeriksa checksum modulo-10) atau format Code-128 berbasis penomoran unik WMS, sehingga tidak akan berbenturan dengan produk retail luar. Pengguna tetap memiliki kebebasan penuh untuk memasukkan barcode fisik bawaan pabrik (via ketikan atau pemindaian scanner gun/kamera) atau menekan tombol generate otomatis saat mendaftarkan barang baru.
+
 **API:** `GET /api/v1/suppliers/import-template` dengan `master:read` mengunduh
 template; `POST /api/v1/suppliers/import` dengan `master:manage` menerima satu
 file `.xlsx` pada field `file` (`multipart/form-data`). Workbook rusak,
@@ -530,6 +533,7 @@ pagination, dan sort whitelist daftar warehouse/location.
 | INV-F05 | FR-INV-005 | Negative stock sesuai konfigurasi warehouse | MVP |
 | INV-F06 | FR-INV-006 | Frozen location enforcement | MVP |
 | INV-F07 | FR-INV-007 | Integrasi pemindai barcode / QR code (hardware scanner & kamera) | MVP |
+| INV-F08 | FR-INV-008 | Pindai barcode untuk cek informasi barang dan posisi rak gudang (Quick Stock & Location Finder) | MVP |
 
 **Business rules:** balance dibuat saat movement pertama; ledger menyimpan
 `qty_before`, `qty_change`, `qty_after`, type, reference, actor, time; `qty_after`
@@ -539,6 +543,8 @@ harus sama dengan before plus change; negative stock ditolak dengan
 
 **INV-F07 — Integrasi Pemindai Barcode / QR Code:** Mendukung alur kerja pemindaian cepat kode barang (SKU atau Barcode) dan kode lokasi rak (`storage_locations.code`) pada antarmuka operasional (Penerimaan Barang, Transfer Kirim/Terima, dan Hitung Fisik Stock Opname). Sistem mendukung: (1) Hardware Barcode Gun (USB/Bluetooth HID input) dengan buffer ketukan cepat otomatis, dan (2) Web Camera Barcode/QR Scanner modal yang dapat diakses langsung melalui peramban pada tablet/smartphone staf toko cabang. Pemindaian otomatis mencocokkan item dokumen dan menambah kuantitas hitung/terima.
 
+**INV-F08 — Pindai Cek Barang & Posisi Rak Gudang (Quick Stock & Location Finder):** Menyediakan fungsionalitas pemindaian langsung barcode barang fisik saat staf/operator berada di gudang atau lantai toko. Pemindaian (melalui tombol cepat Topbar, shortcut keyboard, atau pemindai hardware) memanggil modal pencarian yang menampilkan profil lengkap barang (SKU, nama, barcode, kategori, satuan UoM, total stok) dan tabel sebaran posisi stok fisik aktual (`location_code`, `location_name`, `warehouse_name`, `qty_on_hand`, `qty_in_transit`) di seluruh rak/bin gudang secara real-time.
+
 **Data, permission, dependency:** `inventory_balances`, `stock_movements`;
 `stock:read`, `ledger:read`; membaca MST/WHS/OPN/TRF dan dipicu RCV/TRF/OPN.
 
@@ -546,7 +552,7 @@ harus sama dengan before plus change; negative stock ditolak dengan
 lokasi, gudang, agregat, dan `in_transit` konsisten; `AC-06` concurrency hanya
 menghasilkan satu ship; `AC-08` append-only; `AC-12` warehouse scoping pada pembacaan stok dan ledger; `AC-13` lock ordering konsisten; `AC-16`
 filter, pagination, sort whitelist, dan format kuantitas string desimal pada query
-saldo serta movement ledger; `AC-33` verifikasi alur pemindaian barcode/QR pada form transaksi operasional.
+saldo serta movement ledger; `AC-33` verifikasi alur pemindaian barcode/QR pada form transaksi operasional; `AC-34` verifikasi pemindaian barcode fisik untuk memuat detail barang dan sebaran lokasi rak/gudang secara real-time.
 
 ### 6.7 PUR, Purchase Order
 
@@ -928,7 +934,8 @@ Pada migrasi Fase 2 (`012_create_tenants_settings.sql` dan `013_add_tenant_scope
 | AC-30 | *(Tambahan Fase 1 — MST-F06)* Import item dari template Excel memvalidasi seluruh baris, mengimpor item valid saja, menangani SKU duplikat termasuk request konkuren, memberi ringkasan dan rincian error per baris, serta mencatat audit untuk item sukses secara atomik | MST/AUD | Mapped |
 | AC-31 | *(Tambahan Fase 1 — MST-F07)* Import supplier dari template Excel memvalidasi seluruh baris, mengimpor supplier valid saja, menangani kode duplikat termasuk request konkuren, memberi ringkasan dan rincian error per baris, serta mencatat audit untuk supplier sukses secara atomik | MST/AUD | Mapped |
 | AC-32 | *(Tambahan Fase 1 — RCV-F05, TRF-F06)* Cetak Dokumen Fisik: Surat Jalan Transfer & Bukti Penerimaan Barang (GRN) dengan layout terstandarisasi, metadata lengkap, dan 3 kolom tanda tangan serah terima | RCV/TRF | Mapped |
-| AC-33 | *(Tambahan Fase 1 — MST-F08, INV-F07)* Barcode / QR Scanner & Manajemen Barcode Barang: keunikan barcode item, lookup cepat via hardware gun scanner maupun kamera, serta auto-matching pada form operasional | MST/INV | Mapped |
+| AC-33 | *(Tambahan Fase 1 — MST-F08, MST-F09, INV-F07)* Barcode / QR Scanner & Manajemen Barcode Barang: keunikan barcode item, auto-generator barcode internal (EAN-13/Code-128), lookup cepat via hardware gun scanner maupun kamera, serta auto-matching pada form operasional | MST/INV | Mapped |
+| AC-34 | *(Tambahan Fase 1 — INV-F08)* Pindai Barcode untuk Cek Informasi Barang & Sebaran Lokasi Rak Gudang (Barcode Stock & Location Quick Lookup): pemindaian barcode fisik di lantai gudang untuk memuat profil barang dan tabel saldo aktual per gudang/lokasi rak secara real-time | INV | Mapped |
 
 ### 10.1 Spesifikasi acceptance criteria terpisah (numbering, query, platform, master, warehouse, dan audit)
 
@@ -947,7 +954,8 @@ hanya diuji secara tidak langsung melalui workflow dokumen lain.
 | `AC-30` | Import massal item (`MST-F06`, `FR-MST-006`) | Unduh template dengan referensi aktif; impor file valid; nama kategori/UoM tidak ditemukan, nonaktif, atau ambigu; SKU duplikat di file/database dan request bersamaan; baris wajib kosong/nilai terlalu panjang; file rusak, header/sheet salah, ukuran/row limit terlampaui; pengguna tanpa permission | Template `.xlsx` memiliki sheet `Items` dan `Referensi`, dropdown kategori/UoM, dan header sesuai kontrak. Baris kosong dilewati; setiap baris data valid dibuat; baris invalid tidak dibuat dan hasil memuat nomor baris, field, kode error, dan alasan. SKU duplikat dilaporkan `DUPLICATE`; nama referensi ambigu dilaporkan `VALIDATION_ERROR` tanpa pemilihan otomatis; baris valid lain tetap berhasil. Respons merangkum total, sukses, dan gagal sesuai hasil commit. Sheet referensi tidak dipercaya untuk relasi; backend mencocokkan ke database. File struktural tidak valid ditolak tanpa insert. Semua item sukses dan audit `ITEM_CREATED` berada di satu transaksi; kegagalan infrastruktur me-rollback semua item pada request. Pengguna tanpa `master:manage` ditolak. Batas file dan jumlah baris mengikuti nilai yang disetujui pada `CONF-010`. | `DUPLICATE`, `NOT_FOUND`, `INACTIVE_REFERENCE`, `VALIDATION_ERROR`, `PERMISSION_DENIED` |
 | `AC-31` | Import massal supplier (`MST-F07`, `FR-MST-007`) | Unduh template; file supplier valid; kode berulang dalam file/database dan request konkuren; field wajib kosong, nilai melebihi batas, format kode/telepon/email salah; nilai `active`/`inactive` dan boolean; file rusak, sheet/header salah, batas file/baris terlampaui; pengguna tanpa permission | Template `.xlsx` memiliki satu sheet `Suppliers` dan header sesuai kontrak. Baris kosong dilewati; setiap supplier valid dibuat; baris invalid tidak dibuat dan hasil memuat nomor baris, field, kode, dan alasan. Semua baris dengan kode duplikat dalam file gagal sebagai `DUPLICATE`; konflik database/kongkuren ditandai per baris, supplier valid lain tetap berhasil. Email dinormalisasi ke huruf kecil; field opsional kosong menjadi `null`; status kosong menjadi aktif. Ringkasan menghitung total, sukses, gagal sesuai hasil commit. File struktural tidak valid ditolak tanpa insert. Semua supplier sukses dan audit `SUPPLIER_CREATED` berada dalam satu transaksi; kegagalan infrastruktur me-rollback seluruh insert request. Pengguna tanpa `master:manage` ditolak. Batas file/baris adalah 5 MiB/1.000. | `DUPLICATE`, `VALIDATION_ERROR`, `PERMISSION_DENIED` |
 | `AC-32` | Cetak Dokumen Fisik (`RCV-F05`, `TRF-F06`, `FR-RCV-005`, `FR-TRF-006`) | Akses fungsi cetak dokumen pada GR status `POSTED`/`DRAFT` dan Transfer status `SHIPPED`/`APPROVED`; uji rendering cetak `@media print` pada desktop dan peramban tablet/mobile; verifikasi kelengkapan kop organisasi, nomor dokumen, tanggal, pihak terkait, tabel barang lengkap, dan 3 kolom tanda tangan | Layout cetak rapi, responsif, siap dicetak fisik ke printer (A4/thermal/dot matrix) atau disimpan PDF; seluruh kolom kunci (SKU, nama, qty, satuan, lokasi) muncul lengkap; 3 kolom tanda tangan fisik tersedia lengkap dengan nama terang dan nomor polisi (pada Surat Jalan); data dibaca dari endpoint API tanpa mengubah status atau saldo | `NOT_FOUND`, `PERMISSION_DENIED` |
-| `AC-33` | Barcode / QR Scanner & Manajemen Barcode Barang (`MST-F08`, `INV-F07`, `FR-MST-008`, `FR-INV-007`) | Pembuatan/pengubahan item dengan barcode; duplikasi barcode; pencarian dan lookup barcode/SKU; input pemindaian hardware gun scanner berkecepatan tinggi; input pemindaian via modul kamera peramban; auto-matching baris barang pada transaksi penerimaan (GR), transfer, dan hitung opname | Barcode unik tanpa membedakan huruf besar/kecil (`uq_items_barcode_lower`); barcode duplikat ditolak (`DUPLICATE`); bila barcode tidak diisi, scanner fallback ke `sku`; pemindaian via hardware scanner atau kamera mendeteksi barang secara instan, memilih baris PO/Transfer/Opname yang sesuai, dan mengakumulasi kuantitas secara akurat tanpa *race condition* input | `DUPLICATE`, `NOT_FOUND`, `VALIDATION_ERROR` |
+| `AC-33` | Barcode / QR Scanner & Manajemen Barcode Barang (`MST-F08`, `MST-F09`, `INV-F07`, `FR-MST-008`, `FR-MST-009`, `FR-INV-007`) | Pembuatan/pengubahan item dengan barcode pabrikan atau auto-generator internal; duplikasi barcode; pencarian dan lookup barcode/SKU; input pemindaian hardware gun scanner berkecepatan tinggi; input pemindaian via modul kamera peramban; auto-matching baris barang pada transaksi penerimaan (GR), transfer, dan hitung opname | Barcode unik tanpa membedakan huruf besar/kecil (`uq_items_barcode_lower`); barcode duplikat ditolak (`DUPLICATE`); generator internal menghasilkan kode EAN-13 valid (prefix GS1 `200..299` + modulo-10) atau Code-128; bila barcode tidak diisi, scanner fallback ke `sku`; pemindaian via hardware scanner atau kamera mendeteksi barang secara instan, memilih baris PO/Transfer/Opname yang sesuai, dan mengakumulasi kuantitas secara akurat tanpa *race condition* input | `DUPLICATE`, `NOT_FOUND`, `VALIDATION_ERROR` |
+| `AC-34` | Pindai Barcode Cek Stok & Posisi Rak (`INV-F08`, `FR-INV-008`) | Pemindaian barcode atau SKU produk fisik di gudang/toko melalui shortcut Topbar, scanner gun, atau kamera peramban; pemeriksaan barang bersaldo di beberapa lokasi vs barang tanpa saldo vs barcode tidak terdaftar | Modal pemindai seketika memuat identitas barang (SKU, nama, barcode, kategori, satuan UoM, total saldo agregat) dan tabel sebaran posisi fisik per gudang dan lokasi rak (`location_code`, `location_name`, `qty_on_hand`, `qty_in_transit`); jika barang belum bersaldo, menampilkan status saldo nol di seluruh lokasi; jika barcode tidak terdaftar, menampilkan pesan validasi aman tanpa crash | `NOT_FOUND`, `VALIDATION_ERROR` |
 
 ## 11. Requirement Traceability Matrix
 
@@ -1026,7 +1034,9 @@ pada dokumen bukti layer dan laporan QA.
 | `FR-OPN-005` | `OPN-F05` | `stock_opname_lines`, `inventory_balances`, `stock_movements` | opname service (penambahan item saldo awal) | aksi tambah baris item temuan fisik (`qty_system = 0`) | endpoint tambah line opname dan `approve` | `AC-10` | `Mapped` |
 | `FR-OPN-006` | `OPN-F06` | `stock_opnames` | opname service (`is_location_frozen`) | badge/status lokasi beku pada layar operasional | diperiksa saat post GR, ship Transfer, receive Transfer, start Opname | `AC-04`, `AC-10`, `AC-21` | `Mapped` |
 | `FR-MST-008` | `MST-F08` | `items.barcode`, `uq_items_barcode_lower` | master item service/repository | input barcode pada form barang dan pencarian | CRUD item & filter `search`/`barcode` | `AC-33` | `Mapped` |
+| `FR-MST-009` | `MST-F09` | n/a | generator barcode helper/utility | tombol auto-generate barcode internal (EAN-13/Code-128) pada form item | `POST /api/v1/items`, `PATCH /api/v1/items/{id}` | `AC-33` | `Mapped` |
 | `FR-INV-007` | `INV-F07` | n/a | endpoint lookup barcode item & lokasi | hook hardware scanner & modal kamera scanner | auto-matching pada GR, Transfer, Opname | `AC-33` | `Mapped` |
+| `FR-INV-008` | `INV-F08` | `inventory_balances`, `storage_locations` | stock balance service & location view | shortcut pemindai Topbar & modal lookup posisi rak & saldo | `GET /api/v1/stock/by-location?search=` | `AC-34` | `Mapped` |
 | `FR-RCV-005` | `RCV-F05` | n/a | detail GR service/repository | layout cetak Bukti Terima Barang (GRN) | `GET /api/v1/goods-receipts/{id}` | `AC-32` | `Mapped` |
 | `FR-TRF-006` | `TRF-F06` | n/a | detail transfer service/repository | layout cetak Surat Jalan (Delivery Note) | `GET /api/v1/stock-transfers/{id}` | `AC-32` | `Mapped` |
 
@@ -1136,3 +1146,4 @@ perubahan lintas modul.
 | 2026-11-06 | 2.2-general | Menambahkan `FR-MST-007` / `MST-F07` import supplier massal dengan validasi per baris, deteksi kode duplikat, audit atomik, serta `AC-31`; implementasi lulus regresi 47 tes backend. Tidak ada perubahan skema database. |
 | 2026-11-11 | 2.3-general | Sinkronisasi dokumen: scope Fase 1 §2.2 menjadi `MST-F01..F07`; catatan status pada header diselaraskan dengan aturan evidence §11.1 (RTM tetap `Mapped`, bukti test di QA); koreksi jumlah tabel bisnis Fase 1 menjadi 24 pada §8.3. Tidak ada perubahan requirement maupun skema database. |
 | 2026-11-11 | 2.4-general | Penambahan kebutuhan operasional retail, toko cabang, dan B2B ke dalam Fase 1: `MST-F08` (barcode item unik dan lookup), `INV-F07` (integrasi barcode/QR scanner hardware & kamera), `RCV-F05` (cetak bukti penerimaan barang GRN fisik), `TRF-F06` (cetak surat jalan transfer fisik), serta penambahan `AC-32` dan `AC-33`. |
+| 2026-11-11 | 2.5-general | Penambahan `MST-F09` (Generator Barcode Internal Otomatis EAN-13/Code-128 untuk produk non-barcode pabrik) dan `INV-F08` (Pindai Barcode Cek Stok & Posisi Rak Gudang secara instan — `AC-34`). |

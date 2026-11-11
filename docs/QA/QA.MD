@@ -75,6 +75,7 @@ Gunakan matriks ini sebagai daftar regresi wajib. Nama test ditulis sesuai imple
 | AC-31 | Import massal pemasok melalui berkas Excel dengan validasi per baris dan proteksi duplikasi kode pemasok | `tests/test_ac31_supplier_import.py` |
 | AC-32 | Cetak dokumen fisik Bukti Penerimaan Barang (GRN) pada GR `POSTED` dan Surat Jalan Transfer Stok pada Transfer `APPROVED`/`SHIPPED`/`RECEIVED` dengan layout A4 dan 3 kolom tanda tangan | `warehouse_app/src/features/goods-receipts/print-documents.test.tsx` |
 | AC-33 | Pemindai Barcode / QR Scanner (kamera `BarcodeDetector` dan hardware barcode gun USB/Bluetooth HID) serta penyimpanan barcode unik barang pada seluruh transaksi operasional | `tests/test_ac33_item_barcode.py` (backend), `warehouse_app/src/features/goods-receipts/barcode-scanner.test.tsx` (frontend) |
+| AC-34 | Pindai Barcode untuk Cek Informasi Barang & Sebaran Lokasi Rak Gudang (Barcode Stock & Location Quick Lookup) serta Auto-Generate Barcode Internal (EAN-13 WMS): pemindaian barcode fisik di lantai gudang untuk memuat profil barang dan tabel saldo aktual per gudang/lokasi rak secara real-time | `tests/test_ac33_item_barcode.py` (backend search), `warehouse_app/src/features/stock/stock-lookup.test.tsx` (frontend) |
 
 Test AC-06 dan AC-13 harus tetap diuji dengan konkurensi nyata: koneksi database terpisah dan sinkronisasi dua request. Jangan menggantinya dengan test berurutan atau mock, karena itu tidak menguji perlombaan transaksi.
 
@@ -110,9 +111,9 @@ Catatan M8 di `docs/API/README.md` memuat benchmark lokal yang pernah dilakukan.
 
 ### 2.5. Kriteria selesai QA backend
 
-- Seluruh AC yang terdampak perubahan lulus; sebelum rilis, suite `AC-01` s.d. `AC-22`, `AC-30`, `AC-31`, dan `AC-33` lulus.
+- Seluruh AC yang terdampak perubahan lulus; sebelum rilis, suite `AC-01` s.d. `AC-22`, `AC-30`, `AC-31`, `AC-33`, dan `AC-34` lulus.
 - AC-14 menguji menu pada PostgreSQL nyata; permission menu hanya menyaring navigasi dan tidak menggantikan otorisasi endpoint backend.
-- Status run backend: 49 tes lulus di `wms_test`, mencakup seluruh skenario `AC-01` s.d. `AC-22`, `AC-30` (import massal item), `AC-31` (import massal supplier), dan `AC-33` (master data barcode unik & serialisasi transaksi).
+- Status run backend: 49 tes lulus di `wms_test`, mencakup seluruh skenario `AC-01` s.d. `AC-22`, `AC-30` (import massal item), `AC-31` (import massal supplier), `AC-33` (master data barcode unik & serialisasi transaksi), dan `AC-34` (pencarian stok lokasi via barcode/SKU).
 - Tidak ada temuan terbuka yang mengancam integritas saldo/ledger, autentikasi, atau pembatasan akses.
 - Pemeriksaan saldo, ledger, audit, dan rollback konsisten dengan PRD.
 - Kinerja dilaporkan dengan lingkungan, ukuran data, metode, dan hasil p95; klaim target hanya dibuat bila hasilnya memang terukur.
@@ -124,7 +125,7 @@ Catatan M8 di `docs/API/README.md` memuat benchmark lokal yang pernah dilakukan.
 
 Aplikasi frontend dikembangkan pada folder `warehouse_app/` berbasis React 19, TypeScript, Vite, dan pengujian unit/integrasi menggunakan **Vitest + React Testing Library + MSW**.
 
-Rangkaian pengujian frontend yang aktif mencakup 10 test suite (36 tes lulus):
+Rangkaian pengujian frontend yang aktif mencakup 11 test suite:
 - `App.test.tsx` (routing & inisialisasi aplikasi shell).
 - `features/auth/auth.test.tsx` (login form, validasi kredensial, state sesi, dan penanganan error autentikasi).
 - `features/master-data/categories/categories.test.tsx` (CRUD kategori, validasi, dan penonaktifan).
@@ -135,6 +136,7 @@ Rangkaian pengujian frontend yang aktif mencakup 10 test suite (36 tes lulus):
 - `features/master-data/warehouses/Warehouses.test.tsx` (manajemen gudang dan toggle stok negatif).
 - `features/goods-receipts/print-documents.test.tsx` (AC-32: verifikasi cetak Bukti Penerimaan Barang / GRN dan Surat Jalan Transfer Stok).
 - `features/goods-receipts/barcode-scanner.test.tsx` (AC-33: verifikasi pemindai barcode kamera, input HID gun, form GR, form Transfer, dan Stock Opname).
+- `features/stock/stock-lookup.test.tsx` (AC-34: verifikasi auto-generate barcode internal EAN-13 pada form master data barang dan modal pencarian stok/sebaran posisi rak fisik via barcode).
 
 ### 3.2. Skenario alur pengguna yang diverifikasi
 

@@ -80,13 +80,19 @@ setiap endpoint. Detail operasional dan contoh request/response berada di
   `SUPPLIER_CREATED` commit dalam satu transaksi. Endpoint tidak menambah kode
   error, tabel, atau kolom.
 
-## Barcode barang dan lookup scanner (`FR-MST-008`, `FR-INV-007`)
+## Barcode barang, generator otomatis, dan lookup scanner (`FR-MST-008`, `FR-MST-009`, `FR-INV-007`, `FR-INV-008`, `AC-33`, `AC-34`)
 
-- Pembuatan dan pembaruan item (`POST /api/v1/items`, `PUT /api/v1/items/{id}`) menerima field opsional `barcode` (string teks maks 64 karakter, null jika tidak ada).
+- Pembuatan dan pembaruan item (`POST /api/v1/items`, `PATCH /api/v1/items/{id}`) menerima field opsional `barcode` (string teks maks 64 karakter, null jika tidak ada).
+- Field `barcode` mendukung fleksibilitas operasional:
+  1. *Barcode Pabrik:* Diinput manual atau dipindai langsung dari kemasan fisik pabrikan via barcode gun/kamera.
+  2. *Auto-Generate Barcode WMS (`FR-MST-009`):* Untuk produk non-barcode (*re-pack*, curah, *private label*), form menyediakan generator barcode internal otomatis berstandar EAN-13 GS1 Internal (prefix `200`..`299` + checksum) atau Code-128 unik.
 - Keunikan `barcode` dijaga secara case-insensitive (`uq_items_barcode_lower`); duplikasi nilai non-null ditolak dengan `409 DUPLICATE`.
-- Endpoint pencarian `GET /api/v1/items` mendukung parameter `search` yang mencocokkan `barcode`, `sku`, maupun `name`. Pemindai scanner (hardware gun atau kamera) menggunakan endpoint ini untuk auto-matching barang pada form transaksi operasional.
+- Endpoint pencarian `GET /api/v1/items` mendukung parameter `search` dan `barcode` untuk auto-matching barang pada transaksi operasional (GR, Transfer, Opname).
+- **Pindai Cek Barang & Posisi Rak Gudang (`FR-INV-008`, `AC-34`):**
+  - Pemindaian barcode produk fisik di lantai gudang memanggil `GET /api/v1/stock/by-location?search=<barcode_or_sku>` untuk mengembalikan sebaran rak gudang aktual (`location_code`, `location_name`, `warehouse_name`, `qty_on_hand`, `qty_in_transit`).
+  - Digabungkan dengan profil master barang (`GET /api/v1/items?barcode=<barcode>` atau hasil pencarian) ke dalam modal `StockLookupModal` untuk menampilkan kartu identitas barang dan posisi rak secara instan.
 
-## Kontrak cetak dokumen fisik (`FR-RCV-005`, `FR-TRF-006`)
+## Kontrak cetak dokumen fisik (`FR-RCV-005`, `FR-TRF-006`, `AC-32`)
 
 - Endpoint `GET /api/v1/goods-receipts/{id}` dan `GET /api/v1/stock-transfers/{id}` mengembalikan data relasional lengkap (header, rincian lines dengan SKU, barcode, nama barang, UoM, lokasi rak, kuantitas, catatan, dan nama pengguna penandatangan) yang siap dikonsumsi langsung oleh komponen cetak frontend (`@media print` / `window.print()`).
 - Dokumen fisik Surat Jalan (`TRF-F06`) dan Bukti Penerimaan Barang (`RCV-F05`) tidak memerlukan endpoint biner PDF tambahan pada backend; rendering cetak dan penyimpanan ke PDF ditangani secara presisi pada layer antarmuka pengguna.

@@ -96,17 +96,20 @@ Untuk memenuhi kebutuhan legalitas pengiriman jalan raya dan SOP serah terima fi
     2. *Diperiksa Oleh:* Checker / Staf Penerimaan Gudang.
     3. *Disetujui Oleh:* Warehouse Manager / Supervisor.
 
-### 3.4 Integrasi Barcode & QR Scanner (`MST-F08`, `INV-F07`, `AC-33`)
+### 3.4 Integrasi Barcode & QR Scanner (`MST-F08`, `MST-F09`, `INV-F07`, `INV-F08`, `AC-33`, `AC-34`)
 
 Untuk mendukung kecepatan operasional toko cabang dan kasir retail:
-- **Form Master Data Barang:** Form penambahan/pengubahan barang menyediakan input teks `Barcode` opsional (maks 64 karakter) di samping kode SKU.
+- **Form Master Data Barang & Generator Otomatis (`MST-F08`, `MST-F09`):** Form penambahan/pengubahan barang menyediakan input teks `Barcode` opsional (maks 64 karakter) di samping kode SKU. Tersedia dua pilihan pengisian:
+  1. *Barcode Pabrik:* Operator dapat mengetik manual atau menekan tombol **"Pindai"** (kamera/scanner gun) untuk memasukkan barcode fisik bawaan produk dari supplier/pabrikan.
+  2. *Auto-Generate Barcode WMS:* Untuk produk non-barcode (barang curah, *repack*, atau *private label*), tersedia tombol **"Generate Barcode"** yang menghasilkan barcode unik standar EAN-13 internal (prefix GS1 `200..299` dengan modulo-10 check digit) atau format Code-128 berbasis penomoran unik WMS.
 - **Dukungan Hardware Barcode Gun (USB/Bluetooth):** Menggunakan hook kustom `useBarcodeScanner` yang mendengarkan event keyboard global dengan ambang buffer ketukan sangat cepat (10–50 ms antar karakter) dan mendeteksi terminasi `Enter`. Saat barcode terbaca, hook secara otomatis memicu pencarian barang atau pengisian baris dokumen tanpa mengharuskan kursor berada di input tertentu.
-- **Dukungan Kamera Web (Mobile / Tablet Toko Cabang):** Komponen modal pemindai kamera interaktif (memanfaatkan pustaka barcode peramban seperti `html5-qrcode` atau API native `BarcodeDetector`) yang dapat dipicu melalui tombol ikon barcode di form. Kamera membaca kode 1D (EAN-13, UPC, Code 128) maupun 2D (QR Code).
+- **Dukungan Kamera Web (Mobile / Tablet Toko Cabang):** Komponen modal pemindai kamera interaktif (memanfaatkan API native `BarcodeDetector` / `getUserMedia`) yang dapat dipicu melalui tombol ikon barcode di form. Kamera membaca kode 1D (EAN-13, UPC, Code 128) maupun 2D (QR Code).
 - **Titik Otomasi Pemindaian:**
-  1. *Goods Receipt:* Menembak barcode kemasan barang langsung mencocokkan baris PO dan menambahkan kuantitas terima (+1 atau menampilkan prompt konfirmasi).
+  1. *Goods Receipt:* Menembak barcode kemasan barang langsung mencocokkan baris PO dan menambahkan kuantitas terima (+1 atau mengalokasikan lokasi aktif).
   2. *Stock Transfer:* Scan barang saat verifikasi packing (gudang asal) dan unboxing serah terima (gudang cabang).
-  3. *Stock Opname:* Scan barcode rak (*Bin Location*), lalu scan barang di rak tersebut secara berulang untuk mengakumulasi hitungan fisik secara instan.
+  3. *Stock Opname:* Scan barcode barang untuk mengakumulasi hitungan fisik (+1) pada baris snapshot maupun menambahkannya ke daftar temuan.
   4. *Katalog Stok:* Scan barcode langsung memfilter kartu stok barang terkait.
+- **Pindai Cek Barang & Posisi Rak Gudang (`INV-F08`, `AC-34`):** Tombol cepat di Topbar Navigasi / Header dan halaman stok yang membuka `StockLookupModal`. Operator gudang cukup men-scan barcode barang fisik di lantai gudang, dan sistem seketika memuat kartu ringkasan barang (SKU, nama, barcode, kategori, UoM, total stok) dan tabel sebaran posisi fisik rak di seluruh gudang (`warehouse_name`, `location_code`, `location_name`, `qty_on_hand`, `qty_in_transit`).
 
 ## 4. Komponen dan state
 
@@ -166,9 +169,11 @@ Alur request umum:
 | `FR-MST-006` | `MST-F06` | Aksi unduh template, unggah workbook, ringkasan hasil dan tabel error per baris | `GET /api/v1/items/import-template`, `POST /api/v1/items/import` | `AC-30` |
 | `FR-MST-007` | `MST-F07` | Aksi unduh template supplier, unggah workbook, ringkasan hasil dan tabel error per baris | `GET /api/v1/suppliers/import-template`, `POST /api/v1/suppliers/import` | `AC-31` |
 | `FR-MST-008` | `MST-F08` | Field input barcode pada form barang dan pencarian barang via barcode | CRUD item & filter `search`/`barcode` | `AC-33` |
+| `FR-MST-009` | `MST-F09` | Tombol auto-generate barcode internal (EAN-13 GS1 `200..299` / Code-128) pada form barang | form dialog item (`StockFormDialog`) | `AC-33` |
 | `FR-WHS-001..003` | `WHS-F01..F03` | Layar CRUD warehouse, pengaturan `allow_negative_stock`, lokasi penyimpanan | warehouse dan storage location CRUD/list | `AC-12`, `AC-16`, `AC-20` |
 | `FR-INV-001..003` | `INV-F01..F03` | Saldo per lokasi, per gudang, ringkasan, in-transit, dan movement ledger | stock balances, by-warehouse, summary, movements | `AC-03`, `AC-12`, `AC-16` |
 | `FR-INV-007` | `INV-F07` | Hook pemindai scanner hardware & modal scanner kamera web pada form operasional | lookup barcode item dan lokasi | `AC-33` |
+| `FR-INV-008` | `INV-F08` | Shortcut pemindai Topbar & modal lookup posisi rak & saldo barang (`StockLookupModal`) | `GET /api/v1/stock/by-location?search=` | `AC-34` |
 | `FR-PUR-001..003` | `PUR-F01..F03` | Daftar/detail PO, form draft, aksi issue/cancel/close, progres fulfillment | purchase order CRUD, list, dan action endpoints | `AC-01`, `AC-15`, `AC-16`, `AC-21` |
 | `FR-RCV-001..004` | `RCV-F01..F04` | Daftar/detail GR, form penerimaan dari PO, aksi post dan cancel draft | goods receipt CRUD, list, dan action endpoints | `AC-01`, `AC-07`, `AC-12`, `AC-13`, `AC-21` |
 | `FR-RCV-005` | `RCV-F05` | Tombol dan layout cetak Bukti Penerimaan Barang (GRN) siap cetak/PDF | detail GR (`GET /api/v1/goods-receipts/{id}`) | `AC-32` |
