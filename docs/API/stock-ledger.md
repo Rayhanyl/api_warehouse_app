@@ -93,7 +93,7 @@ Mengambil daftar saldo stok aktual (`qty_on_hand`) dan stok dalam perjalanan (`q
 | `location_id` | integer | Tidak | `null` | Filter lokasi penyimpanan. |
 | `item_id` | integer | Tidak | `null` | Filter ID barang. |
 | `category_id` | integer | Tidak | `null` | Filter ID kategori barang. |
-| `search` | string | Tidak | `null` | Pencarian `ILIKE` pada SKU atau nama barang. |
+| `search` | string | Tidak | `null` | Pencarian `ILIKE` pada SKU, barcode, atau nama barang (`i.sku`, `i.barcode`, `i.name`), kode/nama lokasi rak (`sl.code`, `sl.name`), maupun kode/nama gudang (`w.code`, `w.name`). |
 | `sort_by` | string | Tidak | `"item_id"` | Whitelist: `"warehouse_id"`, `"warehouse_code"`, `"location_id"`, `"location_code"`, `"item_id"`, `"item_sku"`, `"item_name"`, `"qty_on_hand"`, `"qty_in_transit"`. |
 | `sort_dir` | string | Tidak | `"asc"` | `"asc"` atau `"desc"`. |
 

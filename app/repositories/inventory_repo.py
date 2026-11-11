@@ -240,8 +240,11 @@ def list_stock_by_location(
 
     if search:
         kw = f"%{search.strip()}%"
-        conditions.append("(i.sku ILIKE %s OR COALESCE(i.barcode, '') ILIKE %s OR i.name ILIKE %s)")
-        params.extend([kw, kw, kw])
+        conditions.append(
+            "(i.sku ILIKE %s OR COALESCE(i.barcode, '') ILIKE %s OR i.name ILIKE %s "
+            "OR sl.code ILIKE %s OR sl.name ILIKE %s OR w.code ILIKE %s OR w.name ILIKE %s)"
+        )
+        params.extend([kw, kw, kw, kw, kw, kw, kw])
 
     where_sql = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
@@ -362,8 +365,11 @@ def list_stock_by_warehouse(
 
     if search:
         kw = f"%{search.strip()}%"
-        conditions.append("(i.sku ILIKE %s OR COALESCE(i.barcode, '') ILIKE %s OR i.name ILIKE %s)")
-        params.extend([kw, kw, kw])
+        conditions.append(
+            "(i.sku ILIKE %s OR COALESCE(i.barcode, '') ILIKE %s OR i.name ILIKE %s "
+            "OR w.code ILIKE %s OR w.name ILIKE %s)"
+        )
+        params.extend([kw, kw, kw, kw, kw])
 
     where_sql = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 

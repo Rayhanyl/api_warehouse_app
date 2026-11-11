@@ -88,9 +88,10 @@ setiap endpoint. Detail operasional dan contoh request/response berada di
   2. *Auto-Generate Barcode WMS (`FR-MST-009`):* Untuk produk non-barcode (*re-pack*, curah, *private label*), form menyediakan generator barcode internal otomatis berstandar EAN-13 GS1 Internal (prefix `200`..`299` + checksum) atau Code-128 unik.
 - Keunikan `barcode` dijaga secara case-insensitive (`uq_items_barcode_lower`); duplikasi nilai non-null ditolak dengan `409 DUPLICATE`.
 - Endpoint pencarian `GET /api/v1/items` mendukung parameter `search` dan `barcode` untuk auto-matching barang pada transaksi operasional (GR, Transfer, Opname).
-- **Pindai Cek Barang & Posisi Rak Gudang (`FR-INV-008`, `AC-34`):**
-  - Pemindaian barcode produk fisik di lantai gudang memanggil `GET /api/v1/stock/by-location?search=<barcode_or_sku>` untuk mengembalikan sebaran rak gudang aktual (`location_code`, `location_name`, `warehouse_name`, `qty_on_hand`, `qty_in_transit`).
-  - Digabungkan dengan profil master barang (`GET /api/v1/items?barcode=<barcode>` atau hasil pencarian) ke dalam modal `StockLookupModal` untuk menampilkan kartu identitas barang dan posisi rak secara instan.
+- **Pindai Cek Barang & Posisi Rak Gudang serta Inspeksi Isi Rak Multi-Barang (`FR-INV-008`, `FR-WHS-004`, `AC-34`, `AC-36`):**
+  - Pemindaian barcode produk fisik maupun barcode lokasi rak/gudang di lantai gudang memanggil `GET /api/v1/stock/by-location?search=<query>` yang mencocokkan `i.sku`, `i.barcode`, `i.name`, `sl.code`, `sl.name`, `w.code`, dan `w.name`.
+  - Jika query cocok dengan barang (SKU/Barcode), `StockLookupModal` menampilkan Kartu Identitas Barang dan sebaran rak penyimpanannya.
+  - Jika query cocok dengan kode/nama Lokasi Rak (`sl.code`) atau Gudang (`w.code`), `StockLookupModal` menampilkan Kartu Identitas Rak/Gudang (jumlah macam SKU unik, total stok fisik, total in-transit) beserta daftar seluruh barang (multi-SKU) yang tersimpan di lokasi tersebut.
 - **Visualisasi Barcode Vektor & Cetak Label Stiker (`FR-MST-010`, `AC-35`):**
   - Database hanya menyimpan string `barcode` dan `sku`; gambar batang barcode (`<svg>` EAN-13 / Code-128) dirender secara deterministik *on-the-fly* di sisi klien (frontend) baik untuk pratinjau layar maupun pencetakan stiker fisik (`50x30 mm`).
 

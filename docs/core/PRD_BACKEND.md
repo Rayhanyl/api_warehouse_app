@@ -228,8 +228,8 @@ Redis, queue, worker, atau integrasi eksternal dalam MVP.
 | `FR-IAM-001..009` | `IAM-F01..F09` | `auth_service`, `user_service`, `access_service`, `menu_service`, auth/user/menu routes & dependencies | `AC-05`, `AC-11`, `AC-12`, `AC-14` |
 | `FR-AUD-001..002` | `AUD-F01..F02` | `audit_service`, `audit_repo`, audit routes | `AC-05`, `AC-07`, `AC-08`, `AC-16`, `AC-22` |
 | `FR-MST-001..009` | `MST-F01..F09` | `master_service`, `master_repo`, item import dan supplier import service/repository, category/uom/supplier/item routes (termasuk kolom & indeks barcode, serta generator barcode internal) | `AC-16`, `AC-19`, `AC-22`, `AC-30`, `AC-31`, `AC-33` |
-| `FR-WHS-001..003` | `WHS-F01..F03` | `warehouse_service`, `warehouse_repo`, warehouse/location routes | `AC-12`, `AC-16`, `AC-20`, `AC-22` |
-| `FR-INV-001..008` | `INV-F01..F08` | `inventory_service` (`apply_movement`), `stock_service`, `inventory_repo`, stock routes, barcode/QR scanner lookup barang & posisi rak gudang | `AC-02`, `AC-03`, `AC-04`, `AC-06`, `AC-08`, `AC-13`, `AC-16`, `AC-33`, `AC-34` |
+| `FR-WHS-001..004` | `WHS-F01..F04` | `warehouse_service`, `warehouse_repo`, warehouse/location routes, pencarian lokasi/gudang pada saldo stok | `AC-12`, `AC-16`, `AC-20`, `AC-22`, `AC-36` |
+| `FR-INV-001..008` | `INV-F01..F08` | `inventory_service` (`apply_movement`), `stock_service`, `inventory_repo`, stock routes, barcode/QR scanner lookup barang & inspeksi multi-SKU posisi rak gudang | `AC-02`, `AC-03`, `AC-04`, `AC-06`, `AC-08`, `AC-13`, `AC-16`, `AC-33`, `AC-34`, `AC-36` |
 | `FR-PUR-001..004` | `PUR-F01..F04` | `po_service` (`apply_receipt`), `po_repo`, PO routes | `AC-01`, `AC-13`, `AC-15`, `AC-16`, `AC-21`, `AC-22` |
 | `FR-RCV-001..005` | `RCV-F01..F05` | `gr_service`, `gr_repo`, GR routes, penyediaan payload cetak GRN lengkap | `AC-01`, `AC-07`, `AC-12`, `AC-13`, `AC-15`, `AC-16`, `AC-21`, `AC-22`, `AC-32` |
 | `FR-TRF-001..006` | `TRF-F01..F06` | `transfer_service` (`in_transit`), `transfer_repo`, transfer routes, penyediaan payload cetak Surat Jalan lengkap | `AC-02`, `AC-03`, `AC-04`, `AC-06`, `AC-09`, `AC-12`, `AC-15`, `AC-16`, `AC-21`, `AC-22`, `AC-32` |

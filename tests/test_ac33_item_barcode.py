@@ -204,6 +204,23 @@ def test_ac32_ac33_transaction_lines_and_stock_include_item_barcode(
     assert res_stock.json()["total"] == 1
     assert res_stock.json()["items"][0]["item_barcode"] == "8990001112223"
 
+    # AC-36: Cek pencarian kode Lokasi Rak (R-01) dan Kode Gudang (WH-PUSAT) pada /stock/by-location
+    res_rack = client.get(
+        "/api/v1/stock/by-location?search=R-01",
+        headers=headers,
+    )
+    assert res_rack.status_code == 200
+    assert res_rack.json()["total"] == 1
+    assert res_rack.json()["items"][0]["location_code"] == "R-01"
+
+    res_wh = client.get(
+        "/api/v1/stock/by-location?search=WH-PUSAT",
+        headers=headers,
+    )
+    assert res_wh.status_code == 200
+    assert res_wh.json()["total"] == 1
+    assert res_wh.json()["items"][0]["warehouse_code"] == "WH-PUSAT"
+
     # Buat Stock Transfer
     res_trf = client.post(
         "/api/v1/stock-transfers",

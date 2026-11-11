@@ -115,6 +115,11 @@ Untuk mendukung kecepatan operasional toko cabang dan kasir retail:
   - Pratinjau visual barcode tampil langsung di `StockFormDialog` (saat mengetik/generate barcode) dan `StockDetailDialog`.
   - `StockDetailDialog` menyediakan aksi **"Cetak Label Barcode"** dengan layout stiker thermal standar (`50x30 mm`) yang siap ditempel pada kemasan fisik barang.
   - Dokumen cetak Bukti Penerimaan Barang (`GoodsReceiptPrintSheet`) dan Surat Jalan Transfer (`StockTransferPrintSheet`) turut menampilkan barcode visual dokumen untuk mempercepat proses verifikasi scan.
+- **Barcode Lokasi Rak & Gudang serta Inspeksi Isi Rak Multi-Barang (`WHS-F04` / `LOC-F03`, `AC-36`):**
+  - Modal detail Lokasi Penyimpanan (`StorageLocationDetailDialog`) dan Gudang (`WarehouseDetailDialog`) menampilkan visualisasi barcode Code-128 untuk `location.code` dan `warehouse.code` beserta tombol **"Cetak Label Rak"** / **"Cetak Label Gudang"**.
+  - `StockLookupModal` mendukung deteksi cerdas dua arah (*Dual-Mode Lookup*):
+    1. **Mode Barang (Scan SKU / Barcode Produk):** Menampilkan identitas barang dan tabel sebaran di rak mana saja barang tersebut berada.
+    2. **Mode Lokasi Rak / Gudang (Scan Barcode Rak `JKT-RAK-A1` atau Gudang `WH-JKT-01`):** Menampilkan Kartu Identitas Rak/Gudang (jumlah macam SKU barang di rak tersebut, total unit fisik, dan stok in-transit) beserta tabel rincian seluruh macam barang yang tersimpan di lokasi tersebut.
 
 ## 4. Komponen dan state
 

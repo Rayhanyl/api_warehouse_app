@@ -507,6 +507,7 @@ memastikan keunikan barcode item, lookup barcode/SKU, dan pencegahan duplikasi k
 | WHS-F01 | FR-WHS-001 | Warehouse dengan `allow_negative_stock` | MVP |
 | WHS-F02 | FR-WHS-002 | Storage location dalam warehouse | MVP |
 | WHS-F03 | FR-WHS-003 | Validasi location aktif dan ownership | MVP |
+| WHS-F04 | FR-WHS-004 | Barcode lokasi rak & gudang (Code-128), cetak stiker label rak/gudang, serta inspeksi isi rak multi-SKU (`LOC-F03`) | MVP |
 
 **Business rules:** kode warehouse unik; kode location unik di dalam warehouse;
 pembuatan location mewajibkan warehouse aktif; contract `validate_location` memastikan
@@ -514,7 +515,7 @@ location aktif dan dimiliki oleh warehouse yang direferensikan (`BR-GLB-008`);
 `allow_negative_stock` default `false`, hanya Super Admin (`warehouse:manage`) yang
 mengubahnya, dan setiap perubahan wajib tercatat pada audit log; tidak boleh
 menonaktifkan warehouse atau location yang masih memiliki saldo non-nol atau referensi
-dokumen aktif; pembacaan daftar dan detail warehouse serta storage location bagi `Warehouse Staff`, `Warehouse Manager`, dan `Purchasing Staff` terfilter sesuai `user_warehouses` (dengan pengecualian parameter referensi tujuan Transfer saat memilih gudang/lokasi tujuan Stock Transfer).
+dokumen aktif; pembacaan daftar dan detail warehouse serta storage location bagi `Warehouse Staff`, `Warehouse Manager`, dan `Purchasing Staff` terfilter sesuai `user_warehouses` (dengan pengecualian parameter referensi tujuan Transfer saat memilih gudang/lokasi tujuan Stock Transfer). Setiap kode lokasi rak (`storage_locations.code`) dan kode gudang (`warehouses.code`) dirender sebagai barcode 1D Code-128 yang dapat dicetak sebagai label stiker tiang/besi rak (`Cetak Label Rak` / `Cetak Label Gudang`) dan dipindai melalui `StockLookupModal` untuk menampilkan seluruh macam barang (multi-SKU) beserta saldo di lokasi/gudang tersebut.
 
 **Data, permission, dependency:** `warehouses`, `storage_locations`;
 `warehouse:manage`, `location:manage`, `master:read`; dipakai IAM, INV, PUR, RCV,
@@ -524,7 +525,7 @@ TRF, OPN.
 location (`INVALID_LOCATION`) ditolak, penonaktifan dengan open reference atau saldo
 non-nol ditolak (`ENTITY_IN_USE`), dan perubahan konfigurasi `allow_negative_stock`
 diaudit; `AC-12` warehouse scoping pada pembacaan dan pengelolaan gudang/lokasi; `AC-16` pencarian, filter,
-pagination, dan sort whitelist daftar warehouse/location.
+pagination, dan sort whitelist daftar warehouse/location; `AC-36` cetak label barcode rak/gudang dan pemindaian kode rak/gudang menampilkan seluruh daftar SKU barang yang tersimpan di dalamnya.
 
 ### 6.6 INV, Inventory
 
@@ -941,6 +942,7 @@ Pada migrasi Fase 2 (`012_create_tenants_settings.sql` dan `013_add_tenant_scope
 | AC-33 | *(Tambahan Fase 1 — MST-F08, MST-F09, INV-F07)* Barcode / QR Scanner & Manajemen Barcode Barang: keunikan barcode item, auto-generator barcode internal (EAN-13/Code-128), lookup cepat via hardware gun scanner maupun kamera, serta auto-matching pada form operasional | MST/INV | Mapped |
 | AC-34 | *(Tambahan Fase 1 — INV-F08)* Pindai Barcode untuk Cek Informasi Barang & Sebaran Lokasi Rak Gudang (Barcode Stock & Location Quick Lookup): pemindaian barcode fisik di lantai gudang untuk memuat profil barang dan tabel saldo aktual per gudang/lokasi rak secara real-time | INV | Mapped |
 | AC-35 | *(Tambahan Fase 1 — MST-F10)* Visualisasi Barcode Vektor SVG (EAN-13 & Code-128) & Cetak Label Stiker Fisik Barang (`50x30 mm`) serta penyematan barcode visual pada dokumen cetak GRN dan Surat Jalan | MST/RCV/TRF | Mapped |
+| AC-36 | *(Tambahan Fase 1 — WHS-F04 / LOC-F03, INV-F08)* Barcode Lokasi Rak & Gudang + Inspeksi Isi Rak Multi-Barang: cetak label barcode rak/gudang dan pemindaian kode rak (`storage_locations.code`) atau gudang (`warehouses.code`) menampilkan ringkasan lokasi beserta seluruh daftar macam barang (multi-SKU) di dalamnya | WHS/INV | Mapped |
 
 ### 10.1 Spesifikasi acceptance criteria terpisah (numbering, query, platform, master, warehouse, dan audit)
 
@@ -962,6 +964,7 @@ hanya diuji secara tidak langsung melalui workflow dokumen lain.
 | `AC-33` | Barcode / QR Scanner & Manajemen Barcode Barang (`MST-F08`, `MST-F09`, `INV-F07`, `FR-MST-008`, `FR-MST-009`, `FR-INV-007`) | Pembuatan/pengubahan item dengan barcode pabrikan atau auto-generator internal; duplikasi barcode; pencarian dan lookup barcode/SKU; input pemindaian hardware gun scanner berkecepatan tinggi; input pemindaian via modul kamera peramban; auto-matching baris barang pada transaksi penerimaan (GR), transfer, dan hitung opname | Barcode unik tanpa membedakan huruf besar/kecil (`uq_items_barcode_lower`); barcode duplikat ditolak (`DUPLICATE`); generator internal menghasilkan kode EAN-13 valid (prefix GS1 `200..299` + modulo-10) atau Code-128; bila barcode tidak diisi, scanner fallback ke `sku`; pemindaian via hardware scanner atau kamera mendeteksi barang secara instan, memilih baris PO/Transfer/Opname yang sesuai, dan mengakumulasi kuantitas secara akurat tanpa *race condition* input | `DUPLICATE`, `NOT_FOUND`, `VALIDATION_ERROR` |
 | `AC-34` | Pindai Barcode Cek Stok & Posisi Rak (`INV-F08`, `FR-INV-008`) | Pemindaian barcode atau SKU produk fisik di gudang/toko melalui shortcut Topbar, scanner gun, atau kamera peramban; pemeriksaan barang bersaldo di beberapa lokasi vs barang tanpa saldo vs barcode tidak terdaftar | Modal pemindai seketika memuat identitas barang (SKU, nama, barcode, kategori, satuan UoM, total saldo agregat) dan tabel sebaran posisi fisik per gudang dan lokasi rak (`location_code`, `location_name`, `qty_on_hand`, `qty_in_transit`); jika barang belum bersaldo, menampilkan status saldo nol di seluruh lokasi; jika barcode tidak terdaftar, menampilkan pesan validasi aman tanpa crash | `NOT_FOUND`, `VALIDATION_ERROR` |
 | `AC-35` | Visualisasi Barcode SVG & Cetak Label Stiker Barang (`MST-F10`, `FR-MST-010`) | Pratinjau grafik batang barcode SVG (EAN-13 untuk 13 digit valid dan Code-128 untuk alfanumerik/SKU) pada form dan detail barang; aksi cetak label stiker fisik barang (`50x30 mm`); tampilan barcode visual pada cetakan GRN dan Surat Jalan | Grafik batang SVG dirender secara presisi di sisi klien tanpa menyimpan file gambar di database; tombol Cetak Label Barcode membuka pratinjau/dialog cetak stiker fisik berisi Nama Barang, Barcode SVG, SKU, dan UoM tanpa terhalang notifikasi toast | `VALIDATION_ERROR` |
+| `AC-36` | Barcode Lokasi Rak & Gudang + Inspeksi Isi Rak Multi-Barang (`WHS-F04` / `LOC-F03`, `INV-F08`) | Cetak label stiker barcode pada detail Lokasi Penyimpanan (`storage_locations.code`) dan Gudang (`warehouses.code`); pemindaian barcode rak atau gudang pada `StockLookupModal` | Endpoint `/api/v1/stock/by-location?search=` mencocokkan kode/nama barang, kode/nama lokasi rak, maupun kode/nama gudang; saat kode rak atau gudang dipindai, `StockLookupModal` menampilkan Kartu Identitas Rak/Gudang (jumlah macam SKU unik, total stok fisik, total in-transit) dan tabel seluruh daftar barang yang tersimpan di lokasi tersebut | `NOT_FOUND`, `VALIDATION_ERROR` |
 
 ## 11. Requirement Traceability Matrix
 
