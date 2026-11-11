@@ -113,9 +113,9 @@ Catatan M8 di `docs/API/README.md` memuat benchmark lokal yang pernah dilakukan.
 
 ### 2.5. Kriteria selesai QA backend
 
-- Seluruh AC yang terdampak perubahan lulus; sebelum rilis, suite `AC-01` s.d. `AC-22`, `AC-30`, `AC-31`, `AC-33`, dan `AC-34` lulus.
+- Seluruh AC yang terdampak perubahan lulus; sebelum rilis, suite `AC-01` s.d. `AC-22`, `AC-30`, `AC-31`, `AC-33`, `AC-34`, `AC-35`, dan `AC-36` lulus.
 - AC-14 menguji menu pada PostgreSQL nyata; permission menu hanya menyaring navigasi dan tidak menggantikan otorisasi endpoint backend.
-- Status run backend: 49 tes lulus di `wms_test`, mencakup seluruh skenario `AC-01` s.d. `AC-22`, `AC-30` (import massal item), `AC-31` (import massal supplier), `AC-33` (master data barcode unik & serialisasi transaksi), dan `AC-34` (pencarian stok lokasi via barcode/SKU).
+- Status run backend: 49 tes lulus di `wms_test`, mencakup seluruh skenario `AC-01` s.d. `AC-22`, `AC-30` (import massal item termasuk kolom barcode), `AC-31` (import massal supplier), `AC-33` (master data barcode unik & serialisasi transaksi), `AC-34` (pencarian stok lokasi via barcode/SKU), dan `AC-36` (pencarian stok per lokasi rak & gudang).
 - Tidak ada temuan terbuka yang mengancam integritas saldo/ledger, autentikasi, atau pembatasan akses.
 - Pemeriksaan saldo, ledger, audit, dan rollback konsisten dengan PRD.
 - Kinerja dilaporkan dengan lingkungan, ukuran data, metode, dan hasil p95; klaim target hanya dibuat bila hasilnya memang terukur.
