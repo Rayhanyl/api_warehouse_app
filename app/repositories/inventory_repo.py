@@ -240,8 +240,8 @@ def list_stock_by_location(
 
     if search:
         kw = f"%{search.strip()}%"
-        conditions.append("(i.sku ILIKE %s OR i.name ILIKE %s)")
-        params.extend([kw, kw])
+        conditions.append("(i.sku ILIKE %s OR COALESCE(i.barcode, '') ILIKE %s OR i.name ILIKE %s)")
+        params.extend([kw, kw, kw])
 
     where_sql = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
@@ -301,6 +301,7 @@ def list_stock_by_location(
             sl.name AS location_name,
             cb.item_id,
             i.sku AS item_sku,
+            i.barcode AS item_barcode,
             i.name AS item_name,
             i.category_id,
             c.name AS category_name,
@@ -361,8 +362,8 @@ def list_stock_by_warehouse(
 
     if search:
         kw = f"%{search.strip()}%"
-        conditions.append("(i.sku ILIKE %s OR i.name ILIKE %s)")
-        params.extend([kw, kw])
+        conditions.append("(i.sku ILIKE %s OR COALESCE(i.barcode, '') ILIKE %s OR i.name ILIKE %s)")
+        params.extend([kw, kw, kw])
 
     where_sql = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
@@ -422,6 +423,7 @@ def list_stock_by_warehouse(
             w.name AS warehouse_name,
             cb.item_id,
             i.sku AS item_sku,
+            i.barcode AS item_barcode,
             i.name AS item_name,
             i.category_id,
             c.name AS category_name,
@@ -492,8 +494,8 @@ def list_stock_summary(
 
     if search:
         kw = f"%{search.strip()}%"
-        outer_conditions.append("(i.sku ILIKE %s OR i.name ILIKE %s)")
-        outer_params.extend([kw, kw])
+        outer_conditions.append("(i.sku ILIKE %s OR COALESCE(i.barcode, '') ILIKE %s OR i.name ILIKE %s)")
+        outer_params.extend([kw, kw, kw])
 
     outer_where = f"WHERE {' AND '.join(outer_conditions)}" if outer_conditions else ""
 
@@ -547,6 +549,7 @@ def list_stock_summary(
         SELECT
             cb.item_id,
             i.sku AS item_sku,
+            i.barcode AS item_barcode,
             i.name AS item_name,
             i.category_id,
             c.name AS category_name,

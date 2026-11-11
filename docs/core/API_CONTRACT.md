@@ -80,6 +80,17 @@ setiap endpoint. Detail operasional dan contoh request/response berada di
   `SUPPLIER_CREATED` commit dalam satu transaksi. Endpoint tidak menambah kode
   error, tabel, atau kolom.
 
+## Barcode barang dan lookup scanner (`FR-MST-008`, `FR-INV-007`)
+
+- Pembuatan dan pembaruan item (`POST /api/v1/items`, `PUT /api/v1/items/{id}`) menerima field opsional `barcode` (string teks maks 64 karakter, null jika tidak ada).
+- Keunikan `barcode` dijaga secara case-insensitive (`uq_items_barcode_lower`); duplikasi nilai non-null ditolak dengan `409 DUPLICATE`.
+- Endpoint pencarian `GET /api/v1/items` mendukung parameter `search` yang mencocokkan `barcode`, `sku`, maupun `name`. Pemindai scanner (hardware gun atau kamera) menggunakan endpoint ini untuk auto-matching barang pada form transaksi operasional.
+
+## Kontrak cetak dokumen fisik (`FR-RCV-005`, `FR-TRF-006`)
+
+- Endpoint `GET /api/v1/goods-receipts/{id}` dan `GET /api/v1/stock-transfers/{id}` mengembalikan data relasional lengkap (header, rincian lines dengan SKU, barcode, nama barang, UoM, lokasi rak, kuantitas, catatan, dan nama pengguna penandatangan) yang siap dikonsumsi langsung oleh komponen cetak frontend (`@media print` / `window.print()`).
+- Dokumen fisik Surat Jalan (`TRF-F06`) dan Bukti Penerimaan Barang (`RCV-F05`) tidak memerlukan endpoint biner PDF tambahan pada backend; rendering cetak dan penyimpanan ke PDF ditangani secara presisi pada layer antarmuka pengguna.
+
 ## Katalog kode error resmi
 
 Seluruh kode error bisnis (`DomainError` pada `app/core/exceptions.py`) dan handler

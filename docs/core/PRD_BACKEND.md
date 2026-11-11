@@ -131,6 +131,21 @@ header/sheet salah, dan batas terlampaui menghasilkan `422 VALIDATION_ERROR`
 tanpa penyimpanan. Workbook yang terbaca menghasilkan ringkasan parsial
 `total_rows`, `imported_count`, `failed_count`, dan `errors[]`.
 
+### 2.3 Dukungan Barcode Barang & Lookup Scanner (`FR-MST-008`, `FR-INV-007`)
+
+- **Skema Kolom & Pydantic:** Tabel `items` memiliki kolom `barcode VARCHAR(64) NULL`. Schema `ItemCreate`, `ItemUpdate`, dan `ItemOut` memuat atribut opsional `barcode: str | None = None` (maksimal 64 karakter, trim whitespace, case-insensitive uniqueness melalui indeks `uq_items_barcode_lower`).
+- **Pencarian & Lookup Cepat:**
+  - Endpoint `GET /api/v1/items` mendukung parameter `search` yang mencocokkan `sku`, `name`, maupun `barcode`, serta filter khusus `barcode` bila diperlukan.
+  - Jika barcode tidak diisi saat pembuatan item, sistem mengizinkan nilai `null` (beberapa item dapat bernilai `barcode IS NULL`).
+  - Lookup scanner: jika barcode dipindai, backend dapat mengembalikan entitas item yang cocok secara unik untuk digunakan auto-fill pada transaksi GR, Transfer, dan Opname.
+
+### 2.4 Kelengkapan Kontrak Data Cetak Dokumen Fisik (`FR-RCV-005`, `FR-TRF-006`)
+
+- Endpoint detail `GET /api/v1/goods-receipts/{id}` dan `GET /api/v1/stock-transfers/{id}` menjamin pengembalian data relasional lengkap tanpa truncate, mencakup:
+  - Header: nomor dokumen, tanggal dokumen, nama & kode gudang (asal dan tujuan), data kontak supplier/pemasok, nama pembuat (`created_by_name`), pemeriksa, dan penyetuju.
+  - Baris barang (*lines*): kode SKU, kode barcode, nama barang, kode UoM, kuantitas dikirim/dipesan, kuantitas diterima, kode rak/lokasi simpan (`location_code` & `location_name`), dan catatan per baris.
+- Frontend memanfaatkan data lengkap tersebut untuk merender dokumen siap cetak (*print-ready layout* / `window.print()`).
+
 ## 3. Arsitektur service dan persistence
 
 ### 3.1 Layer
@@ -211,12 +226,12 @@ Redis, queue, worker, atau integrasi eksternal dalam MVP.
 | `FR-PLT-001..005` | `PLT-F01..F05` | `numbering_service`, `utils/pagination`, `core/exceptions`, `core/middleware`, health route, `db/migrate` | `AC-15` s.d. `AC-18` |
 | `FR-IAM-001..009` | `IAM-F01..F09` | `auth_service`, `user_service`, `access_service`, `menu_service`, auth/user/menu routes & dependencies | `AC-05`, `AC-11`, `AC-12`, `AC-14` |
 | `FR-AUD-001..002` | `AUD-F01..F02` | `audit_service`, `audit_repo`, audit routes | `AC-05`, `AC-07`, `AC-08`, `AC-16`, `AC-22` |
-| `FR-MST-001..007` | `MST-F01..F07` | `master_service`, `master_repo`, item import dan supplier import service/repository, category/uom/supplier/item routes | `AC-16`, `AC-19`, `AC-22`, `AC-30`, `AC-31` |
+| `FR-MST-001..008` | `MST-F01..F08` | `master_service`, `master_repo`, item import dan supplier import service/repository, category/uom/supplier/item routes (termasuk kolom & indeks barcode) | `AC-16`, `AC-19`, `AC-22`, `AC-30`, `AC-31`, `AC-33` |
 | `FR-WHS-001..003` | `WHS-F01..F03` | `warehouse_service`, `warehouse_repo`, warehouse/location routes | `AC-12`, `AC-16`, `AC-20`, `AC-22` |
-| `FR-INV-001..006` | `INV-F01..F06` | `inventory_service` (`apply_movement`), `stock_service`, `inventory_repo`, stock routes | `AC-02`, `AC-03`, `AC-04`, `AC-06`, `AC-08`, `AC-13`, `AC-16` |
+| `FR-INV-001..007` | `INV-F01..F07` | `inventory_service` (`apply_movement`), `stock_service`, `inventory_repo`, stock routes, barcode/QR scanner lookup | `AC-02`, `AC-03`, `AC-04`, `AC-06`, `AC-08`, `AC-13`, `AC-16`, `AC-33` |
 | `FR-PUR-001..004` | `PUR-F01..F04` | `po_service` (`apply_receipt`), `po_repo`, PO routes | `AC-01`, `AC-13`, `AC-15`, `AC-16`, `AC-21`, `AC-22` |
-| `FR-RCV-001..004` | `RCV-F01..F04` | `gr_service`, `gr_repo`, GR routes | `AC-01`, `AC-07`, `AC-12`, `AC-13`, `AC-15`, `AC-16`, `AC-21`, `AC-22` |
-| `FR-TRF-001..005` | `TRF-F01..F05` | `transfer_service` (`in_transit`), `transfer_repo`, transfer routes | `AC-02`, `AC-03`, `AC-04`, `AC-06`, `AC-09`, `AC-12`, `AC-15`, `AC-16`, `AC-21`, `AC-22` |
+| `FR-RCV-001..005` | `RCV-F01..F05` | `gr_service`, `gr_repo`, GR routes, penyediaan payload cetak GRN lengkap | `AC-01`, `AC-07`, `AC-12`, `AC-13`, `AC-15`, `AC-16`, `AC-21`, `AC-22`, `AC-32` |
+| `FR-TRF-001..006` | `TRF-F01..F06` | `transfer_service` (`in_transit`), `transfer_repo`, transfer routes, penyediaan payload cetak Surat Jalan lengkap | `AC-02`, `AC-03`, `AC-04`, `AC-06`, `AC-09`, `AC-12`, `AC-15`, `AC-16`, `AC-21`, `AC-22`, `AC-32` |
 | `FR-OPN-001..006` | `OPN-F01..F06` | `opname_service` (`is_location_frozen`), `opname_repo`, opname routes | `AC-04`, `AC-10`, `AC-12`, `AC-15`, `AC-16`, `AC-21`, `AC-22` |
 | `FR-TNT-001..006` *(Fase 2 — M9)* | `TNT-F01..F06` | `tenant_service` (`ensure_tenant_active`, `check_quota`), `tenant_repo`, `routes/platform.py`, `routes/tenants.py`, context `current_tenant` | `AC-23`, `AC-24`, `AC-25`, `AC-27`, `AC-28`, `AC-29` |
 | `FR-CFG-001..004` *(Fase 2 — M9)* | `CFG-F01..F04` | `setting_service` (`get_setting`), `setting_repo`, `routes/settings.py` | `AC-22`, `AC-26` |

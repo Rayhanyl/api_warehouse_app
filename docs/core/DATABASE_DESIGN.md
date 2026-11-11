@@ -23,7 +23,7 @@ aturan integritas, bukan sumber business requirement baru.
 | `PLT` | `document_sequences`, `schema_migrations` | `PLT-F01` (`FR-PLT-001`), `PLT-F05` (`FR-PLT-005`), `AC-15`, `AC-18` |
 | `IAM` | `roles`, `permissions`, `role_permissions`, `users`, `user_warehouses`, `refresh_tokens`, `menus` | `IAM-F01..F09` (`FR-IAM-001..009`), `AC-05`, `AC-11`, `AC-12`, `AC-14` |
 | `AUD` | `audit_logs` | `AUD-F01..F02` (`FR-AUD-001..002`), `AC-05`, `AC-07`, `AC-08`, `AC-22` |
-| `MST` | `categories`, `uoms`, `suppliers`, `items` | `MST-F01..F07` (`FR-MST-001..007`), `AC-19`, `AC-30`, `AC-31` |
+| `MST` | `categories`, `uoms`, `suppliers`, `items` (termasuk kolom `barcode`) | `MST-F01..F08` (`FR-MST-001..008`), `AC-19`, `AC-30`, `AC-31`, `AC-33` |
 | `WHS` | `warehouses`, `storage_locations` | `WHS-F01..F03` (`FR-WHS-001..003`), `AC-20` |
 | `INV` | `inventory_balances`, `stock_movements` | `INV-F01..F06` (`FR-INV-001..006`), `AC-02`, `AC-03`, `AC-06`, `AC-08`, `AC-13` |
 | `PUR` | `purchase_orders`, `po_lines` | `PUR-F01..F04` (`FR-PUR-001..004`), `AC-01`, `AC-21` |
@@ -74,23 +74,24 @@ dengan `CHECK (qty_on_hand >= 0)` karena aturan bergantung pada gudang.
 | `009` | Menu dan seed navigasi |
 | `010` | Pengerasan constraint unik (`uq_stock_transfer_lines_transfer_item`) dan indeks performa Fase 1 |
 | `011` | Optimasi indeks komposit pencarian & filter `audit_logs` Fase 1 |
-| `012` *(Fase 2 — M9)* | Tabel `plans`, `tenants`, `platform_admins`, `platform_refresh_tokens`, `settings`, dan seed paket kuota awal |
-| `013` *(Fase 2 — M9)* | Penambahan `tenant_id`, *Composite FK* `(tenant_id, <fk>_id)`, constraint `UNIQUE (tenant_id, ...)`, dan PostgreSQL RLS pada 24 tabel bisnis |
+| `012` | Penambahan kolom `barcode` pada tabel `items` dan indeks unik fungsional case-insensitive `uq_items_barcode_lower` (Fase 1) |
+| `013` *(Fase 2 — M9)* | Tabel `plans`, `tenants`, `platform_admins`, `platform_refresh_tokens`, `settings`, dan seed paket kuota awal |
+| `014` *(Fase 2 — M9)* | Penambahan `tenant_id`, *Composite FK* `(tenant_id, <fk>_id)`, constraint `UNIQUE (tenant_id, ...)`, dan PostgreSQL RLS pada 24 tabel bisnis |
 
-Migration yang sudah diterapkan (`001`–`011`) tidak diedit; transisi Multi-Tenant Fase 2 menggunakan berkas baru `012` dan `013`.
+Migration yang sudah diterapkan (`001`–`011`) tidak diedit; penambahan `barcode` Fase 1 menggunakan berkas `012`, dan transisi Multi-Tenant Fase 2 menggunakan berkas baru `013` dan `014`.
 
 ## 6. Spesifikasi teknis migrasi Fase 2 (M9 — Multi-Tenant SaaS)
 
-Untuk menjamin migrasi *forward-only* `012_create_tenants_settings.sql` dan `013_add_tenant_scope.sql` berjalan tanpa konflik pada PostgreSQL, rancangan skema wajib mengikuti empat aturan teknis berikut:
+Untuk menjamin migrasi *forward-only* `013_create_tenants_settings.sql` dan `014_add_tenant_scope.sql` berjalan tanpa konflik pada PostgreSQL, rancangan skema wajib mengikuti empat aturan teknis berikut:
 
-1. **Penanganan Trigger Imutabilitas (`007`) saat Backfill `013_add_tenant_scope.sql`:**
-   - Karena `stock_movements` dan `audit_logs` dilindungi oleh trigger `trg_stock_movements_immutable` dan `trg_audit_logs_immutable` (yang menolak setiap `UPDATE`), skrip migrasi `013` (dijalankan oleh role pemilik tabel di dalam satu blok transaksi) wajib melakukan:
+1. **Penanganan Trigger Imutabilitas (`007`) saat Backfill `014_add_tenant_scope.sql`:**
+   - Karena `stock_movements` dan `audit_logs` dilindungi oleh trigger `trg_stock_movements_immutable` dan `trg_audit_logs_immutable` (yang menolak setiap `UPDATE`), skrip migrasi `014` (dijalankan oleh role pemilik tabel di dalam satu blok transaksi) wajib melakukan:
      - `ALTER TABLE stock_movements DISABLE TRIGGER trg_stock_movements_immutable;`
      - `ALTER TABLE audit_logs DISABLE TRIGGER trg_audit_logs_immutable;`
      - melakukan *backfill* `UPDATE ... SET tenant_id = <default_tenant_id>` lalu memasang `ALTER COLUMN tenant_id SET NOT NULL`, dan
      - mengaktifkan kembali kedua trigger (`ENABLE TRIGGER`) sebelum transaksi migrasi selesai.
 2. **Prasyarat `UNIQUE (tenant_id, id)` untuk *Composite Foreign Key* (`BR-GLB-019`):**
-   - Sebelum mengganti Foreign Key tunggal menjadi *Composite FK* `(tenant_id, <fk>_id)`, migrasi `013` wajib menambahkan constraint `uq_<table>_tenant_id UNIQUE (tenant_id, id)` pada seluruh tabel induk: `roles`, `users`, `menus`, `categories`, `uoms`, `suppliers`, `items`, `warehouses`, `storage_locations` (beserta `UNIQUE (tenant_id, id, warehouse_id)`), `purchase_orders`, `po_lines`, `goods_receipts`, `stock_transfers`, dan `stock_opnames`.
+   - Sebelum mengganti Foreign Key tunggal menjadi *Composite FK* `(tenant_id, <fk>_id)`, migrasi `014` wajib menambahkan constraint `uq_<table>_tenant_id UNIQUE (tenant_id, id)` pada seluruh tabel induk: `roles`, `users`, `menus`, `categories`, `uoms`, `suppliers`, `items`, `warehouses`, `storage_locations` (beserta `UNIQUE (tenant_id, id, warehouse_id)`), `purchase_orders`, `po_lines`, `goods_receipts`, `stock_transfers`, dan `stock_opnames`.
 3. **Transformasi 14 Constraint `UNIQUE`/`PK` Global Menjadi Per-Tenant (`BR-GLB-021`):**
    - Constraint global berikut di-`DROP` dan dibuat ulang dengan awalan `tenant_id`:
      `uq_roles_name`, `uq_users_username`, `uq_users_email`, `uq_menus_code`, `uq_categories_name`, `uq_uoms_code`, `uq_suppliers_code`, `uq_items_sku`, `uq_warehouses_code`, `uq_purchase_orders_po_number`, `uq_goods_receipts_gr_number`, `uq_stock_transfers_transfer_number`, `uq_stock_opnames_opname_number`, serta `pk_document_sequences (tenant_id, doc_type, period)`.
@@ -104,7 +105,7 @@ Untuk menjamin migrasi *forward-only* `012_create_tenants_settings.sql` dan `013
 | `FR-PLT-001`, `FR-PLT-005` | `document_sequences` (`(doc_type, period)` / `(tenant_id, doc_type, period)` pada M9), `schema_migrations` | `AC-15`, `AC-18`, `AC-27` |
 | `FR-IAM-001..009` | IAM tables, `token_hash`, active/lockout fields, `user_warehouses`, `menus` | `AC-05`, `AC-11`, `AC-12`, `AC-14` |
 | `FR-AUD-001..002` | Append-only `audit_logs` (tanpa hak `UPDATE`/`DELETE` bagi `wms_app`) | `AC-05`, `AC-07`, `AC-08`, `AC-22` |
-| `FR-MST-001..005` | Master tables dengan case-insensitive uniqueness, `allow_decimal`, `is_active`, dan FK | `AC-19`, `AC-27` |
+| `FR-MST-001..005`, `FR-MST-008` | Master tables dengan case-insensitive uniqueness (SKU & barcode `uq_items_barcode_lower`), `allow_decimal`, `is_active`, dan FK | `AC-19`, `AC-27`, `AC-33` |
 | `FR-MST-006..007` | `items`, `suppliers`, `audit_logs` (tanpa tabel/kolom baru); unique index case-insensitive `sku`/`code` menjadi sumber kebenaran duplikasi konkuren | `AC-30`, `AC-31` |
 | `FR-WHS-001..003` | `warehouses` (`allow_negative_stock`), `storage_locations` dengan unique `(id, warehouse_id)` | `AC-12`, `AC-20` |
 | `FR-INV-001..006` | `inventory_balances` (`(warehouse_id, location_id, item_id)`), append-only `stock_movements`, `NUMERIC(18,4)` | `AC-02`, `AC-03`, `AC-04`, `AC-06`, `AC-08`, `AC-13`, `AC-16` |

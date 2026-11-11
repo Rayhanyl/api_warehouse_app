@@ -76,6 +76,38 @@ ringkasan total/sukses/gagal dan rincian error per baris. Kode duplikat dan
 validasi field ditampilkan bersama nomor baris serta nama field. Nilai status
 `active`/`inactive` dan boolean Excel didukung; field opsional kosong diterima.
 
+### 3.3 Cetak Dokumen Fisik: Surat Jalan & Bukti Penerimaan Barang (`RCV-F05`, `TRF-F06`, `AC-32`)
+
+Untuk memenuhi kebutuhan legalitas pengiriman jalan raya dan SOP serah terima fisik pada toko cabang dan mitra B2B:
+- **Pendekatan Layout Cetak:** Menggunakan template cetak berbasis CSS `@media print` murni. Saat pengguna menekan tombol "Cetak Dokumen" pada modal detail dokumen, aplikasi membuka dialog cetak peramban (`window.print()`). Template dirancang presisi untuk format kertas A4 maupun continuous form / printer thermal, dengan elemen antarmuka web (tombol, modal, sidebar) otomatis disembunyikan saat mencetak.
+- **Surat Jalan Transfer (`TRF-F06`):**
+  - Kop perusahaan / nama toko cabang pengirim.
+  - Metadata: Nomor Transfer (`TR-YYYYMMDD-XXXX`), Tanggal Kirim, Gudang & Lokasi Asal, Gudang & Lokasi Tujuan, dan Catatan Pengiriman.
+  - Tabel Rincian: No, SKU, Barcode, Nama Barang, Satuan (UoM), Qty Kirim, Kolom Checklist Fisik Penerimaan Cabang, Catatan Kondisi.
+  - 3 Blok Tanda Tangan Fisik:
+    1. *Disiapkan Oleh:* Staf Gudang Pengirim.
+    2. *Dibawa Oleh:* Sopir / Kurir Ekspedisi (wajib disertai kolom isian No. Polisi Kendaraan & Nama Terang).
+    3. *Diterima Oleh:* Staf / Kepala Toko Cabang Penerima.
+- **Bukti Penerimaan Barang / GRN (`RCV-F05`):**
+  - Kop organisasi, Nomor Dokumen GRN (`GR-YYYYMMDD-XXXX`), Nomor PO Referensi, Nama Pemasok, Gudang Penerima, dan Tanggal Penerimaan.
+  - Tabel Barang: No, SKU, Barcode, Nama Barang, Satuan, Lokasi Simpan (*Rak/Bin*), Qty Dipesan, Qty Diterima, Catatan.
+  - 3 Blok Tanda Tangan Fisik:
+    1. *Diserahkan Oleh:* Pemasok / Pengantar Barang.
+    2. *Diperiksa Oleh:* Checker / Staf Penerimaan Gudang.
+    3. *Disetujui Oleh:* Warehouse Manager / Supervisor.
+
+### 3.4 Integrasi Barcode & QR Scanner (`MST-F08`, `INV-F07`, `AC-33`)
+
+Untuk mendukung kecepatan operasional toko cabang dan kasir retail:
+- **Form Master Data Barang:** Form penambahan/pengubahan barang menyediakan input teks `Barcode` opsional (maks 64 karakter) di samping kode SKU.
+- **Dukungan Hardware Barcode Gun (USB/Bluetooth):** Menggunakan hook kustom `useBarcodeScanner` yang mendengarkan event keyboard global dengan ambang buffer ketukan sangat cepat (10–50 ms antar karakter) dan mendeteksi terminasi `Enter`. Saat barcode terbaca, hook secara otomatis memicu pencarian barang atau pengisian baris dokumen tanpa mengharuskan kursor berada di input tertentu.
+- **Dukungan Kamera Web (Mobile / Tablet Toko Cabang):** Komponen modal pemindai kamera interaktif (memanfaatkan pustaka barcode peramban seperti `html5-qrcode` atau API native `BarcodeDetector`) yang dapat dipicu melalui tombol ikon barcode di form. Kamera membaca kode 1D (EAN-13, UPC, Code 128) maupun 2D (QR Code).
+- **Titik Otomasi Pemindaian:**
+  1. *Goods Receipt:* Menembak barcode kemasan barang langsung mencocokkan baris PO dan menambahkan kuantitas terima (+1 atau menampilkan prompt konfirmasi).
+  2. *Stock Transfer:* Scan barang saat verifikasi packing (gudang asal) dan unboxing serah terima (gudang cabang).
+  3. *Stock Opname:* Scan barcode rak (*Bin Location*), lalu scan barang di rak tersebut secara berulang untuk mengakumulasi hitungan fisik secara instan.
+  4. *Katalog Stok:* Scan barcode langsung memfilter kartu stok barang terkait.
+
 ## 4. Komponen dan state
 
 Komponen bersama minimum: authenticated shell, navigation/menu tree, data table,
@@ -133,11 +165,15 @@ Alur request umum:
 | `FR-MST-001..005` | `MST-F01..F05` | Layar CRUD dan aktivasi/deaktivasi kategori, UoM, item, supplier | master data CRUD dan list | `AC-16`, `AC-19` |
 | `FR-MST-006` | `MST-F06` | Aksi unduh template, unggah workbook, ringkasan hasil dan tabel error per baris | `GET /api/v1/items/import-template`, `POST /api/v1/items/import` | `AC-30` |
 | `FR-MST-007` | `MST-F07` | Aksi unduh template supplier, unggah workbook, ringkasan hasil dan tabel error per baris | `GET /api/v1/suppliers/import-template`, `POST /api/v1/suppliers/import` | `AC-31` |
+| `FR-MST-008` | `MST-F08` | Field input barcode pada form barang dan pencarian barang via barcode | CRUD item & filter `search`/`barcode` | `AC-33` |
 | `FR-WHS-001..003` | `WHS-F01..F03` | Layar CRUD warehouse, pengaturan `allow_negative_stock`, lokasi penyimpanan | warehouse dan storage location CRUD/list | `AC-12`, `AC-16`, `AC-20` |
 | `FR-INV-001..003` | `INV-F01..F03` | Saldo per lokasi, per gudang, ringkasan, in-transit, dan movement ledger | stock balances, by-warehouse, summary, movements | `AC-03`, `AC-12`, `AC-16` |
+| `FR-INV-007` | `INV-F07` | Hook pemindai scanner hardware & modal scanner kamera web pada form operasional | lookup barcode item dan lokasi | `AC-33` |
 | `FR-PUR-001..003` | `PUR-F01..F03` | Daftar/detail PO, form draft, aksi issue/cancel/close, progres fulfillment | purchase order CRUD, list, dan action endpoints | `AC-01`, `AC-15`, `AC-16`, `AC-21` |
 | `FR-RCV-001..004` | `RCV-F01..F04` | Daftar/detail GR, form penerimaan dari PO, aksi post dan cancel draft | goods receipt CRUD, list, dan action endpoints | `AC-01`, `AC-07`, `AC-12`, `AC-13`, `AC-21` |
+| `FR-RCV-005` | `RCV-F05` | Tombol dan layout cetak Bukti Penerimaan Barang (GRN) siap cetak/PDF | detail GR (`GET /api/v1/goods-receipts/{id}`) | `AC-32` |
 | `FR-TRF-001..005` | `TRF-F01..F05` | Daftar/detail transfer, form draft, approve, ship, receive (beserta alasan selisih), cancel | stock transfer CRUD, list, dan action endpoints | `AC-02`, `AC-03`, `AC-06`, `AC-09`, `AC-12`, `AC-21` |
+| `FR-TRF-006` | `TRF-F06` | Tombol dan layout cetak Surat Jalan Transfer (Delivery Note) siap cetak/PDF | detail transfer (`GET /api/v1/stock-transfers/{id}`) | `AC-32` |
 | `FR-OPN-001..006` | `OPN-F01..F06` | Sesi opname, indikator lokasi beku, input count fisik, submit, approve/reject | stock opname CRUD, list, count lines, dan action endpoints | `AC-04`, `AC-10`, `AC-12`, `AC-21` |
 | `FR-TNT-001..006` *(Fase 2 — M9)* | `TNT-F01..F06` | Input `tenant_slug` pada login tenant, panel `Platform Admin` (daftar/provisioning/status/kuota tenant), serta layar profil & penggunaan kuota bagi `Super Admin` tenant | `/api/v1/auth/login` (`tenant_slug`), `/api/v1/platform/*`, `/api/v1/tenant/profile` | `AC-23`, `AC-24`, `AC-25`, `AC-27`, `AC-28`, `AC-29` |
 | `FR-CFG-001..004` *(Fase 2 — M9)* | `CFG-F01..F04` | Layar pengaturan tenant dan override pengaturan per gudang beserta indikator sumber pewarisan nilai | `/api/v1/settings`, `/api/v1/warehouses/{id}/settings` | `AC-26` |
@@ -149,6 +185,7 @@ Alur request umum:
 - **Bahasa & tanggal:** Antarmuka utama berbahasa Indonesia, format tanggal menggunakan standar lokal `Intl.DateTimeFormat("id-ID")` dan pustaka `date-fns`.
 - **Halaman & alur yang telah tersedia:** Landing page publik (`/`), Login (`/login`), Dashboard (`/dashboard`), Profil & ganti password (`/profile`), Administrasi Pengguna/Role/Menu (`/admin/*`), Master Data Kategori/UoM/Pemasok/Barang/Gudang/Lokasi (`/master/*`), Saldo Stok & Ledger (`/stock/*`), Purchase Order (`/purchase-orders/*`), Goods Receipt (`/goods-receipts/*`), Stock Transfer (`/stock-transfers/*`), Stock Opname (`/stock-opnames/*`), dan Audit Log (`/audit-logs`).
 - **Import massal di frontend:** Import massal item (`MST-F06`) telah diintegrasikan (`StockImportDialog.tsx`), sedangkan import massal supplier (`MST-F07`) menggunakan kontrak backend yang sama dan siap dipasang pada dialog pemasok.
+- **Fitur Retail & Toko Cabang (Fase 1):** Fitur cetak fisik Surat Jalan (`TRF-F06`), Bukti Penerimaan Barang GRN (`RCV-F05`), serta pemindaian Barcode/QR (`MST-F08`, `INV-F07`) disetujui masuk ke dalam rilis Fase 1 sebelum transisi multi-tenant.
 - **Batasan di luar MVP (Fase 2 & Fase 3):**
   - Modul Multi-Tenant SaaS (UI pemilihan tenant/slug login tenant dan panel Platform Admin) akan dikembangkan pada Fase 2 (M9).
   - Modul Goods Issue (`ISS`) dan Pelaporan Analitik Lengkap (`RPT`) direncanakan pada Fase 3 (M10).

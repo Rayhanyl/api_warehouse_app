@@ -53,6 +53,7 @@ Sesuai arsitektur pada `FOLDER_STRUCTURE.md`, definisi DDL dibagi ke dalam berka
 | `db/migrations/009_create_menu_tables.sql` | Tabel `menus` (hierarki menu navigasi frontend berbasis `permission_id`) beserta data awal (*seed*) menu modul WMS. |
 | `db/migrations/010_harden_constraints_and_indexes.sql` | Indeks unik fungsional case-insensitive (`LOWER`), constraint CHECK anti-blank, CHECK metadata status dokumen, dan pencabutan hak `DELETE` pada tabel `menus` dari `wms_app`. |
 | `db/migrations/011_optimize_audit_logs_index.sql` | Indeks komposit `(created_at DESC, id DESC)` pada `audit_logs` dan `stock_movements` untuk paginasi & filter waktu performa tinggi. |
+| `db/migrations/012_add_barcode_to_items.sql` | Penambahan kolom `barcode` pada tabel `items` dan indeks unik fungsional case-insensitive `uq_items_barcode_lower`. |
 
 ---
 
@@ -102,7 +103,7 @@ Sesuai arsitektur pada `FOLDER_STRUCTURE.md`, definisi DDL dibagi ke dalam berka
 * **`categories`**: Kategori barang (`id`, `name` unik, `description`, `is_active`, `created_by`, `created_at`, `updated_at`).
 * **`uoms`**: Satuan ukur dasar barang (`id`, `code` unik, `name`, `allow_decimal`, `is_active`, `created_by`, `created_at`, `updated_at`).
 * **`suppliers`**: Data pemasok (`id`, `code` unik, `name`, `contact_person`, `phone`, `email`, `address`, `is_active`, `created_by`, `created_at`, `updated_at`).
-* **`items`**: Data barang (`id`, `sku` unik, `name`, `description`, `category_id`, `uom_id`, `is_active`, `created_by`, `created_at`, `updated_at`).
+* **`items`**: Data barang (`id`, `sku` unik, `barcode` opsional unik via `uq_items_barcode_lower`, `name`, `description`, `category_id`, `uom_id`, `is_active`, `created_by`, `created_at`, `updated_at`). Mendukung scan barcode retail EAN/UPC (`MST-F08`, `AC-33`).
 * **`warehouses`**: Data gudang (`id`, `code` unik, `name`, `address`, `allow_negative_stock`, `is_active`, `created_by`, `created_at`, `updated_at`).
 * **`user_warehouses`**: Penugasan pengguna ke gudang untuk *Warehouse Scoping* (`user_id`, `warehouse_id`, `created_by`, `created_at`).
 * **`storage_locations`**: Lokasi penyimpanan di dalam gudang (`id`, `warehouse_id`, `code` unik per gudang, `name`, `is_active`, `created_by`, `created_at`, `updated_at`). Memiliki `UNIQUE (id, warehouse_id)` sebagai target *Composite Foreign Key*.
@@ -1225,6 +1226,21 @@ CREATE INDEX IF NOT EXISTS ix_audit_logs_created_at_id
 
 CREATE INDEX IF NOT EXISTS ix_stock_movements_created_at_id
     ON stock_movements (created_at DESC, id DESC);
+```
+
+### 5.12. `012_add_barcode_to_items.sql` — Penambahan Kolom Barcode Barang (`MST-F08`, `AC-33`)
+
+```sql
+-- ============================================================================
+-- 012: DUKUNGAN BARCODE BARANG (RETAIL / TOKO CABANG / B2B)
+-- ============================================================================
+
+ALTER TABLE items
+    ADD COLUMN IF NOT EXISTS barcode VARCHAR(64);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_items_barcode_lower
+    ON items (LOWER(barcode))
+    WHERE barcode IS NOT NULL;
 ```
 
 ---

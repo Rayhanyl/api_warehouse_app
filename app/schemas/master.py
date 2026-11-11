@@ -118,6 +118,7 @@ class SupplierOut(BaseModel):
 # ============================================================================
 class ItemCreate(BaseModel):
     sku: str = Field(..., min_length=1, max_length=64)
+    barcode: str | None = Field(default=None, max_length=64)
     name: str = Field(..., min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=1000)
     category_id: int = Field(..., gt=0)
@@ -127,6 +128,7 @@ class ItemCreate(BaseModel):
 
 class ItemUpdate(BaseModel):
     sku: str | None = Field(default=None, min_length=1, max_length=64)
+    barcode: str | None = Field(default=None, max_length=64)
     name: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=1000)
     category_id: int | None = Field(default=None, gt=0)
@@ -143,6 +145,7 @@ class ItemUpdate(BaseModel):
 class ItemOut(BaseModel):
     id: int
     sku: str
+    barcode: str | None = None
     name: str
     description: str | None = None
     category_id: int

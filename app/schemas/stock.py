@@ -16,6 +16,7 @@ class StockLocationBalanceOut(BaseModel):
     location_name: str
     item_id: int
     item_sku: str
+    item_barcode: str | None = None
     item_name: str
     category_id: int
     category_name: str
@@ -32,6 +33,7 @@ class StockWarehouseBalanceOut(BaseModel):
     warehouse_name: str
     item_id: int
     item_sku: str
+    item_barcode: str | None = None
     item_name: str
     category_id: int
     category_name: str
@@ -44,6 +46,7 @@ class StockWarehouseBalanceOut(BaseModel):
 class StockSummaryOut(BaseModel):
     item_id: int
     item_sku: str
+    item_barcode: str | None = None
     item_name: str
     category_id: int
     category_name: str

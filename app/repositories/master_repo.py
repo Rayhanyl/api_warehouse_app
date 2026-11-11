@@ -613,6 +613,7 @@ def list_items(
     category_id: int | None = None,
     uom_id: int | None = None,
     is_active: bool | None = None,
+    barcode: str | None = None,
     search: str | None = None,
     order_by_sql: str = "i.id ASC",
 ) -> tuple[list[dict[str, Any]], int]:
@@ -632,12 +633,19 @@ def list_items(
         conditions.append("i.is_active = %s")
         params.append(is_active)
 
+    if barcode:
+        clean_bc = barcode.strip()
+        conditions.append(
+            "(LOWER(i.barcode) = LOWER(%s) OR LOWER(i.sku) = LOWER(%s))"
+        )
+        params.extend([clean_bc, clean_bc])
+
     if search:
         kw = f"%{search.strip()}%"
         conditions.append(
-            "(i.sku ILIKE %s OR i.name ILIKE %s OR COALESCE(i.description, '') ILIKE %s)"
+            "(i.sku ILIKE %s OR COALESCE(i.barcode, '') ILIKE %s OR i.name ILIKE %s OR COALESCE(i.description, '') ILIKE %s)"
         )
-        params.extend([kw, kw, kw])
+        params.extend([kw, kw, kw, kw])
 
     where_sql = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
@@ -652,6 +660,7 @@ def list_items(
         SELECT
             i.id,
             i.sku,
+            i.barcode,
             i.name,
             i.description,
             i.category_id,
@@ -684,6 +693,7 @@ def get_item_by_id(
         SELECT
             i.id,
             i.sku,
+            i.barcode,
             i.name,
             i.description,
             i.category_id,
@@ -711,7 +721,7 @@ def lock_item_by_id(
     row = conn.execute(
         """
         SELECT
-            id, sku, name, description, category_id, uom_id,
+            id, sku, barcode, name, description, category_id, uom_id,
             is_active, created_by, created_at, updated_at
         FROM items
         WHERE id = %s
@@ -727,11 +737,24 @@ def get_item_by_sku(
 ) -> dict[str, Any] | None:
     return conn.execute(
         """
-        SELECT id, sku, name, category_id, uom_id, is_active
+        SELECT id, sku, barcode, name, category_id, uom_id, is_active
         FROM items
         WHERE LOWER(sku) = LOWER(%s)
         """,
         (sku,),
+    ).fetchone()
+
+
+def get_item_by_barcode(
+    conn: Connection[dict[str, Any]], barcode: str
+) -> dict[str, Any] | None:
+    return conn.execute(
+        """
+        SELECT id, sku, barcode, name, category_id, uom_id, is_active
+        FROM items
+        WHERE barcode IS NOT NULL AND LOWER(barcode) = LOWER(%s)
+        """,
+        (barcode,),
     ).fetchone()
 
 
@@ -878,6 +901,7 @@ def insert_item(
     conn: Connection[dict[str, Any]],
     *,
     sku: str,
+    barcode: str | None = None,
     name: str,
     description: str | None,
     category_id: int,
@@ -888,12 +912,12 @@ def insert_item(
     row = conn.execute(
         """
         INSERT INTO items (
-            sku, name, description, category_id, uom_id, is_active, created_by
+            sku, barcode, name, description, category_id, uom_id, is_active, created_by
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id
         """,
-        (sku, name, description, category_id, uom_id, is_active, created_by),
+        (sku, barcode, name, description, category_id, uom_id, is_active, created_by),
     ).fetchone()
     assert row is not None
     detail = get_item_by_id(conn, int(row["id"]))
@@ -906,6 +930,7 @@ def update_item(
     item_id: int,
     *,
     sku: str,
+    barcode: str | None = None,
     name: str,
     description: str | None,
     category_id: int,
@@ -917,6 +942,7 @@ def update_item(
         UPDATE items
         SET
             sku = %s,
+            barcode = %s,
             name = %s,
             description = %s,
             category_id = %s,
@@ -925,7 +951,7 @@ def update_item(
             updated_at = CURRENT_TIMESTAMP
         WHERE id = %s
         """,
-        (sku, name, description, category_id, uom_id, is_active, item_id),
+        (sku, barcode, name, description, category_id, uom_id, is_active, item_id),
     )
     detail = get_item_by_id(conn, item_id)
     assert detail is not None

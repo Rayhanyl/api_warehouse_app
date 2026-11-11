@@ -126,6 +126,7 @@ def list_gr_lines(
             gl.po_line_id,
             pl.item_id,
             i.sku AS item_sku,
+            i.barcode AS item_barcode,
             i.name AS item_name,
             i.is_active AS item_is_active,
             i.uom_id,

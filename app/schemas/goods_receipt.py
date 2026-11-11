@@ -31,6 +31,7 @@ class GRLineOut(BaseModel):
     po_line_id: int
     item_id: int
     item_sku: str
+    item_barcode: str | None = None
     item_name: str
     uom_id: int
     uom_code: str

@@ -144,6 +144,7 @@ def list_transfer_lines(
             stl.transfer_id,
             stl.item_id,
             i.sku AS item_sku,
+            i.barcode AS item_barcode,
             i.name AS item_name,
             i.uom_id,
             u.code AS uom_code,

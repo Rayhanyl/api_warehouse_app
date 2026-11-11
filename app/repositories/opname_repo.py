@@ -326,6 +326,7 @@ def list_opname_lines(
             sl.name AS location_name,
             sol.item_id,
             i.sku AS item_sku,
+            i.barcode AS item_barcode,
             i.name AS item_name,
             i.uom_id,
             u.code AS uom_code,

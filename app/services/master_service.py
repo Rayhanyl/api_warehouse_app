@@ -47,6 +47,7 @@ SUPPLIER_SORT_COLUMNS: dict[str, str] = {
 ITEM_SORT_COLUMNS: dict[str, str] = {
     "id": "i.id",
     "sku": "i.sku",
+    "barcode": "i.barcode",
     "name": "i.name",
     "created_at": "i.created_at",
 }
@@ -670,6 +671,20 @@ def _validate_optional_phone(phone: str | None) -> str | None:
             details={"field": "phone", "value": clean},
         )
     return clean
+
+
+def _validate_optional_barcode(barcode: str | None) -> str | None:
+    if barcode is None:
+        return None
+    clean = barcode.strip()
+    if not clean:
+        return None
+    if len(clean) > 64:
+        raise ValidationDomainError(
+            "Barcode barang maksimal 64 karakter.",
+            details={"field": "barcode", "value": clean},
+        )
+    return _validate_code_format(clean, field_name="barcode", label="Barcode barang")
 
 
 # ============================================================================
@@ -1429,6 +1444,7 @@ def list_items(
     category_id: int | None = None,
     uom_id: int | None = None,
     is_active: bool | None = None,
+    barcode: str | None = None,
     search: str | None = None,
     sort_by: str | None = None,
     sort_dir: str | None = None,
@@ -1448,6 +1464,7 @@ def list_items(
         category_id=category_id,
         uom_id=uom_id,
         is_active=is_active,
+        barcode=barcode,
         search=search,
         order_by_sql=order_by_sql,
     )
@@ -1474,6 +1491,7 @@ def create_item(
     *,
     actor: dict[str, Any],
     sku: str,
+    barcode: str | None = None,
     name: str,
     description: str | None = None,
     category_id: int,
@@ -1489,6 +1507,7 @@ def create_item(
             details={"sku": clean_sku, "name": clean_name},
         )
     clean_sku = _validate_code_format(clean_sku, field_name="sku", label="SKU barang")
+    clean_barcode = _validate_optional_barcode(barcode)
 
     with conn.transaction():
         existing = master_repo.get_item_by_sku(conn, clean_sku)
@@ -1497,6 +1516,14 @@ def create_item(
                 f"Barang dengan SKU '{clean_sku}' sudah terdaftar.",
                 details={"field": "sku", "value": clean_sku},
             )
+
+        if clean_barcode is not None:
+            existing_barcode = master_repo.get_item_by_barcode(conn, clean_barcode)
+            if existing_barcode:
+                raise DuplicateError(
+                    f"Barang dengan barcode '{clean_barcode}' sudah terdaftar.",
+                    details={"field": "barcode", "value": clean_barcode},
+                )
 
         category = master_repo.get_category_by_id(conn, category_id)
         if not category:
@@ -1525,6 +1552,7 @@ def create_item(
         created = master_repo.insert_item(
             conn,
             sku=clean_sku,
+            barcode=clean_barcode,
             name=clean_name,
             description=description.strip() if description is not None else None,
             category_id=category_id,
@@ -1542,6 +1570,7 @@ def create_item(
             new_values={
                 "id": created["id"],
                 "sku": created["sku"],
+                "barcode": created["barcode"],
                 "name": created["name"],
                 "description": created["description"],
                 "category_id": created["category_id"],
@@ -1764,6 +1793,8 @@ def update_item(
     actor: dict[str, Any],
     item_id: int,
     sku: str | None = None,
+    barcode: str | None = None,
+    barcode_provided: bool = False,
     name: str | None = None,
     description: str | None = None,
     category_id: int | None = None,
@@ -1794,6 +1825,20 @@ def update_item(
                     raise DuplicateError(
                         f"Barang dengan SKU '{new_sku}' sudah terdaftar.",
                         details={"field": "sku", "value": new_sku},
+                    )
+
+        new_barcode = existing.get("barcode")
+        if barcode_provided or barcode is not None:
+            new_barcode = _validate_optional_barcode(barcode)
+            if new_barcode is not None and (
+                existing.get("barcode") is None
+                or new_barcode.lower() != str(existing["barcode"]).lower()
+            ):
+                dup_bc = master_repo.get_item_by_barcode(conn, new_barcode)
+                if dup_bc and int(dup_bc["id"]) != item_id:
+                    raise DuplicateError(
+                        f"Barang dengan barcode '{new_barcode}' sudah terdaftar.",
+                        details={"field": "barcode", "value": new_barcode},
                     )
 
         new_name = existing["name"]
@@ -1862,6 +1907,7 @@ def update_item(
             conn,
             item_id,
             sku=new_sku,
+            barcode=new_barcode,
             name=new_name,
             description=new_desc,
             category_id=new_category_id,
@@ -1881,6 +1927,7 @@ def update_item(
             entity_id=item_id,
             old_values={
                 "sku": existing["sku"],
+                "barcode": existing.get("barcode"),
                 "name": existing["name"],
                 "description": existing["description"],
                 "category_id": existing["category_id"],
@@ -1889,6 +1936,7 @@ def update_item(
             },
             new_values={
                 "sku": updated["sku"],
+                "barcode": updated["barcode"],
                 "name": updated["name"],
                 "description": updated["description"],
                 "category_id": updated["category_id"],
