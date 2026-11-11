@@ -23,15 +23,15 @@ aturan integritas, bukan sumber business requirement baru.
 | `PLT` | `document_sequences`, `schema_migrations` | `PLT-F01` (`FR-PLT-001`), `PLT-F05` (`FR-PLT-005`), `AC-15`, `AC-18` |
 | `IAM` | `roles`, `permissions`, `role_permissions`, `users`, `user_warehouses`, `refresh_tokens`, `menus` | `IAM-F01..F09` (`FR-IAM-001..009`), `AC-05`, `AC-11`, `AC-12`, `AC-14` |
 | `AUD` | `audit_logs` | `AUD-F01..F02` (`FR-AUD-001..002`), `AC-05`, `AC-07`, `AC-08`, `AC-22` |
-| `MST` | `categories`, `uoms`, `suppliers`, `items` | `MST-F01..F05` (`FR-MST-001..005`), `AC-19` |
+| `MST` | `categories`, `uoms`, `suppliers`, `items` | `MST-F01..F07` (`FR-MST-001..007`), `AC-19`, `AC-30`, `AC-31` |
 | `WHS` | `warehouses`, `storage_locations` | `WHS-F01..F03` (`FR-WHS-001..003`), `AC-20` |
 | `INV` | `inventory_balances`, `stock_movements` | `INV-F01..F06` (`FR-INV-001..006`), `AC-02`, `AC-03`, `AC-06`, `AC-08`, `AC-13` |
 | `PUR` | `purchase_orders`, `po_lines` | `PUR-F01..F04` (`FR-PUR-001..004`), `AC-01`, `AC-21` |
 | `RCV` | `goods_receipts`, `gr_lines` | `RCV-F01..F04` (`FR-RCV-001..004`), `AC-01`, `AC-07`, `AC-13`, `AC-21` |
 | `TRF` | `stock_transfers`, `stock_transfer_lines` | `TRF-F01..F05` (`FR-TRF-001..005`), `AC-02`, `AC-03`, `AC-06`, `AC-09`, `AC-21` |
 | `OPN` | `stock_opnames`, `stock_opname_lines` | `OPN-F01..F06` (`FR-OPN-001..006`), `AC-04`, `AC-10`, `AC-21` |
-| `TNT` *(Fase 2 — M9)* | `tenants`, `plans`, `platform_admins` | `TNT-F01..F06` (`FR-TNT-001..006`), `AC-23`, `AC-24`, `AC-25`, `AC-26`, `AC-27`, `AC-29` |
-| `CFG` *(Fase 2 — M9)* | `tenant_settings` | `CFG-F01..F04` (`FR-CFG-001..004`), `AC-24`, `AC-28` |
+| `TNT` *(Fase 2 — M9)* | `tenants`, `plans`, `platform_admins`, `platform_refresh_tokens` | `TNT-F01..F06` (`FR-TNT-001..006`), `AC-23`, `AC-24`, `AC-25`, `AC-27`, `AC-28`, `AC-29` |
+| `CFG` *(Fase 2 — M9)* | `settings` | `CFG-F01..F04` (`FR-CFG-001..004`), `AC-26` |
 
 Kolom, nullable, default, foreign key, dan DDL normatif per tabel harus
 diubah pada [SCHEMA_DATABASE](SCHEMA_DATABASE.MD) dan migration terkait,
@@ -75,7 +75,7 @@ dengan `CHECK (qty_on_hand >= 0)` karena aturan bergantung pada gudang.
 | `010` | Pengerasan constraint unik (`uq_stock_transfer_lines_transfer_item`) dan indeks performa Fase 1 |
 | `011` | Optimasi indeks komposit pencarian & filter `audit_logs` Fase 1 |
 | `012` *(Fase 2 — M9)* | Tabel `plans`, `tenants`, `platform_admins`, `platform_refresh_tokens`, `settings`, dan seed paket kuota awal |
-| `013` *(Fase 2 — M9)* | Penambahan `tenant_id`, *Composite FK* `(tenant_id, <fk>_id)`, constraint `UNIQUE (tenant_id, ...)`, dan PostgreSQL RLS pada 21 tabel bisnis |
+| `013` *(Fase 2 — M9)* | Penambahan `tenant_id`, *Composite FK* `(tenant_id, <fk>_id)`, constraint `UNIQUE (tenant_id, ...)`, dan PostgreSQL RLS pada 24 tabel bisnis |
 
 Migration yang sudah diterapkan (`001`–`011`) tidak diedit; transisi Multi-Tenant Fase 2 menggunakan berkas baru `012` dan `013`.
 
@@ -105,6 +105,7 @@ Untuk menjamin migrasi *forward-only* `012_create_tenants_settings.sql` dan `013
 | `FR-IAM-001..009` | IAM tables, `token_hash`, active/lockout fields, `user_warehouses`, `menus` | `AC-05`, `AC-11`, `AC-12`, `AC-14` |
 | `FR-AUD-001..002` | Append-only `audit_logs` (tanpa hak `UPDATE`/`DELETE` bagi `wms_app`) | `AC-05`, `AC-07`, `AC-08`, `AC-22` |
 | `FR-MST-001..005` | Master tables dengan case-insensitive uniqueness, `allow_decimal`, `is_active`, dan FK | `AC-19`, `AC-27` |
+| `FR-MST-006..007` | `items`, `suppliers`, `audit_logs` (tanpa tabel/kolom baru); unique index case-insensitive `sku`/`code` menjadi sumber kebenaran duplikasi konkuren | `AC-30`, `AC-31` |
 | `FR-WHS-001..003` | `warehouses` (`allow_negative_stock`), `storage_locations` dengan unique `(id, warehouse_id)` | `AC-12`, `AC-20` |
 | `FR-INV-001..006` | `inventory_balances` (`(warehouse_id, location_id, item_id)`), append-only `stock_movements`, `NUMERIC(18,4)` | `AC-02`, `AC-03`, `AC-04`, `AC-06`, `AC-08`, `AC-13`, `AC-16` |
 | `FR-PUR-001..004`, `FR-RCV-001..004` | PO/GR headers dan lines, unique `(po_id, item_id)`, composite location FK, status checks | `AC-01`, `AC-07`, `AC-13`, `AC-21` |
@@ -116,4 +117,4 @@ Untuk menjamin migrasi *forward-only* `012_create_tenants_settings.sql` dan `013
 
 - Target partitioning/retention untuk ledger dan audit belum ditetapkan.
 - SLA backup, recovery point, dan recovery time belum ditentukan.
-- Eksekusi migrasi `010` dan `011` dilakukan saat pekerjaan Fase 2 (M9) dimulai.
+- Migrasi `010` dan `011` termasuk baseline Fase 1 dan sudah tersedia di `db/migrations/`; migrasi Fase 2 (M9) dimulai dari `012`.

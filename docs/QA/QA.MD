@@ -106,23 +106,33 @@ Catatan M8 di `docs/API/README.md` memuat benchmark lokal yang pernah dilakukan.
 
 ### 2.5. Kriteria selesai QA backend
 
-- Seluruh AC yang terdampak perubahan lulus; sebelum rilis, suite `AC-01` s.d. `AC-22` lulus.
+- Seluruh AC yang terdampak perubahan lulus; sebelum rilis, suite `AC-01` s.d. `AC-22`, `AC-30`, dan `AC-31` lulus.
 - AC-14 menguji menu pada PostgreSQL nyata; permission menu hanya menyaring navigasi dan tidak menggantikan otorisasi endpoint backend.
-- Status run terbaru saat pembaruan dokumentasi: 24 tes lulus di `wms_test`, mencakup seluruh skenario `AC-01` s.d. `AC-22`.
+- Status run backend: 47 tes lulus di `wms_test`, mencakup seluruh skenario `AC-01` s.d. `AC-22`, `AC-30` (import massal item), dan `AC-31` (import massal supplier).
 - Tidak ada temuan terbuka yang mengancam integritas saldo/ledger, autentikasi, atau pembatasan akses.
 - Pemeriksaan saldo, ledger, audit, dan rollback konsisten dengan PRD.
 - Kinerja dilaporkan dengan lingkungan, ukuran data, metode, dan hasil p95; klaim target hanya dibuat bila hasilnya memang terukur.
 - Bukti run, commit/build, konfigurasi, dan temuan tersimpan sehingga hasil dapat diulang.
 
-## 3. QA Frontend — rencana untuk klien terpisah
+## 3. QA Frontend — Verifikasi Antarmuka `warehouse_app/`
 
-### 3.1. Status dan batas cakupan
+### 3.1. Status dan lingkungan pengujian frontend
 
-PRD 2.2 mengecualikan antarmuka pengguna dari MVP. Repository ini menyediakan REST API dan dokumentasi/Swagger; saat ini tidak ada aplikasi frontend untuk diuji. Bagian ini adalah checklist masa depan jika klien web atau perangkat genggam dibangun secara terpisah. Skenario tidak boleh dilaporkan sebagai sudah diuji sebelum klien tersedia.
+Aplikasi frontend dikembangkan pada folder `warehouse_app/` berbasis React 19, TypeScript, Vite, dan pengujian unit/integrasi menggunakan **Vitest + React Testing Library + MSW**.
 
-### 3.2. Skenario alur pengguna
+Rangkaian pengujian frontend yang aktif mencakup:
+- `App.test.tsx` (routing & inisialisasi aplikasi shell).
+- `features/auth/auth.test.tsx` (login form, validasi kredensial, state sesi, dan penanganan error autentikasi).
+- `features/master-data/categories/categories.test.tsx` (CRUD kategori, validasi, dan penonaktifan).
+- `features/master-data/stocks/stocks.test.tsx` (katalog barang, pencarian/filter, dan dialog import barang).
+- `features/master-data/storage-locations/storageLocations.test.tsx` (lokasi per gudang, filter, dan dialog).
+- `features/master-data/suplliers/suppliers.test.tsx` (daftar pemasok, dialog form, dan pencarian).
+- `features/master-data/uoms/uoms.test.tsx` (satuan ukur, flag allow_decimal, dan dialog).
+- `features/master-data/warehouses/Warehouses.test.tsx` (manajemen gudang dan toggle stok negatif).
 
-Ketika frontend tersedia, uji tiap alur dengan akun sesuai peran dan penugasan gudang:
+### 3.2. Skenario alur pengguna yang diverifikasi
+
+Pengujian tiap alur menggunakan akun sesuai peran dan penugasan gudang:
 
 | Alur | Yang diperiksa pada antarmuka |
 | --- | --- |

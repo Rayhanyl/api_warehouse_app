@@ -2,9 +2,9 @@
 
 Dokumen ini menerjemahkan [PRD General](PRD_GENERAL.md) ke kebutuhan frontend
 dan menggunakan [API Contract](API_CONTRACT.md) serta [API documentation](../API/README.md)
-sebagai kontrak integrasi. Frontend belum termasuk implementasi MVP pada
-repository ini; seluruh status implementasi di bawah harus dibaca sebagai
-spesifikasi target dan kebutuhan konfirmasi.
+sebagai kontrak integrasi. Frontend dikembangkan pada folder `warehouse_app/`
+(React 19 + TypeScript + Vite + Tailwind CSS v4) dan terhubung langsung ke REST API
+backend di `api_warehouse_app/`.
 
 ## 1. Tanggung jawab dan batas
 
@@ -90,8 +90,15 @@ State minimum:
 - form draft, validation errors, submitting state;
 - server error dan retry state.
 
-Pilihan framework, library state management, dan strategi caching belum
-ditentukan dan harus dicatat sebagai keputusan terpisah sebelum implementasi.
+Pilihan teknologi dan arsitektur state yang diterapkan pada `warehouse_app/`:
+- **Framework & Build:** React `19.3.1`, Vite `8`, TypeScript `5.9.3`, Tailwind CSS `4.3.3`, shadcn/ui.
+- **Routing:** React Router `7` (`createBrowserRouter`) dengan layout `AppShell`, `Sidebar`, `PageHeader`, dan guard `ProtectedRoute`.
+- **Server State & Caching:** TanStack Query `5` (`@tanstack/react-query`) untuk query caching, deduplikasi request, dan mutasi data terkelola.
+- **Client Session State:** Zustand `5` (`features/auth/store.ts`) untuk sesi login dan profil pengguna aktif.
+- **Form & Validasi:** React Hook Form + Zod (`@hookform/resolvers/zod`).
+- **Data Table:** TanStack Table (`@tanstack/react-table`) dengan dukungan pagination, sorting, dan filtering.
+- **HTTP Client & Autentikasi:** Axios (`lib/api-client.ts`) dengan `baseURL: /api/v1`, injeksi otomatis header `Authorization: Bearer <access_token>`, dan interceptor response `401` yang memicu pembaruan token via `POST /api/v1/auth/refresh`.
+- **Penyimpanan Token:** `localStorage` (`wms.frontend.auth.refresh-token`) dengan sinkronisasi multi-tab melalui `BroadcastChannel` dan event storage.
 
 ## 5. Integrasi API
 
@@ -113,7 +120,7 @@ Alur request umum:
 ### 5.1 Kontrak pohon menu navigasi dan allowlist icon (`IAM-F08`)
 
 - Endpoint `GET /api/v1/menus/my-menu` mengembalikan struktur pohon (`MenuTreeOut`) dengan atribut: `id`, `code`, `name`, `path`, `icon`, `parent_id`, `sort_order`, `permission_code`, `is_active`, dan `children` (tanpa properti `short_name`).
-- Komponen sidebar memetakan nilai string `icon` ke komponen icon melalui *allowlist* statis (dengan *fallback icon* bila nilai tidak dikenali). Daftar 19 nama icon canonical yang di-seed pada `db/migrations/009_create_menu_tables.sql` adalah:
+- Komponen sidebar memetakan nilai string `icon` ke komponen icon melalui *allowlist* statis (dengan *fallback icon* bila nilai tidak dikenali). Daftar 23 nama icon canonical yang di-seed pada `db/migrations/009_create_menu_tables.sql` dan didukung frontend adalah:
   `layout-dashboard`, `database`, `warehouse`, `boxes`, `shopping-cart`, `arrow-left-right`, `clipboard-check`, `shield`, `folder-tree`, `scale`, `truck`, `package`, `building-2`, `map-pin`, `layers`, `bar-chart-3`, `book-open`, `file-text`, `package-check`, `users`, `key-round`, `menu`, `scroll-text`.
 
 ## 6. Pemetaan fitur dan data
@@ -135,10 +142,14 @@ Alur request umum:
 | `FR-TNT-001..006` *(Fase 2 — M9)* | `TNT-F01..F06` | Input `tenant_slug` pada login tenant, panel `Platform Admin` (daftar/provisioning/status/kuota tenant), serta layar profil & penggunaan kuota bagi `Super Admin` tenant | `/api/v1/auth/login` (`tenant_slug`), `/api/v1/platform/*`, `/api/v1/tenant/profile` | `AC-23`, `AC-24`, `AC-25`, `AC-27`, `AC-28`, `AC-29` |
 | `FR-CFG-001..004` *(Fase 2 — M9)* | `CFG-F01..F04` | Layar pengaturan tenant dan override pengaturan per gudang beserta indikator sumber pewarisan nilai | `/api/v1/settings`, `/api/v1/warehouses/{id}/settings` | `AC-26` |
 
-## 7. Belum terdefinisi / perlu konfirmasi
+## 7. Status implementasi & batasan saat ini
 
-- framework frontend, browser support, responsive/accessibility target;
-- desain visual, bahasa UI final, timezone display, dan format tanggal;
-- apakah frontend berada di repository terpisah;
-- detail dashboard/reporting, karena reporting berada di luar MVP;
-- strategi offline, optimistic update, dan caching.
+- **Lokasi & repositori:** Frontend aktif dikembangkan di folder `warehouse_app/` (berdampingan dengan `api_warehouse_app/` dalam satu workspace monorepo).
+- **Fondasi teknologi yang telah diputuskan:** React 19, TypeScript, Vite, Tailwind CSS v4, shadcn/ui, TanStack Query v5, Zustand v5, Axios dengan interceptor auto-refresh token JWT, dan penyimpanan refresh token di `localStorage` dengan sinkronisasi multi-tab.
+- **Bahasa & tanggal:** Antarmuka utama berbahasa Indonesia, format tanggal menggunakan standar lokal `Intl.DateTimeFormat("id-ID")` dan pustaka `date-fns`.
+- **Halaman & alur yang telah tersedia:** Landing page publik (`/`), Login (`/login`), Dashboard (`/dashboard`), Profil & ganti password (`/profile`), Administrasi Pengguna/Role/Menu (`/admin/*`), Master Data Kategori/UoM/Pemasok/Barang/Gudang/Lokasi (`/master/*`), Saldo Stok & Ledger (`/stock/*`), Purchase Order (`/purchase-orders/*`), Goods Receipt (`/goods-receipts/*`), Stock Transfer (`/stock-transfers/*`), Stock Opname (`/stock-opnames/*`), dan Audit Log (`/audit-logs`).
+- **Import massal di frontend:** Import massal item (`MST-F06`) telah diintegrasikan (`StockImportDialog.tsx`), sedangkan import massal supplier (`MST-F07`) menggunakan kontrak backend yang sama dan siap dipasang pada dialog pemasok.
+- **Batasan di luar MVP (Fase 2 & Fase 3):**
+  - Modul Multi-Tenant SaaS (UI pemilihan tenant/slug login tenant dan panel Platform Admin) akan dikembangkan pada Fase 2 (M9).
+  - Modul Goods Issue (`ISS`) dan Pelaporan Analitik Lengkap (`RPT`) direncanakan pada Fase 3 (M10).
+  - Dukungan Progressive Web App (PWA) / mode offline sepenuhnya belum masuk dalam cakupan baseline Fase 1.

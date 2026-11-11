@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Versi** | 2.0 (selaras dengan `PRD.MD` v2.0 & `FOLDER_STRUCTURE.md`) |
+| **Versi** | 2.3 (selaras dengan `PRD_GENERAL.md` v2.3 & `FOLDER_STRUCTURE.md`) |
 | **Database** | PostgreSQL 13+ |
 | **Akses Data** | Driver langsung (`psycopg` 3 + `ConnectionPool`), **tanpa ORM** |
 | **Manajemen Skema** | Berkas migrasi `.sql` berurutan (*forward-only*) + tabel `schema_migrations` |
@@ -12,7 +12,7 @@
 ## 1. Prinsip Desain & Konvensi Skema
 
 1. **Akses PostgreSQL Langsung & Migrasi SQL Murni (PRD 7.5):**
-   * Aplikasi tidak menggunakan ORM (SQLAlchemy/Alembic). Seluruh perubahan skema dikelola melalui berkas SQL bernomor urut pada folder `db/migrations/` (`001_...sql` s.d. `009_...sql`) yang dijalankan oleh *runner* `db/migrate.py` dan dicatat pada tabel `schema_migrations`.
+   * Aplikasi tidak menggunakan ORM (SQLAlchemy/Alembic). Seluruh perubahan skema dikelola melalui berkas SQL bernomor urut pada folder `db/migrations/` (`001_...sql` s.d. `011_...sql`) yang dijalankan oleh *runner* `db/migrate.py` dan dicatat pada tabel `schema_migrations`.
    * Database memisahkan **role pemilik skema** (`wms_owner`, digunakan saat migrasi) dan **role aplikasi** (`wms_app`, digunakan oleh layanan FastAPI sehari-hari).
 
 2. **Konvensi Penamaan *Constraint* & Indeks Eksplisit (PRD 7.5):**
@@ -51,6 +51,8 @@ Sesuai arsitektur pada `FOLDER_STRUCTURE.md`, definisi DDL dibagi ke dalam berka
 | `db/migrations/007_append_only_guards.sql` | Fungsi & *trigger* penolak `UPDATE`/`DELETE` pada `stock_movements` & `audit_logs`, serta `GRANT`/`REVOKE` untuk `wms_app` (AC-08). |
 | `db/migrations/008_seed_roles_permissions.sql` | Data awal 5 peran dan 24 kode *permission* beserta pemetaannya sesuai Matriks 3.1 PRD. |
 | `db/migrations/009_create_menu_tables.sql` | Tabel `menus` (hierarki menu navigasi frontend berbasis `permission_id`) beserta data awal (*seed*) menu modul WMS. |
+| `db/migrations/010_harden_constraints_and_indexes.sql` | Indeks unik fungsional case-insensitive (`LOWER`), constraint CHECK anti-blank, CHECK metadata status dokumen, dan pencabutan hak `DELETE` pada tabel `menus` dari `wms_app`. |
+| `db/migrations/011_optimize_audit_logs_index.sql` | Indeks komposit `(created_at DESC, id DESC)` pada `audit_logs` dan `stock_movements` untuk paginasi & filter waktu performa tinggi. |
 
 ---
 
@@ -1047,20 +1049,198 @@ WHERE r.name = 'Auditor'
 ON CONFLICT DO NOTHING;
 ```
 
+### 5.10. `010_harden_constraints_and_indexes.sql` — Pengerasan Constraint & Indeks Fase 1
+
+```sql
+-- ============================================================================
+-- 010: PENGERASAN CONSTRAINT & INDEKS FASE 1
+-- ============================================================================
+
+-- 1. Indeks Unik Fungsional Case-Insensitive (LOWER)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_users_username_lower
+    ON users (LOWER(username));
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_users_email_lower
+    ON users (LOWER(email));
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_categories_name_lower
+    ON categories (LOWER(name));
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_uoms_code_lower
+    ON uoms (LOWER(code));
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_suppliers_code_lower
+    ON suppliers (LOWER(code));
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_items_sku_lower
+    ON items (LOWER(sku));
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_warehouses_code_lower
+    ON warehouses (LOWER(code));
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_storage_locations_wh_code_lower
+    ON storage_locations (warehouse_id, LOWER(code));
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_menus_code_lower
+    ON menus (LOWER(code));
+
+-- 2. Constraint CHECK Anti-String-Kosong & Batas Nilai
+ALTER TABLE roles
+    ADD CONSTRAINT ck_roles_name_not_blank
+        CHECK (length(btrim(name)) > 0);
+
+ALTER TABLE permissions
+    ADD CONSTRAINT ck_permissions_code_not_blank
+        CHECK (length(btrim(code)) > 0);
+
+ALTER TABLE users
+    ADD CONSTRAINT ck_users_username_not_blank
+        CHECK (length(btrim(username)) > 0),
+    ADD CONSTRAINT ck_users_email_not_blank
+        CHECK (length(btrim(email)) > 0),
+    ADD CONSTRAINT ck_users_full_name_not_blank
+        CHECK (length(btrim(full_name)) > 0);
+
+ALTER TABLE categories
+    ADD CONSTRAINT ck_categories_name_not_blank
+        CHECK (length(btrim(name)) > 0);
+
+ALTER TABLE uoms
+    ADD CONSTRAINT ck_uoms_code_not_blank
+        CHECK (length(btrim(code)) > 0),
+    ADD CONSTRAINT ck_uoms_name_not_blank
+        CHECK (length(btrim(name)) > 0);
+
+ALTER TABLE suppliers
+    ADD CONSTRAINT ck_suppliers_code_not_blank
+        CHECK (length(btrim(code)) > 0),
+    ADD CONSTRAINT ck_suppliers_name_not_blank
+        CHECK (length(btrim(name)) > 0);
+
+ALTER TABLE items
+    ADD CONSTRAINT ck_items_sku_not_blank
+        CHECK (length(btrim(sku)) > 0),
+    ADD CONSTRAINT ck_items_name_not_blank
+        CHECK (length(btrim(name)) > 0);
+
+ALTER TABLE warehouses
+    ADD CONSTRAINT ck_warehouses_code_not_blank
+        CHECK (length(btrim(code)) > 0),
+    ADD CONSTRAINT ck_warehouses_name_not_blank
+        CHECK (length(btrim(name)) > 0);
+
+ALTER TABLE storage_locations
+    ADD CONSTRAINT ck_storage_locations_code_not_blank
+        CHECK (length(btrim(code)) > 0),
+    ADD CONSTRAINT ck_storage_locations_name_not_blank
+        CHECK (length(btrim(name)) > 0);
+
+ALTER TABLE menus
+    ADD CONSTRAINT ck_menus_code_not_blank
+        CHECK (length(btrim(code)) > 0),
+    ADD CONSTRAINT ck_menus_name_not_blank
+        CHECK (length(btrim(name)) > 0),
+    ADD CONSTRAINT ck_menus_path_format
+        CHECK (length(btrim(path)) > 0 AND left(btrim(path), 1) = '/'),
+    ADD CONSTRAINT ck_menus_sort_order_bounds
+        CHECK (sort_order >= 0 AND sort_order <= 10000);
+
+ALTER TABLE stock_opnames
+    ADD CONSTRAINT ck_stock_opnames_rejection_reason_not_blank
+        CHECK (rejection_reason IS NULL OR length(btrim(rejection_reason)) > 0);
+
+-- 3. Constraint CHECK Kelengkapan Metadata Status Dokumen Operasional
+ALTER TABLE purchase_orders
+    ADD CONSTRAINT ck_purchase_orders_issued_meta
+        CHECK (
+            status NOT IN ('ISSUED', 'PARTIALLY_RECEIVED', 'RECEIVED')
+            OR (issued_at IS NOT NULL AND issued_by IS NOT NULL)
+        ),
+    ADD CONSTRAINT ck_purchase_orders_closed_meta
+        CHECK (
+            status <> 'CLOSED'
+            OR (closed_at IS NOT NULL AND closed_by IS NOT NULL)
+        );
+
+ALTER TABLE goods_receipts
+    ADD CONSTRAINT ck_goods_receipts_posted_meta
+        CHECK (
+            status <> 'POSTED'
+            OR (posted_at IS NOT NULL AND posted_by IS NOT NULL)
+        );
+
+ALTER TABLE stock_transfers
+    ADD CONSTRAINT ck_stock_transfers_approved_meta
+        CHECK (
+            status NOT IN ('APPROVED', 'SHIPPED', 'RECEIVED')
+            OR (approved_at IS NOT NULL AND approved_by IS NOT NULL)
+        ),
+    ADD CONSTRAINT ck_stock_transfers_shipped_meta
+        CHECK (
+            status NOT IN ('SHIPPED', 'RECEIVED')
+            OR (shipped_at IS NOT NULL AND shipped_by IS NOT NULL)
+        ),
+    ADD CONSTRAINT ck_stock_transfers_received_meta
+        CHECK (
+            status <> 'RECEIVED'
+            OR (received_at IS NOT NULL AND received_by IS NOT NULL)
+        );
+
+ALTER TABLE stock_opnames
+    ADD CONSTRAINT ck_stock_opnames_started_meta
+        CHECK (
+            status NOT IN ('IN_PROGRESS', 'WAITING_APPROVAL', 'COMPLETED')
+            OR (started_at IS NOT NULL AND started_by IS NOT NULL)
+        ),
+    ADD CONSTRAINT ck_stock_opnames_submitted_meta
+        CHECK (
+            status NOT IN ('WAITING_APPROVAL', 'COMPLETED')
+            OR (submitted_at IS NOT NULL AND submitted_by IS NOT NULL)
+        ),
+    ADD CONSTRAINT ck_stock_opnames_completed_meta
+        CHECK (
+            status <> 'COMPLETED'
+            OR (approved_at IS NOT NULL AND approved_by IS NOT NULL)
+        );
+
+-- 4. Pencabutan Hak DELETE pada Tabel menus dari Role Aplikasi (wms_app)
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'wms_app') THEN
+        REVOKE DELETE ON TABLE menus FROM wms_app;
+    END IF;
+END
+$$;
+```
+
+### 5.11. `011_optimize_audit_logs_index.sql` — Optimasi Indeks Komposit Log & Ledger
+
+```sql
+-- ============================================================================
+-- 011: OPTIMASI INDEKS KOMPOSIT (PAGINASI & FILTER WAKTU VOLUME BESAR)
+-- ============================================================================
+
+CREATE INDEX IF NOT EXISTS ix_audit_logs_created_at_id
+    ON audit_logs (created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS ix_stock_movements_created_at_id
+    ON stock_movements (created_at DESC, id DESC);
+```
+
 ---
 
 ## 6. Aturan Integritas Data & Pola Query Kunci
 
-1. **Komposit Foreign Key untuk Integritas Lokasi & Gudang (PRD 6.3, 7.5):**
+1. **Komposit Foreign Key untuk Integritas Lokasi & Gudang (`BR-GLB-008`):**
    * Tabel `storage_locations` memiliki `uq_storage_locations_id_warehouse UNIQUE (id, warehouse_id)`.
    * Tabel `inventory_balances`, `stock_movements`, `gr_lines`, `stock_transfers` (baik lokasi asal maupun tujuan), `stock_opnames`, dan `stock_opname_lines` menggunakan *Composite Foreign Key* `(location_id, warehouse_id)` yang mengarah ke `storage_locations (id, warehouse_id)`.
    * Mesin PostgreSQL menjamin mustahil sebuah dokumen di Gudang A merujuk atau memotong stok pada lokasi milik Gudang B.
 
-2. **Integritas Relasi Penerimaan Barang terhadap PO (PRD FR-05):**
+2. **Integritas Relasi Penerimaan Barang terhadap PO (`RCV-F01`, `RCV-F04`):**
    * `goods_receipts` memiliki `fk_goods_receipts_po_warehouse FOREIGN KEY (po_id, warehouse_id) REFERENCES purchase_orders (id, warehouse_id)` yang menjamin GR hanya bisa dibuat pada gudang tujuan PO.
    * `gr_lines` memiliki `fk_gr_lines_po_line FOREIGN KEY (po_line_id, po_id) REFERENCES po_lines (id, po_id)` yang menjamin baris GR hanya dapat mengacu pada baris PO milik dokumen PO yang sama.
 
-3. **Pencegahan Stok Negatif & Urutan Penguncian (PRD 6.1, 6.5):**
+3. **Pencegahan Stok Negatif & Urutan Penguncian (`BR-GLB-011`, `INV-F05`):**
    * Aturan `allow_negative_stock` bersifat per gudang sehingga **tidak** menggunakan `CHECK (qty_on_hand >= 0)` pada tabel `inventory_balances`.
    * Seluruh perubahan stok wajib melalui `inventory_service.apply_movement` di dalam transaksi dengan urutan penguncian seragam:
      1. Baris *header* dokumen (`SELECT ... FOR UPDATE`).
@@ -1068,7 +1248,7 @@ ON CONFLICT DO NOTHING;
      3. Baris lokasi penyimpanan (`SELECT ... FROM storage_locations WHERE id = %s FOR SHARE`, atau `FOR UPDATE` saat memulai Opname) diurutkan berdasarkan `id`.
      4. *Upsert* baris saldo (`INSERT INTO inventory_balances ... VALUES (..., 0) ON CONFLICT (warehouse_id, location_id, item_id) DO NOTHING`) lalu kunci baris saldo (`SELECT qty_on_hand FROM inventory_balances WHERE warehouse_id = %s AND location_id = %s AND item_id = %s FOR UPDATE`) diurutkan berdasarkan `(warehouse_id, location_id, item_id)`.
 
-4. **Penomoran Dokumen Aman Konkurensi (PRD FR-10):**
+4. **Penomoran Dokumen Aman Konkurensi (`PLT-F01`, `AC-15`):**
    * Saat membuat PO/GR/Transfer/Opname baru, `sequence_repo` mengeksekusi *upsert* atomik pada `document_sequences`:
      ```sql
      INSERT INTO document_sequences (doc_type, period, last_value, updated_at)
@@ -1081,6 +1261,6 @@ ON CONFLICT DO NOTHING;
      ```
    * Nilai `last_value` diformat menjadi `{PREFIX}-{YYYYMM}-{NNNN}` (contoh: `PO-202610-0001`).
 
-5. **Imutabilitas Berlapis pada Buku Besar & Audit Log (PRD 6.4, AC-08):**
+5. **Imutabilitas Berlapis pada Buku Besar & Audit Log (`BR-GLB-002`, `AC-08`):**
    * Lapisan 1 (*Database Trigger*): Trigger `BEFORE UPDATE OR DELETE` pada `stock_movements` dan `audit_logs` selalu menolak perubahan meskipun dijalankan oleh pemilik tabel.
    * Lapisan 2 (*Database Privileges*): Role koneksi aplikasi (`wms_app`) dicabut hak `UPDATE`, `DELETE`, dan `TRUNCATE`-nya pada kedua tabel tersebut.

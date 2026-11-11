@@ -3,10 +3,10 @@
 | Informasi | Nilai |
 | --- | --- |
 | Status | Baseline Fase 1 (MVP Single-Tenant) dengan tambahan MST-F06 dan MST-F07; spesifikasi Fase 2 (M9 Multi-Tenant SaaS) |
-| Versi | 2.2-general |
+| Versi | 2.3-general |
 | Pemilik | Product / Business |
 | Sumber historis | PRD v2.0 (Single-Tenant) & PRD Modular v3.1 (Multi-Tenant SaaS) yang telah diaudit dan diintegrasikan |
-| Catatan | Baseline Fase 1 (M0–M8) telah selesai diimplementasikan dan diuji. Tambahan MST-F06 dan MST-F07 kini diimplementasikan; seluruh 47 tes backend lulus, termasuk AC-30 dan AC-31. Fase 2 tetap mencakup `TNT`, `CFG`, `tenant_id` + RLS sebelum Fase 3 (`ISS`, `RPT`). |
+| Catatan | Baseline Fase 1 (M0–M8) beserta tambahan MST-F06 dan MST-F07 menjadi scope MVP aktif. Status RTM pada dokumen ini tetap `Mapped` sesuai aturan bagian 11.1; klaim implementasi dan hasil test (terakhir dilaporkan 47 tes backend lulus, termasuk AC-30 dan AC-31, pada 2026-11-06) wajib dibuktikan pada [QA.MD](../QA/QA.MD). Fase 2 tetap mencakup `TNT`, `CFG`, `tenant_id` + RLS sebelum Fase 3 (`ISS`, `RPT`). |
 
 Dokumen ini adalah sumber utama requirement produk. Dokumen Backend, Frontend,
 Database, API, dan QA hanya menjabarkan konsekuensi requirement ini dan tidak boleh
@@ -80,7 +80,7 @@ dan jejak audit yang dapat diperiksa.
 | PLT | PLT-F01..F05 | Numbering, query convention, error, request ID/health, migration | Must Have |
 | IAM | IAM-F01..F09 | Auth, RBAC, user, warehouse scope, menu, profile | Must Have |
 | AUD | AUD-F01..F02 | Write/read audit log | Must Have |
-| MST | MST-F01..F06 | Category, UoM, item, supplier, deactivation, import massal item | Must Have |
+| MST | MST-F01..F07 | Category, UoM, item, supplier, deactivation, import massal item, import massal supplier | Must Have |
 | WHS | WHS-F01..F03 | Warehouse, location, validation | Must Have |
 | INV | INV-F01..F06 | Balance, ledger, movement gateway, negative stock, freeze enforcement | Must Have |
 | PUR | PUR-F01..F04 | PO lifecycle and fulfillment | Must Have |
@@ -861,7 +861,7 @@ Database dan service layer wajib menegakkan lima invariant relasi konseptual ber
 | `platform_refresh_tokens` | TNT | `TNT-F01` | `token_hash` | Mengacu ke `platform_admins` | Rotasi dan pencabutan sesi khusus `Platform Admin` |
 | `settings` | CFG | `CFG-F01..F04` | `(tenant_id, COALESCE(warehouse_id, 0), key)` | Mengacu ke `tenants` dan opsional komposit ke `warehouses (tenant_id, id)` | Hanya menyimpan kunci pengaturan terdaftar; perubahan diaudit |
 
-Pada migrasi Fase 2 (`012_create_tenants_settings.sql` dan `013_add_tenant_scope.sql`), seluruh 21 tabel bisnis dari Fase 1 (`roles`, `role_permissions`, `users`, `user_warehouses`, `refresh_tokens`, `menus`, `audit_logs`, `document_sequences`, `categories`, `uoms`, `suppliers`, `items`, `warehouses`, `storage_locations`, `inventory_balances`, `stock_movements`, `purchase_orders`, `po_lines`, `goods_receipts`, `gr_lines`, `stock_transfers`, `stock_transfer_lines`, `stock_opnames`, `stock_opname_lines`) ditambahkan `tenant_id BIGINT NOT NULL REFERENCES tenants(id)` dengan tiga jaminan teknis wajib pada [DATABASE_DESIGN.md](DATABASE_DESIGN.md):
+Pada migrasi Fase 2 (`012_create_tenants_settings.sql` dan `013_add_tenant_scope.sql`), seluruh 24 tabel bisnis dari Fase 1 (`roles`, `role_permissions`, `users`, `user_warehouses`, `refresh_tokens`, `menus`, `audit_logs`, `document_sequences`, `categories`, `uoms`, `suppliers`, `items`, `warehouses`, `storage_locations`, `inventory_balances`, `stock_movements`, `purchase_orders`, `po_lines`, `goods_receipts`, `gr_lines`, `stock_transfers`, `stock_transfer_lines`, `stock_opnames`, `stock_opname_lines`) ditambahkan `tenant_id BIGINT NOT NULL REFERENCES tenants(id)` dengan tiga jaminan teknis wajib pada [DATABASE_DESIGN.md](DATABASE_DESIGN.md):
 1. Penonaktifan sementara trigger imutabilitas `007` pada `stock_movements` dan `audit_logs` hanya selama transaksi migrasi `013` melakukan *backfill* `tenant_id` untuk tenant default, lalu diaktifkan kembali sebelum commit.
 2. Pembuatan constraint `UNIQUE (tenant_id, id)` pada seluruh tabel induk sebelum memasang *Composite FK* `(tenant_id, <fk>_id)` agar lintas-referensi antar-tenant mustahil terjadi di level database.
 3. Penggantian 14 constraint `UNIQUE`/`PK` global menjadi komposit berawalan `tenant_id`, disertai kebijakan PostgreSQL `ENABLE` & `FORCE ROW LEVEL SECURITY`.
@@ -1113,3 +1113,4 @@ perubahan lintas modul.
 | --- | --- | --- |
 | 2026-11-06 | 2.2-general | Menambahkan `FR-MST-006` / `MST-F06` import massal item Fase 1; menetapkan nama kategori/UoM, sheet referensi aktif, dan validasi ambiguitas; menyelesaikan `CONF-009`–`CONF-010`; dan mencatat implementasi yang lulus 41 tes backend. Tidak ada perubahan skema database. |
 | 2026-11-06 | 2.2-general | Menambahkan `FR-MST-007` / `MST-F07` import supplier massal dengan validasi per baris, deteksi kode duplikat, audit atomik, serta `AC-31`; implementasi lulus regresi 47 tes backend. Tidak ada perubahan skema database. |
+| 2026-11-11 | 2.3-general | Sinkronisasi dokumen: scope Fase 1 §2.2 menjadi `MST-F01..F07`; catatan status pada header diselaraskan dengan aturan evidence §11.1 (RTM tetap `Mapped`, bukti test di QA); koreksi jumlah tabel bisnis Fase 1 menjadi 24 pada §8.3. Tidak ada perubahan requirement maupun skema database. |

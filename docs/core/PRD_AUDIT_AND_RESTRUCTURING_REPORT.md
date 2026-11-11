@@ -2,10 +2,14 @@
 
 | Informasi | Nilai |
 | --- | --- |
-| Tanggal | 2026-11-03 |
-| Status | Selesai untuk baseline dokumentasi |
+| Tanggal | 2026-11-03 (Snapshot audit historis; acuan aktif berada di PRD_GENERAL.md v2.3) |
+| Status | Selesai untuk baseline dokumentasi restrukturisasi awal |
 | Sumber yang diaudit | PRD v2.0 legacy, `PRD JejakStok — Sistem Manajemen Gudang (Modular).md`, `PRD_GENERAL.md` |
 | Sumber requirement hasil restrukturisasi | [PRD_GENERAL.md](PRD_GENERAL.md) |
+
+> [!NOTE]
+> Dokumen ini adalah catatan historis proses audit & restrukturisasi per 3 November 2026.
+> Perkembangan selanjutnya (penetapan Multi-Tenant SaaS sebagai Fase 2 M9 dengan migrasi `012` & `013`, penambahan `MST-F06`/`MST-F07` import massal Fase 1, dan penyelarasan implementasi backend/frontend) dicatat secara normatif pada [PRD_GENERAL.md](PRD_GENERAL.md) dan dokumen spesifikasi layer terkait.
 
 Dokumen ini berisi hasil audit, gap analysis, modularization analysis, rekomendasi
 arsitektur PRD, mapping, dan validasi akhir. Audit dilakukan sebelum file PRD v2.0
@@ -127,7 +131,7 @@ warehouse scoping, Decimal-only quantity, dan status transition melalui action e
 
 | ID | Keputusan yang dibutuhkan | Dampak |
 | --- | --- | --- |
-| CONF-001 | Selesai pada PRD General v2.1: Fase 1 (M0–M8 Single-Tenant) dipertahankan sebagai pondasi selesai, dan Multi-Tenant SaaS (`TNT`, `CFG`, `tenant_id` + RLS) ditetapkan sebagai Fase 2 (M9 — tahap langsung berikutnya sebelum `ISS`/`RPT`) | Mengunci arsitektur `TNT`, `CFG`, `PLT`, `IAM`, serta migrasi `010` & `011` |
+| CONF-001 | Selesai pada PRD General v2.1: Fase 1 (M0–M8 Single-Tenant) dipertahankan sebagai pondasi selesai, dan Multi-Tenant SaaS (`TNT`, `CFG`, `tenant_id` + RLS) ditetapkan sebagai Fase 2 (M9 — tahap langsung berikutnya sebelum `ISS`/`RPT`) | Mengunci arsitektur `TNT`, `CFG`, `PLT`, `IAM`, serta migrasi `012` & `013` |
 | CONF-002 | Apakah Goods Issue masuk Phase 2? Apa tujuan, approval, dan statusnya? | Menambah movement type, permission, workflow, dan audit |
 | CONF-003 | Laporan mana yang wajib dan kapan? | Menentukan RPT, query, export, dan acceptance criteria |
 | CONF-004 | Selesai pada PRD General: satu item hanya boleh muncul satu kali per dokumen Transfer (`uq_stock_transfer_lines_transfer_item` dan spesifikasi `TRF`) | Constraint data dan aturan bisnis `TRF` |

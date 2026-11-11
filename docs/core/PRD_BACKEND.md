@@ -23,7 +23,7 @@ repository, transaksi dibuka oleh service, dan route memanggil satu use case ser
 - Pagination: `limit` 1–200, default 50, dan `offset >= 0` bila endpoint mendukung.
 - Kuantitas: string desimal yang dipetakan ke `Decimal`, bukan `float`.
 - Error: `{ "error": { "code", "message", "details" } }`.
-- Import item menerima satu workbook `.xlsx` melalui `multipart/form-data`; batas yang
+- Import item (`FR-MST-006`) dan import supplier (`FR-MST-007`) masing-masing menerima satu workbook `.xlsx` melalui `multipart/form-data`; batas yang
   disetujui adalah 1.000 baris data dan ukuran 5 MiB (`CONF-010`). Hasil per baris yang valid/tidak valid
   dikembalikan pada satu respons ringkasan.
 
@@ -211,7 +211,7 @@ Redis, queue, worker, atau integrasi eksternal dalam MVP.
 | `FR-PLT-001..005` | `PLT-F01..F05` | `numbering_service`, `utils/pagination`, `core/exceptions`, `core/middleware`, health route, `db/migrate` | `AC-15` s.d. `AC-18` |
 | `FR-IAM-001..009` | `IAM-F01..F09` | `auth_service`, `user_service`, `access_service`, `menu_service`, auth/user/menu routes & dependencies | `AC-05`, `AC-11`, `AC-12`, `AC-14` |
 | `FR-AUD-001..002` | `AUD-F01..F02` | `audit_service`, `audit_repo`, audit routes | `AC-05`, `AC-07`, `AC-08`, `AC-16`, `AC-22` |
-| `FR-MST-001..006` | `MST-F01..F06` | `master_service`, `master_repo`, item import service/repository, category/uom/supplier/item routes | `AC-16`, `AC-19`, `AC-22`, `AC-30` |
+| `FR-MST-001..007` | `MST-F01..F07` | `master_service`, `master_repo`, item import dan supplier import service/repository, category/uom/supplier/item routes | `AC-16`, `AC-19`, `AC-22`, `AC-30`, `AC-31` |
 | `FR-WHS-001..003` | `WHS-F01..F03` | `warehouse_service`, `warehouse_repo`, warehouse/location routes | `AC-12`, `AC-16`, `AC-20`, `AC-22` |
 | `FR-INV-001..006` | `INV-F01..F06` | `inventory_service` (`apply_movement`), `stock_service`, `inventory_repo`, stock routes | `AC-02`, `AC-03`, `AC-04`, `AC-06`, `AC-08`, `AC-13`, `AC-16` |
 | `FR-PUR-001..004` | `PUR-F01..F04` | `po_service` (`apply_receipt`), `po_repo`, PO routes | `AC-01`, `AC-13`, `AC-15`, `AC-16`, `AC-21`, `AC-22` |

@@ -122,7 +122,10 @@ warehouse_api/
 │   ├── test_stock_transfer.py      # AC-02, AC-03, AC-06, AC-09, AC-21
 │   ├── test_stock_opname.py        # AC-04, AC-10, AC-21
 │   ├── test_immutability.py        # AC-08
-│   └── test_request_id.py          # AC-17
+│   ├── test_request_id.py          # AC-17
+│   ├── test_ac15_to_ac22.py        # AC-15, AC-16, AC-17, AC-18, AC-19, AC-20, AC-21, AC-22
+│   ├── test_ac30_item_bulk_import.py     # AC-30 (MST-F06)
+│   └── test_ac31_supplier_bulk_import.py # AC-31 (MST-F07)
 │
 ├── .env.example
 ├── .gitignore
@@ -132,7 +135,7 @@ warehouse_api/
 └── README.md
 ```
 
-Paket yang dibutuhkan: `fastapi`, `uvicorn[standard]`, `psycopg[binary,pool]`, `pydantic-settings`, `argon2-cffi`, `pyjwt`; untuk pengembangan `pytest` dan `httpx`.
+Paket yang dibutuhkan: `fastapi`, `uvicorn[standard]`, `psycopg[binary,pool]`, `pydantic-settings`, `argon2-cffi`, `pyjwt`, `openpyxl`, `python-multipart`; untuk pengembangan `pytest` dan `httpx`.
 
 ---
 
@@ -240,19 +243,21 @@ Pola yang sama dipakai oleh `ship_transfer`, `receive_transfer`, dan `complete_o
 
 | Modul (FR) | Route | Service | Repository | Schema | Migrasi |
 | --- | --- | --- | --- | --- | --- |
-| Autentikasi (FR-01) | `auth.py` | `auth_service` | `user_repo`, `token_repo` | `auth` | 001 |
-| Pengguna, role, penugasan gudang | `users.py` | `user_service`, `access_service` | `user_repo`, `permission_repo` | `user` | 001, 008 |
-| Menu navigasi (FR-01) | `menus.py` | `menu_service` | `menu_repo` | `menu` | 009 |
-| Master data (FR-02) | `master.py`, `warehouses.py` | `master_service`, `warehouse_service` | `master_repo`, `warehouse_repo` | `master`, `warehouse` | 002 |
-| Stok & in-transit (FR-03) | `stock.py` | `stock_service` | `inventory_repo` | `stock` | 003 |
-| Purchase Order (FR-04) | `purchase_orders.py` | `po_service` | `po_repo` | `purchase_order` | 004 |
-| Goods Receipt (FR-05) | `goods_receipts.py` | `gr_service` | `gr_repo`, `po_repo` | `goods_receipt` | 004 |
-| Transfer Stok (FR-06) | `stock_transfers.py` | `transfer_service` | `transfer_repo` | `stock_transfer` | 005 |
-| Stock Opname (FR-07) | `stock_opnames.py` | `opname_service` | `opname_repo` | `stock_opname` | 005 |
-| Ledger (FR-08) | `stock.py` | `inventory_service`, `stock_service` | `inventory_repo` | `stock` | 003, 007 |
-| Audit Log (FR-09) | `audit_logs.py` | `audit_service` | `audit_repo` | `audit_log` | 006, 007 |
-| Penomoran dokumen (FR-10) | — | `numbering_service` | `sequence_repo` | — | 006 |
-| Pagination (FR-11) | semua route daftar | — | — | `common` | — |
+| Autentikasi (`FR-IAM-001..004`, `009`) | `auth.py` | `auth_service` | `user_repo`, `token_repo` | `auth` | 001 |
+| Pengguna, role, penugasan gudang (`FR-IAM-005..007`) | `users.py` | `user_service`, `access_service` | `user_repo`, `permission_repo` | `user` | 001, 008 |
+| Menu navigasi (`FR-IAM-008`) | `menus.py` | `menu_service` | `menu_repo` | `menu` | 009, 010 |
+| Master data (`FR-MST-001..005`) | `master.py` | `master_service` | `master_repo` | `master` | 002, 010 |
+| Import massal item & supplier (`FR-MST-006..007`) | `master.py` | `master_service` | `master_repo` | `master` (`ItemImportOut`, `SupplierImportOut`) | 002, 010 |
+| Gudang & lokasi (`FR-WHS-001..003`) | `warehouses.py` | `warehouse_service` | `warehouse_repo` | `warehouse` | 002, 010 |
+| Stok & in-transit (`FR-INV-001..002`) | `stock.py` | `stock_service` | `inventory_repo` | `stock` | 003 |
+| Purchase Order (`FR-PUR-001..004`) | `purchase_orders.py` | `po_service` | `po_repo` | `purchase_order` | 004, 010 |
+| Goods Receipt (`FR-RCV-001..004`) | `goods_receipts.py` | `gr_service` | `gr_repo`, `po_repo` | `goods_receipt` | 004, 010 |
+| Transfer Stok (`FR-TRF-001..005`) | `stock_transfers.py` | `transfer_service` | `transfer_repo` | `stock_transfer` | 005, 010 |
+| Stock Opname (`FR-OPN-001..006`) | `stock_opnames.py` | `opname_service` | `opname_repo` | `stock_opname` | 005, 010 |
+| Ledger (`FR-INV-003..006`) | `stock.py` | `inventory_service`, `stock_service` | `inventory_repo` | `stock` | 003, 007, 011 |
+| Audit Log (`FR-AUD-001..002`) | `audit_logs.py` | `audit_service` | `audit_repo` | `audit_log` | 006, 007, 011 |
+| Penomoran dokumen (`FR-PLT-001`) | — | `numbering_service` | `sequence_repo` | — | 006 |
+| Pagination & error handling (`FR-PLT-002..005`) | semua route daftar | — | — | `common` | 001..011 |
 
 ---
 
@@ -260,8 +265,8 @@ Pola yang sama dipakai oleh `ship_transfer`, `receive_transfer`, dan `complete_o
 
 * **Penamaan file & fungsi:** `snake_case`. Fungsi service = kata kerja use case (`issue_po`, `post_goods_receipt`, `ship_transfer`, `approve_opname`). Fungsi repository diawali `get_`, `list_`, `insert_`, `update_`, `lock_`.
 * **Penamaan schema:** `XxxCreate`, `XxxUpdate`, `XxxOut`. Kuantitas bertipe `Decimal` dan diserialisasi sebagai string.
-* **Error:** semua aturan bisnis dilempar sebagai turunan `DomainError` yang membawa `code` dan `http_status`; satu *exception handler* di `main.py` mengubahnya menjadi format `{ "error": { "code", "message", "details" } }`. Daftar kode ada di Lampiran B PRD.
-* **Status dokumen:** konstanta di `utils/enums.py`; setiap transisi dicek lewat satu tabel transisi yang diizinkan per dokumen, sehingga selaras dengan bagian 5.1 PRD.
+* **Error:** semua aturan bisnis dilempar sebagai turunan `DomainError` yang membawa `code` dan `http_status`; satu *exception handler* di `main.py` mengubahnya menjadi format `{ "error": { "code", "message", "details" } }`. Daftar kode ada di `API_CONTRACT.md` dan `PRD_BACKEND.md`.
+* **Status dokumen:** konstanta di `utils/enums.py`; setiap transisi dicek lewat satu tabel transisi yang diizinkan per dokumen, sehingga selaras dengan matriks transisi `PRD_GENERAL.md` bagian 7.5.
 * **ORDER BY dinamis:** hanya dari *whitelist* kolom (`utils/pagination.py`); nilai filter selalu lewat parameter query.
 * **Migrasi:** nama `NNN_deskripsi.sql`, *forward-only*, tidak pernah mengubah berkas yang sudah diterapkan; perubahan baru = berkas baru.
 
@@ -299,9 +304,9 @@ TEST_DATABASE_URL=postgresql://wms_owner:...@localhost:5432/wms_test
 | **M0 Fondasi** | Kerangka proyek, `config.py`, pool, middleware *request id*, `health`, `migrate.py`, docker-compose Postgres. | `GET /health` hidup dan migrasi kosong berjalan. |
 | **M1 Skema** | Migrasi 001–009 ditulis tangan: tabel, FK komposit, `UNIQUE`, `CHECK`, indeks, *trigger* append-only, seed role/permission, dan seed menu. | Coba `UPDATE stock_movements` lewat `psql` dengan role `wms_app` → ditolak; menu awal tersedia. |
 | **M2 Auth & Audit dasar** | Login, rotasi *refresh token*, `require_permission`, `audit_service`, `create_superadmin.py`. | AC-11 lulus. |
-| **M3 Master & penugasan** | CRUD master, aturan penonaktifan, `access_service`. | AC-12 (bagian akses) lulus. |
+| **M3 Master & penugasan** | CRUD master, aturan penonaktifan, `access_service`, import massal item & supplier. | AC-12 (bagian akses), AC-19, AC-30, AC-31 lulus. |
 | **M4 Inti stok** | `inventory_service.apply_movement`, `stock_service`, penomoran dokumen. | Uji langsung `apply_movement` dengan dua *thread* menunjukkan penguncian bekerja. |
 | **M5 PO & GR** | PO lengkap, GR, posting atomik. | AC-01, AC-07, AC-13 lulus. |
 | **M6 Transfer** | Alur `DRAFT → APPROVED → SHIPPED → RECEIVED`, selisih penerimaan. | AC-02, AC-03, AC-06, AC-09 lulus. |
 | **M7 Opname** | *Snapshot*, pembekuan lokasi, persetujuan/penolakan, penyesuaian. | AC-04, AC-10 lulus. |
-| **M8 Pengerasan** | Tinjau seluruh AC, `EXPLAIN ANALYZE` pada query stok & ledger, periksa indeks, log dan *request id*. | Seluruh AC-01 s.d. AC-14 hijau; baca stok < 200 ms pada data uji. |
+| **M8 Pengerasan** | Tinjau seluruh AC, `EXPLAIN ANALYZE` pada query stok & ledger, periksa indeks komposit (`010` & `011`), log dan *request id*. | Seluruh AC-01 s.d. AC-22, AC-30, AC-31 hijau (47 tes backend lulus); baca stok < 200 ms pada data uji. |

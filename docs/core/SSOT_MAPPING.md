@@ -21,8 +21,7 @@ kedua.
 Requirement v2.0 telah diaudit dan dipetakan ke `PRD_GENERAL.md`. Dokumen legacy
 tidak lagi menjadi sumber terpisah.
 
-`PRD JejakStok — Sistem Manajemen Gudang (Modular).md` memperkenalkan
-multi-tenant dan modul usulan yang bertentangan dengan MVP single-tenant.
-Dokumen tersebut dipertahankan sebagai draft untuk traceability, tetapi tidak
-menjadi sumber kebenaran sampai pertanyaan terbukanya diputuskan dan
-`AGENTS.md` diperbarui oleh pemilik proyek.
+Arsitektur Multi-Tenant SaaS telah ditetapkan secara resmi pada `CONF-001` sebagai
+Fase 2 (M9) di dalam `PRD_GENERAL.md` v2.3, `DATABASE_DESIGN.md`, dan `API_CONTRACT.md`.
+Draft modular lama tetap diarsipkan hanya untuk pelacakan historis dan bukan lagi
+sumber kebenaran yang berdiri sendiri.
