@@ -35,7 +35,7 @@ def test_cors_allows_frontend_origin_and_required_headers(client):
 
     assert response.status_code == 200
     assert response.headers["Access-Control-Allow-Origin"] == "http://localhost:5173"
-    assert "Access-Control-Allow-Credentials" not in response.headers
+    assert response.headers["Access-Control-Allow-Credentials"] == "true"
     assert "X-Request-ID" in response.headers["Access-Control-Allow-Headers"]
 
     actual_response = client.get(

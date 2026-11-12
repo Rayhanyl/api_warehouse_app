@@ -125,3 +125,55 @@ def test_login_lockout_after_5_failed_attempts_and_audit_log(
     for row in logs:
         assert "WrongPassword!" not in str(row["new_values"])
         assert "password_hash" not in (row["new_values"] or {})
+
+
+def test_ac11_cookie_httponly_refresh_rotation_and_cleanup(
+    client: TestClient,
+    staff_user: dict[str, Any],
+) -> None:
+    """AC-11, SEC-F01, CONF-008:
+    - Login menetapkan cookie HttpOnly `refresh_token` dengan path /api/v1/auth.
+    - Refresh token dapat dirotasi via cookie tanpa perlu menyertakan JSON body.
+    - Logout menghapus cookie peramban dan mencabut sesi di database.
+    """
+    # 1. Login pertama -> periksa header Set-Cookie
+    login_res = client.post(
+        "/api/v1/auth/login",
+        json={"username": staff_user["username"], "password": staff_user["plain_password"]},
+    )
+    assert login_res.status_code == 200
+    assert "set-cookie" in login_res.headers
+    cookie_header = login_res.headers["set-cookie"]
+    assert "refresh_token=" in cookie_header
+    assert "HttpOnly" in cookie_header or "httponly" in cookie_header
+    assert "path=/api/v1/auth" in cookie_header.lower()
+
+    first_cookie_val = client.cookies.get("refresh_token")
+    assert first_cookie_val is not None
+
+    # 2. Panggil refresh TANPA payload body -> rotasi sukses via cookie otomatis
+    refresh_res = client.post("/api/v1/auth/refresh")
+    assert refresh_res.status_code == 200
+    rotated_data = refresh_res.json()
+    assert "access_token" in rotated_data
+
+    # Cookie terupdate dengan token baru
+    rotated_cookie_val = client.cookies.get("refresh_token")
+    assert rotated_cookie_val is not None
+    assert rotated_cookie_val != first_cookie_val
+
+    # 3. Logout -> cookie dihapus
+    access_token = rotated_data["access_token"]
+    logout_res = client.post(
+        "/api/v1/auth/logout",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    assert logout_res.status_code == 200
+    logout_cookie_header = logout_res.headers.get("set-cookie", "")
+    assert 'refresh_token=""' in logout_cookie_header or "max-age=0" in logout_cookie_header.lower()
+
+    # 4. Request refresh tanpa cookie/payload -> ditolak 401
+    client.cookies.clear()
+    unauth_refresh = client.post("/api/v1/auth/refresh")
+    assert unauth_refresh.status_code == 401
+    assert unauth_refresh.json()["error"]["code"] == "AUTH_TOKEN_INVALID"

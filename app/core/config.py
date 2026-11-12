@@ -28,6 +28,14 @@ class Settings(BaseSettings):
         ],
         description="Daftar origin frontend yang diizinkan oleh CORS",
     )
+    cookie_secure: bool = Field(
+        default=False,
+        description="Flag Secure untuk cookie refresh token (True di HTTPS production)",
+    )
+    cookie_samesite: str = Field(
+        default="lax",
+        description="Nilai SameSite untuk cookie refresh token (lax / strict / none)",
+    )
     trusted_proxy_ips: list[str] = Field(default_factory=list)
 
     model_config = SettingsConfigDict(
