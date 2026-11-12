@@ -8,7 +8,7 @@ setiap endpoint. Detail operasional dan contoh request/response berada di
 
 - Base path modul: `/api/v1` (pengecualian: `GET /health` pada root).
 - Format payload: JSON.
-- Autentikasi: JWT HS256 melalui header `Authorization: Bearer <access-token>` (TTL 15 menit) dan refresh token melalui JSON body (TTL 7 hari).
+- Autentikasi: JWT HS256 melalui header `Authorization: Bearer <access-token>` (TTL 15 menit, disimpan di memori klien) dan refresh token (TTL 7 hari) dikirim melalui cookie aman `Set-Cookie: refresh_token=...; HttpOnly; SameSite=Lax; Path=/api/v1/auth` (dengan fallback opsional membaca JSON body pada `POST /api/v1/auth/refresh` untuk klien non-peramban). CORS diizinkan dengan `allow_credentials=True`.
 - Waktu: ISO 8601 UTC dengan timezone (`TIMESTAMPTZ`).
 - Kuantitas: string desimal pada JSON; penyimpanan PostgreSQL menggunakan `NUMERIC(18,4)`; tidak boleh menggunakan `float`.
 - Pagination & Sorting:
@@ -102,6 +102,16 @@ setiap endpoint. Detail operasional dan contoh request/response berada di
 
 - Endpoint `GET /api/v1/goods-receipts/{id}` dan `GET /api/v1/stock-transfers/{id}` mengembalikan data relasional lengkap (header, rincian lines dengan SKU, barcode, nama barang, UoM, lokasi rak, kuantitas, catatan, dan nama pengguna penandatangan) yang siap dikonsumsi langsung oleh komponen cetak frontend (`@media print` / `window.print()`).
 - Dokumen fisik Surat Jalan (`TRF-F06`) dan Bukti Penerimaan Barang (`RCV-F05`) tidak memerlukan endpoint biner PDF tambahan pada backend; rendering cetak dan penyimpanan ke PDF ditangani secara presisi pada layer antarmuka pengguna.
+
+## Kontrak ringkasan dashboard operasional (`FR-DSH-001`, `AC-38`)
+
+- Endpoint `GET /api/v1/dashboard/summary` memerlukan autentikasi (`Authorization: Bearer <access_token>`).
+- Mengembalikan objek `DashboardSummaryOut` yang merangkum:
+  - `stock_summary`: `total_active_items` (int), `total_qty_on_hand` (string desimal), `total_qty_in_transit` (string desimal), dan `low_stock_items_count` (int).
+  - `pending_actions`: `pending_po_receipt_count` (int), `draft_gr_count` (int), `pending_transfer_ship_count` (int), `pending_transfer_receive_count` (int), dan `active_opname_count` (int).
+  - `recent_activities`: list 5–10 pergerakan mutasi stok (`stock_movements`) atau dokumen terakhir dengan atribut ringkas (`id`, `created_at`, `movement_type`, `reference_type`, `reference_number`, `item_sku`, `item_name`, `qty_change`, `actor_name`).
+  - `assigned_warehouses`: list referensi gudang yang masuk dalam cakupan scoping pengguna (`id`, `code`, `name`).
+- Data yang dihitung dibatasi secara ketat berdasarkan aturan penugasan gudang (`user_warehouses`), di mana `Super Admin` dan `Auditor` menerima agregat lintas gudang, sedangkan staf operasional menerima data gudang mereka sendiri.
 
 ## Katalog kode error resmi
 

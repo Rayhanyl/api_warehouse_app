@@ -7,12 +7,18 @@ Dokumen sumber requirement `PRD_GENERAL.md` disimpan di folder `docs/core`. Stru
 ## 1. Pohon Folder
 
 ```
-warehouse_api/
+api_warehouse_app/
 ├── AGENTS.md                       # aturan kerja untuk AI coding agent (harus di root repositori)
 ├── docs/core/
-│   ├── PRD_GENERAL.md              # sumber kebenaran: apa yang dibangun
-│   ├── FOLDER_STRUCTURE.md         # dokumen ini
-│   └── schema_database.sql         # (opsional) hasil pg_dump --schema-only; referensi baca saja, bukan sumber kebenaran
+│   ├── PRD_GENERAL.md              # sumber kebenaran utama: tujuan, scope, FR, NFR, workflow, AC, RTM
+│   ├── PRD_BACKEND.md              # spesifikasi implementasi backend & arsitektur service
+│   ├── PRD_FRONTEND.md             # spesifikasi implementasi frontend (warehouse_app/)
+│   ├── DATABASE_DESIGN.md          # desain entitas, relasi, dan aturan integritas database
+│   ├── SCHEMA_DATABASE.MD          # DDL, tipe kolom, constraint, dan indeks
+│   ├── API_CONTRACT.md             # kontrak umum REST API (/api/v1), error katalog, dan pagination
+│   ├── FOLDER_STRUCTURE.MD         # dokumen ini (pohon folder & pola kode backend + frontend)
+│   ├── DEPLOYMENT_GUIDE_CICD.md    # panduan deployment production, workflow Git PR, dan pipeline CI/CD GitHub Actions
+│   └── SSOT_MAPPING.md             # pemetaan Single Source of Truth antar dokumen
 ├── app/
 │   ├── main.py                     # bikin FastAPI(), lifespan (buka/tutup pool), daftarkan middleware, router & exception handler
 │   │
@@ -37,7 +43,8 @@ warehouse_api/
 │   │   ├── goods_receipt.py
 │   │   ├── stock_transfer.py
 │   │   ├── stock_opname.py
-│   │   └── audit_log.py
+│   │   ├── audit_log.py
+│   │   └── dashboard.py            # DashboardSummaryOut, metrik stok, pending actions, recent activities
 │   │
 │   ├── api/                        # lapisan HTTP, setipis mungkin
 │   │   ├── deps.py                 # get_current_user (verifikasi JWT + cek is_active/role dari DB)
@@ -53,7 +60,8 @@ warehouse_api/
 │   │       ├── goods_receipts.py
 │   │       ├── stock_transfers.py
 │   │       ├── stock_opnames.py
-│   │       └── audit_logs.py
+│   │       ├── audit_logs.py
+│   │       └── dashboard.py        # GET /api/v1/dashboard/summary (ringkasan stok, pending actions, recent activities)
 │   │
 │   ├── services/                   # use case + aturan bisnis; pemilik batas transaksi
 │   │   ├── auth_service.py
@@ -69,6 +77,7 @@ warehouse_api/
 │   │   ├── transfer_service.py
 │   │   ├── opname_service.py
 │   │   ├── audit_service.py        # record(): catat old_values/new_values
+│   │   ├── dashboard_service.py    # agregasi metrik dashboard berdasar penugasan gudang pengguna
 │   │   └── numbering_service.py    # nomor dokumen PO-202610-0001 dst.
 │   │
 │   ├── repositories/               # SATU-SATUNYA tempat string SQL berada
@@ -84,6 +93,7 @@ warehouse_api/
 │   │   ├── transfer_repo.py
 │   │   ├── opname_repo.py          # termasuk query freeze lokasi
 │   │   ├── audit_repo.py
+│   │   ├── dashboard_repo.py       # query agregasi metrik stok, pending tasks, dan recent activities
 │   │   └── sequence_repo.py        # document_sequences
 │   │
 │   └── utils/
@@ -104,7 +114,8 @@ warehouse_api/
 │   │   ├── 008_seed_roles_permissions.sql  # 5 role, kode permission, pemetaan (Matriks 3.1 PRD)
 │   │   ├── 009_create_menu_tables.sql      # tabel menus + seed menu awal modul WMS
 │   │   ├── 010_harden_constraints_and_indexes.sql # constraint unik & indeks performa Fase 1
-│   │   └── 011_optimize_audit_logs_index.sql # indeks komposit audit_logs Fase 1
+│   │   ├── 011_optimize_audit_logs_index.sql # indeks komposit audit_logs Fase 1
+│   │   └── 012_add_barcode_to_items.sql    # kolom barcode pada items + indeks unik uq_items_barcode_lower (AC-33)
 │   ├── seeds/
 │   │   └── dev_seed.sql                    # data contoh untuk pengembangan lokal
 │   └── migrate.py                          # runner: jalankan .sql berurutan, catat di schema_migrations (AC-18)
@@ -124,8 +135,10 @@ warehouse_api/
 │   ├── test_immutability.py        # AC-08
 │   ├── test_request_id.py          # AC-17
 │   ├── test_ac15_to_ac22.py        # AC-15, AC-16, AC-17, AC-18, AC-19, AC-20, AC-21, AC-22
-│   ├── test_ac30_item_bulk_import.py     # AC-30 (MST-F06)
-│   └── test_ac31_supplier_bulk_import.py # AC-31 (MST-F07)
+│   ├── test_ac30_item_bulk_import.py     # AC-30 (MST-F06, termasuk kolom barcode)
+│   ├── test_ac31_supplier_bulk_import.py # AC-31 (MST-F07)
+│   ├── test_ac33_item_barcode.py         # AC-33, AC-36 (MST-F08, WHS-F04, INV-F07, INV-F08)
+│   └── test_dashboard.py                 # AC-38 (DSH-F01, ringkasan stok, action items, & scoping)
 │
 ├── .env.example
 ├── .gitignore
@@ -246,16 +259,17 @@ Pola yang sama dipakai oleh `ship_transfer`, `receive_transfer`, dan `complete_o
 | Autentikasi (`FR-IAM-001..004`, `009`) | `auth.py` | `auth_service` | `user_repo`, `token_repo` | `auth` | 001 |
 | Pengguna, role, penugasan gudang (`FR-IAM-005..007`) | `users.py` | `user_service`, `access_service` | `user_repo`, `permission_repo` | `user` | 001, 008 |
 | Menu navigasi (`FR-IAM-008`) | `menus.py` | `menu_service` | `menu_repo` | `menu` | 009, 010 |
-| Master data (`FR-MST-001..005`) | `master.py` | `master_service` | `master_repo` | `master` | 002, 010 |
-| Import massal item & supplier (`FR-MST-006..007`) | `master.py` | `master_service` | `master_repo` | `master` (`ItemImportOut`, `SupplierImportOut`) | 002, 010 |
-| Gudang & lokasi (`FR-WHS-001..003`) | `warehouses.py` | `warehouse_service` | `warehouse_repo` | `warehouse` | 002, 010 |
-| Stok & in-transit (`FR-INV-001..002`) | `stock.py` | `stock_service` | `inventory_repo` | `stock` | 003 |
+| Master data (`FR-MST-001..005`, `008..010`) | `master.py` | `master_service` | `master_repo` | `master` | 002, 010, 012 |
+| Import massal item & supplier (`FR-MST-006..007`) | `master.py` | `master_service` | `master_repo` | `master` (`ItemImportOut`, `SupplierImportOut`) | 002, 010, 012 |
+| Gudang & lokasi (`FR-WHS-001..005`) | `warehouses.py` | `warehouse_service` | `warehouse_repo` | `warehouse` | 002, 010 |
+| Stok, in-transit, & lookup scanner rak/barang (`FR-INV-001..002`, `007..008`) | `stock.py` | `stock_service` | `inventory_repo` | `stock` | 003, 012 |
 | Purchase Order (`FR-PUR-001..004`) | `purchase_orders.py` | `po_service` | `po_repo` | `purchase_order` | 004, 010 |
-| Goods Receipt (`FR-RCV-001..004`) | `goods_receipts.py` | `gr_service` | `gr_repo`, `po_repo` | `goods_receipt` | 004, 010 |
-| Transfer Stok (`FR-TRF-001..005`) | `stock_transfers.py` | `transfer_service` | `transfer_repo` | `stock_transfer` | 005, 010 |
+| Goods Receipt & data cetak GRN (`FR-RCV-001..005`) | `goods_receipts.py` | `gr_service` | `gr_repo`, `po_repo` | `goods_receipt` | 004, 010 |
+| Transfer Stok & data cetak Surat Jalan (`FR-TRF-001..006`) | `stock_transfers.py` | `transfer_service` | `transfer_repo` | `stock_transfer` | 005, 010 |
 | Stock Opname (`FR-OPN-001..006`) | `stock_opnames.py` | `opname_service` | `opname_repo` | `stock_opname` | 005, 010 |
 | Ledger (`FR-INV-003..006`) | `stock.py` | `inventory_service`, `stock_service` | `inventory_repo` | `stock` | 003, 007, 011 |
 | Audit Log (`FR-AUD-001..002`) | `audit_logs.py` | `audit_service` | `audit_repo` | `audit_log` | 006, 007, 011 |
+| Dashboard operasional (`FR-DSH-001`) | `dashboard.py` | `dashboard_service` | `dashboard_repo` | `dashboard` (`DashboardSummaryOut`) | 001..012 |
 | Penomoran dokumen (`FR-PLT-001`) | — | `numbering_service` | `sequence_repo` | — | 006 |
 | Pagination & error handling (`FR-PLT-002..005`) | semua route daftar | — | — | `common` | 001..011 |
 
@@ -309,4 +323,48 @@ TEST_DATABASE_URL=postgresql://wms_owner:...@localhost:5432/wms_test
 | **M5 PO & GR** | PO lengkap, GR, posting atomik. | AC-01, AC-07, AC-13 lulus. |
 | **M6 Transfer** | Alur `DRAFT → APPROVED → SHIPPED → RECEIVED`, selisih penerimaan. | AC-02, AC-03, AC-06, AC-09 lulus. |
 | **M7 Opname** | *Snapshot*, pembekuan lokasi, persetujuan/penolakan, penyesuaian. | AC-04, AC-10 lulus. |
-| **M8 Pengerasan** | Tinjau seluruh AC, `EXPLAIN ANALYZE` pada query stok & ledger, periksa indeks komposit (`010` & `011`), log dan *request id*. | Seluruh AC-01 s.d. AC-22, AC-30, AC-31 hijau (47 tes backend lulus); baca stok < 200 ms pada data uji. |
+| **M8 Pengerasan & Fitur Retail/Cabang** | Tinjau seluruh AC, indeks komposit (`010` & `011`), migrasi barcode (`012`), pencarian lokasi/rak multi-SKU, dan kelengkapan data cetak dokumen fisik. | Seluruh AC-01 s.d. AC-22, AC-30 s.d. AC-33, AC-36 hijau (49 tes backend lulus); baca stok < 200 ms pada data uji. |
+
+---
+
+## 10. Pohon Folder Frontend (`warehouse_app/`)
+
+Frontend berada pada direktori `warehouse_app/` (sejajar dengan `api_warehouse_app/`) dan mengikuti arsitektur *feature-sliced* yang dirujuk oleh [PRD_FRONTEND.md](PRD_FRONTEND.md):
+
+```
+warehouse_app/
+├── src/
+│   ├── app/
+│   │   ├── router.tsx              # definisi rute publik & terlindungi (React Router v7)
+│   │   ├── ProtectedRoute.tsx      # guard autentikasi, pemulihan sesi, & pemeriksaan permission
+│   │   └── App.test.tsx            # pengujian integrasi shell, sidebar, dashboard, profil, & landing page
+│   ├── components/
+│   │   ├── layout/                 # AppShell.tsx, Sidebar.tsx, PageHeader.tsx
+│   │   └── ui/                     # komponen bersama:
+│   │       ├── BarcodeVisual.tsx   # generator SVG 1D (EAN-13, Code-128B), 2D (QrCodeVisual), & BarcodeStickerSheet (50x30 mm)
+│   │       ├── BarcodeScannerModal.tsx # modal pemindai kamera web & BarcodeScanBar
+│   │       └── StockLookupModal.tsx    # modal pindai cepat barang & inspeksi isi rak multi-SKU (Dual-Mode)
+│   ├── content/landing/            # konten JSON tervalidasi untuk halaman muka (hero, pain-points, workflow, proof-points)
+│   ├── features/
+│   │   ├── auth/                   # store Zustand, penyimpanan token multi-tab, & auth.test.tsx
+│   │   ├── dashboard/              # api.ts (useDashboardSummary) & komponen widget ringkasan metrik
+│   │   ├── admin/                  # pengelolaan pengguna, role/permission, penugasan gudang, & menu
+│   │   ├── master-data/            # categories/, uoms/, suplliers/, stocks/ (+StockImportDialog), warehouses/, storage-locations/
+│   │   ├── stock/                  # StockPage.tsx, StockMovementsPage.tsx, & stock-lookup.test.tsx
+│   │   ├── purchase-orders/        # PurchaseOrdersPage.tsx
+│   │   ├── goods-receipts/         # GoodsReceiptsPage.tsx, GoodsReceiptPrintSheet.tsx, barcode-scanner.test.tsx, print-documents.test.tsx
+│   │   ├── stock-transfers/        # StockTransfersPage.tsx, StockTransferPrintSheet.tsx
+│   │   ├── stock-opnames/          # StockOpnamesPage.tsx
+│   │   └── audit/                  # AuditLogsPage.tsx
+│   ├── hooks/
+│   │   └── useBarcodeScanner.ts    # listener global untuk hardware barcode scanner gun (USB/Bluetooth HID)
+│   ├── lib/
+│   │   ├── api-client.ts           # instance Axios (/api/v1), injeksi Bearer token, & interceptor auto-refresh 401
+│   │   └── barcode.ts              # generator kode barcode internal EAN-13 (GS1 prefix 200..299) & Code-128
+│   ├── pages/                      # LandingPage.tsx, LoginPage.tsx, DashboardPage.tsx, ProfilePage.tsx
+│   └── styles/
+│       └── globals.css             # konfigurasi tema Tailwind v4 + aturan cetak @media print (A4 & stiker termal 50x30 mm)
+├── package.json
+├── tsconfig.json
+└── vite.config.ts
+```

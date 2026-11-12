@@ -140,26 +140,67 @@ tanpa penyimpanan. Workbook yang terbaca menghasilkan ringkasan parsial
   - Jika barcode tidak diisi saat pembuatan item, sistem mengizinkan nilai `null` (beberapa item dapat bernilai `barcode IS NULL`).
   - Lookup scanner: jika barcode dipindai, backend dapat mengembalikan entitas item yang cocok secara unik untuk digunakan auto-fill pada transaksi GR, Transfer, dan Opname.
 
-### 2.4 Kelengkapan Kontrak Data Cetak Dokumen Fisik (`FR-RCV-005`, `FR-TRF-006`)
+### 2.4 Kelengkapan Kontrak Data Cetak Dokumen Fisik (`FR-RCV-005`, `FR-TRF-006`, `FR-MST-010`)
 
 - Endpoint detail `GET /api/v1/goods-receipts/{id}` dan `GET /api/v1/stock-transfers/{id}` menjamin pengembalian data relasional lengkap tanpa truncate, mencakup:
   - Header: nomor dokumen, tanggal dokumen, nama & kode gudang (asal dan tujuan), data kontak supplier/pemasok, nama pembuat (`created_by_name`), pemeriksa, dan penyetuju.
-  - Baris barang (*lines*): kode SKU, kode barcode, nama barang, kode UoM, kuantitas dikirim/dipesan, kuantitas diterima, kode rak/lokasi simpan (`location_code` & `location_name`), dan catatan per baris.
-- Frontend memanfaatkan data lengkap tersebut untuk merender dokumen siap cetak (*print-ready layout* / `window.print()`).
+  - Baris barang (*lines*): kode SKU, kode barcode (`item_barcode`), nama barang, kode UoM, kuantitas dikirim/dipesan, kuantitas diterima, kode rak/lokasi simpan (`location_code` & `location_name`), dan catatan per baris.
+- Frontend memanfaatkan data lengkap tersebut untuk merender dokumen siap cetak (*print-ready layout* / `window.print()`) serta menyematkan grafik barcode SVG dokumen.
 
-## 3. Arsitektur service dan persistence
+### 2.5 Pencarian Saldo Stok & Inspeksi Multi-SKU per Lokasi Rak / Gudang (`FR-WHS-004`, `FR-WHS-005`, `FR-INV-008`, `AC-34`, `AC-36`, `AC-37`)
 
-### 3.1 Layer
+- Endpoint `GET /api/v1/stock/by-location` (dan `/api/v1/stock/balances`) melalui `inventory_repo.list_stock_by_location` mendukung parameter `search` universal yang mencocokkan secara *case-insensitive* (`ILIKE`):
+  - Identitas barang: `i.sku`, `i.name`, dan `i.barcode`.
+  - Identitas lokasi rak: `sl.code` dan `sl.name`.
+  - Identitas gudang: `w.code` dan `w.name`.
+- Dengan perluasan query ini, ketika operator memindai **Barcode / QR Code Rak** (mis. `JKT-RAK-A1`) atau **QR Code Gudang** (mis. `WH-JKT-01`), backend mengembalikan seluruh daftar baris barang (*multi-SKU*) yang tersimpan pada rak atau gudang tersebut beserta `qty_on_hand` dan `qty_in_transit` dalam satu panggilan API terfilter sesuai *warehouse scoping* pengguna.
 
-| Layer | Tanggung jawab |
-| --- | --- |
-| Routes/dependencies | Parse request, permission dependency, panggil service |
-| Services | Use case, aturan bisnis, transaction boundary, audit |
-| Repositories | SQL berparameter, locking, query, dan persistence |
-| Schemas | Bentuk request/response dan validasi format |
-| Core | Config, pool, security, exception, request ID |
+### 2.6 Endpoint API Dashboard Operasional (`FR-DSH-001`, `AC-38`)
 
-### 3.2 Transaksi dan locking
+| Method | Path | Permission | Kontrak |
+| --- | --- | --- | --- |
+| `GET` | `/api/v1/dashboard/summary` | User terautentikasi (`get_current_user`) | Mengembalikan ringkasan statistik stok, dokumen tertunda (action items), dan aktivitas terkini yang terisolasi sesuai penugasan gudang. |
+
+- **Aturan Warehouse Scoping (`BR-GLB-007`):**
+  - Jika pengguna memiliki peran `Super Admin` atau `Auditor`, query menghitung agregat lintas seluruh gudang aktif (`warehouse_id IS NULL` filter).
+  - Jika pengguna memiliki peran operasional (`Warehouse Manager`, `Warehouse Staff`, `Purchasing Staff`), query membatasi perhitungan hanya pada `warehouse_id` yang terdaftar di `user_warehouses` pengguna. Jika pengguna tidak memiliki penugasan gudang, metrik stok dan dokumen bernilai 0 / list kosong.
+- **Payload Respons (`DashboardSummaryOut`):**
+  - `stock_summary`:
+    - `total_active_items`: int (jumlah SKU barang aktif).
+    - `total_qty_on_hand`: string desimal `NUMERIC(18,4)` (total saldo fisik tersimpan).
+    - `total_qty_in_transit`: string desimal `NUMERIC(18,4)` (total barang dalam perjalanan transfer).
+    - `low_stock_items_count`: int (jumlah barang dengan saldo on-hand <= 0 atau mendekati minimum).
+  - `pending_actions`:
+    - `pending_po_receipt_count`: int (jumlah PO `ISSUED` / `PARTIALLY_RECEIVED` yang menunggu penerimaan).
+    - `draft_gr_count`: int (jumlah GR `DRAFT` yang belum diposting).
+    - `pending_transfer_ship_count`: int (jumlah Transfer `APPROVED` yang menunggu pengiriman).
+    - `pending_transfer_receive_count`: int (jumlah Transfer `SHIPPED` yang menunggu penerimaan cabang).
+    - `active_opname_count`: int (jumlah sesi Opname `IN_PROGRESS` / `WAITING_APPROVAL` yang sedang membekukan lokasi).
+  - `recent_activities`: list 5–10 pergerakan mutasi stok (`stock_movements`) atau dokumen terakhir (waktu, tipe, nomor referensi, nama barang, jumlah perubahan, nama aktor).
+  - `assigned_warehouses`: list ringkas gudang aktif yang dievaluasi (`id`, `code`, `name`).
+
+## 3. Arsitektur service, spesifikasi teknis, dan persistence
+
+### 3.1 Spesifikasi teknologi & dependensi backend (`api_warehouse_app/`)
+
+- **Runtime & Framework:** Python `3.12+`, FastAPI (`>=0.115`), Uvicorn (`uvicorn[standard]`).
+- **Database Driver & Pool:** PostgreSQL `16+` diakses langsung melalui `psycopg[binary,pool]` v3 (`ConnectionPool` sinkron dengan `autocommit=True` dan `row_factory=dict_row`, tanpa ORM).
+- **Validasi & Konfigurasi:** Pydantic v2 (`>=2.9`) dan `pydantic-settings` (`app/core/config.py`). Seluruh kuantitas menggunakan `Decimal` (`NUMERIC(18,4)`) yang diserialisasi sebagai string desimal.
+- **Keamanan & Kriptografi:** `argon2-cffi` (hashing password Argon2id), `PyJWT` (`HS256` access token 15 menit, refresh token 7 hari disimpan sebagai SHA-256 hash di tabel `refresh_tokens`).
+- **Pemrosesan File Excel:** `openpyxl` dan `python-multipart` untuk unduh template dan impor massal workbook `.xlsx`.
+- **Migrasi Skema (`db/migrations/`):** Runner SQL *forward-only* (`db/migrate.py`) yang mengelola migrasi `001_create_auth_tables.sql` s.d. `012_add_barcode_to_items.sql` menggunakan koneksi pemilik skema (`MIGRATION_DATABASE_URL`), sementara aplikasi berjalan dengan role terbatas `wms_app` (`DATABASE_URL`).
+
+### 3.2 Layer
+
+| Layer | Lokasi Folder | Tanggung jawab |
+| --- | --- | --- |
+| Routes/dependencies | `app/api/routes/`, `app/api/deps.py` | Parse request, `require_permission`, panggil tepat satu fungsi service |
+| Services | `app/services/` | Use case, aturan bisnis, `ensure_warehouse_access`, transaction boundary (`with conn.transaction():`), audit |
+| Repositories | `app/repositories/` | Satu-satunya pemilik string SQL berparameter, row locking (`FOR UPDATE`/`FOR SHARE`), dan persistence |
+| Schemas | `app/schemas/` | Bentuk request/response Pydantic (`XxxCreate`, `XxxUpdate`, `XxxOut`, `Page[T]`) |
+| Core & Utils | `app/core/`, `app/utils/` | Config, connection pool, security, `DomainError`, middleware `X-Request-ID`, whitelist pagination/sort |
+
+### 3.3 Transaksi dan locking
 
 Satu aksi bisnis adalah satu transaksi yang mencakup status dokumen, saldo,
 ledger, dan audit. Lock ordering: header dokumen, PO terkait, lokasi terurut,
@@ -183,10 +224,14 @@ Seluruh perubahan saldo melewati `inventory_service.apply_movement()`.
 
 ## 5. Authentication dan authorization
 
-- Access token berlaku 15 menit; refresh token 7 hari.
-- Refresh token disimpan sebagai hash, dirotasi, dan reuse token revoked
-  mencabut seluruh sesi pengguna.
-- Password menggunakan Argon2id.
+- Access token berlaku 15 menit (dikembalikan di payload JSON dan disimpan di memori aplikasi).
+- Refresh token berlaku 7 hari, disimpan sebagai hash di database, dirotasi pada setiap pemanggilan `/api/v1/auth/refresh`, dan reuse token yang telah revoked mencabut seluruh sesi aktif pengguna.
+- **Penyimpanan & Pengiriman Refresh Token Berbasis Cookie (`CONF-008`, `SEC-F01`):**
+  - Pada `POST /api/v1/auth/login` dan `POST /api/v1/auth/refresh`, server menyetel header `Set-Cookie` dengan atribut: `refresh_token=<token>; HttpOnly; SameSite=Lax; Path=/api/v1/auth; Max-Age=604800` (flag `Secure` aktif pada environment produksi HTTPS).
+  - Pada `POST /api/v1/auth/refresh`, server memprioritaskan pembacaan refresh token dari cookie peramban `request.cookies.get("refresh_token")` (dengan fallback ke JSON body untuk klien API/CLI otomatis).
+  - Pada `POST /api/v1/auth/logout`, server menghapus cookie melalui `Set-Cookie: refresh_token=; Max-Age=0; Path=/api/v1/auth; ...` dan mencabut sesi di tabel database.
+  - CORS middleware pada backend dikonfigurasi dengan `allow_credentials=True` dan whitelist origin frontend yang terdaftar.
+- Password menggunakan Argon2id (`argon2-cffi`).
 - Akun dikunci setelah lima kegagalan login sesuai aturan produk.
 - Permission berasal dari role/database, bukan dipercaya dari claim token saja.
 
@@ -227,14 +272,19 @@ Redis, queue, worker, atau integrasi eksternal dalam MVP.
 | `FR-PLT-001..005` | `PLT-F01..F05` | `numbering_service`, `utils/pagination`, `core/exceptions`, `core/middleware`, health route, `db/migrate` | `AC-15` s.d. `AC-18` |
 | `FR-IAM-001..009` | `IAM-F01..F09` | `auth_service`, `user_service`, `access_service`, `menu_service`, auth/user/menu routes & dependencies | `AC-05`, `AC-11`, `AC-12`, `AC-14` |
 | `FR-AUD-001..002` | `AUD-F01..F02` | `audit_service`, `audit_repo`, audit routes | `AC-05`, `AC-07`, `AC-08`, `AC-16`, `AC-22` |
-| `FR-MST-001..009` | `MST-F01..F09` | `master_service`, `master_repo`, item import dan supplier import service/repository, category/uom/supplier/item routes (termasuk kolom & indeks barcode, serta generator barcode internal) | `AC-16`, `AC-19`, `AC-22`, `AC-30`, `AC-31`, `AC-33` |
-| `FR-WHS-001..004` | `WHS-F01..F04` | `warehouse_service`, `warehouse_repo`, warehouse/location routes, pencarian lokasi/gudang pada saldo stok | `AC-12`, `AC-16`, `AC-20`, `AC-22`, `AC-36` |
-| `FR-INV-001..008` | `INV-F01..F08` | `inventory_service` (`apply_movement`), `stock_service`, `inventory_repo`, stock routes, barcode/QR scanner lookup barang & inspeksi multi-SKU posisi rak gudang | `AC-02`, `AC-03`, `AC-04`, `AC-06`, `AC-08`, `AC-13`, `AC-16`, `AC-33`, `AC-34`, `AC-36` |
+| `FR-MST-001..010` | `MST-F01..F10` | `master_service`, `master_repo`, item import (termasuk kolom `barcode`) dan supplier import service/repository, category/uom/supplier/item routes (kolom & indeks `uq_items_barcode_lower` pada `012_add_barcode_to_items.sql`) | `AC-16`, `AC-19`, `AC-22`, `AC-30`, `AC-31`, `AC-33`, `AC-34`, `AC-35` |
+| `FR-WHS-001..005` | `WHS-F01..F05` (`LOC-F03..F04`) | `warehouse_service`, `warehouse_repo`, warehouse/location routes, perluasan pencarian kode/nama lokasi rak & gudang pada saldo stok (`inventory_repo.list_stock_by_location`) | `AC-12`, `AC-16`, `AC-20`, `AC-22`, `AC-36`, `AC-37` |
+| `FR-INV-001..008` | `INV-F01..F08` | `inventory_service` (`apply_movement`), `stock_service`, `inventory_repo`, stock routes, barcode/QR scanner lookup barang & inspeksi multi-SKU posisi rak/gudang | `AC-02`, `AC-03`, `AC-04`, `AC-06`, `AC-08`, `AC-13`, `AC-16`, `AC-33`, `AC-34`, `AC-36`, `AC-37` |
 | `FR-PUR-001..004` | `PUR-F01..F04` | `po_service` (`apply_receipt`), `po_repo`, PO routes | `AC-01`, `AC-13`, `AC-15`, `AC-16`, `AC-21`, `AC-22` |
-| `FR-RCV-001..005` | `RCV-F01..F05` | `gr_service`, `gr_repo`, GR routes, penyediaan payload cetak GRN lengkap | `AC-01`, `AC-07`, `AC-12`, `AC-13`, `AC-15`, `AC-16`, `AC-21`, `AC-22`, `AC-32` |
-| `FR-TRF-001..006` | `TRF-F01..F06` | `transfer_service` (`in_transit`), `transfer_repo`, transfer routes, penyediaan payload cetak Surat Jalan lengkap | `AC-02`, `AC-03`, `AC-04`, `AC-06`, `AC-09`, `AC-12`, `AC-15`, `AC-16`, `AC-21`, `AC-22`, `AC-32` |
+| `FR-RCV-001..005` | `RCV-F01..F05` | `gr_service`, `gr_repo`, GR routes, penyediaan payload cetak GRN lengkap beserta barcode | `AC-01`, `AC-07`, `AC-12`, `AC-13`, `AC-15`, `AC-16`, `AC-21`, `AC-22`, `AC-32`, `AC-35` |
+| `FR-TRF-001..006` | `TRF-F01..F06` | `transfer_service` (`in_transit`), `transfer_repo`, transfer routes, penyediaan payload cetak Surat Jalan lengkap beserta barcode | `AC-02`, `AC-03`, `AC-04`, `AC-06`, `AC-09`, `AC-12`, `AC-15`, `AC-16`, `AC-21`, `AC-22`, `AC-32`, `AC-35` |
 | `FR-OPN-001..006` | `OPN-F01..F06` | `opname_service` (`is_location_frozen`), `opname_repo`, opname routes | `AC-04`, `AC-10`, `AC-12`, `AC-15`, `AC-16`, `AC-21`, `AC-22` |
+| `FR-DSH-001` | `DSH-F01` | `dashboard_service`, `dashboard_repo`, `routes/dashboard.py` (agregasi metrik stok, dokumen tertunda, & aktivitas terkini ter-scope) | `AC-12`, `AC-38` |
 | `FR-TNT-001..006` *(Fase 2 — M9)* | `TNT-F01..F06` | `tenant_service` (`ensure_tenant_active`, `check_quota`), `tenant_repo`, `routes/platform.py`, `routes/tenants.py`, context `current_tenant` | `AC-23`, `AC-24`, `AC-25`, `AC-27`, `AC-28`, `AC-29` |
 | `FR-CFG-001..004` *(Fase 2 — M9)* | `CFG-F01..F04` | `setting_service` (`get_setting`), `setting_repo`, `routes/settings.py` | `AC-22`, `AC-26` |
 
-Detail struktur file dan pola kode tetap berada di [FOLDER_STRUCTURE](FOLDER_STRUCTURE.MD).
+## 9. Status implementasi & pengujian backend saat ini
+
+- **Lokasi & repositori:** Backend aktif berada di folder `api_warehouse_app/` berdampingan dengan `warehouse_app/`.
+- **Cakupan modul terimplementasi (Fase 1):** Seluruh modul Fase 1 (`PLT`, `IAM`, `AUD`, `MST` termasuk import massal item/supplier & barcode item, `WHS` termasuk pencarian lokasi rak/gudang, `INV`, `PUR`, `RCV`, `TRF`, `OPN`) beserta migrasi `001` s.d. `012` telah diimplementasikan penuh.
+- **Verifikasi pengujian (`tests/`):** Seluruh 49 pengujian integrasi `pytest` terhadap PostgreSQL `wms_test` sungguhan lulus 100% (`AC-01` s.d. `AC-22`, `AC-30`, `AC-31`, `AC-32`, `AC-33`, `AC-36`). Detail struktur file dan pola kode terdapat pada [FOLDER_STRUCTURE](FOLDER_STRUCTURE.MD).

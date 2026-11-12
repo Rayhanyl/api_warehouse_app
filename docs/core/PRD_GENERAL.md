@@ -2,11 +2,11 @@
 
 | Informasi | Nilai |
 | --- | --- |
-| Status | Baseline Fase 1 (MVP Single-Tenant) dengan tambahan MST-F06, MST-F07, MST-F08 (Barcode), MST-F09 (Auto-Generate Barcode), RCV-F05 (Cetak GRN), TRF-F06 (Cetak Surat Jalan), INV-F07 (Barcode/QR Scanner), dan INV-F08 (Pindai Cek Stok & Posisi Rak — AC-34); spesifikasi Fase 2 (M9 Multi-Tenant SaaS) |
-| Versi | 2.5-general |
+| Status | Baseline Fase 1 (MVP Single-Tenant: Backend `api_warehouse_app/` & Frontend `warehouse_app/`) dengan tambahan MST-F06..F10 (Import Massal, Barcode, Auto-Generate, Visual SVG & Stiker `50x30 mm`), WHS-F04..F05 (Barcode & QR Code 2D Lokasi Rak/Gudang + Dual-Format), RCV-F05 (Cetak GRN), TRF-F06 (Cetak Surat Jalan), INV-F07..F08 (Barcode/QR Scanner & Inspeksi Multi-SKU Rak — AC-30 s.d. AC-37); spesifikasi Fase 2 (M9 Multi-Tenant SaaS) |
+| Versi | 2.6-general |
 | Pemilik | Product / Business |
 | Sumber historis | PRD v2.0 (Single-Tenant) & PRD Modular v3.1 (Multi-Tenant SaaS) yang telah diaudit dan diintegrasikan |
-| Catatan | Baseline Fase 1 (M0–M8) beserta tambahan fitur retail/toko cabang/B2B (MST-F06 s.d. MST-F09, RCV-F05, TRF-F06, INV-F07, INV-F08) menjadi scope MVP aktif. Status RTM pada dokumen ini tetap `Mapped` sesuai aturan bagian 11.1; klaim implementasi dan hasil test wajib dibuktikan pada [QA.MD](../QA/QA.MD). Fase 2 tetap mencakup `TNT`, `CFG`, `tenant_id` + RLS sebelum Fase 3 (`ISS`, `RPT`). |
+| Catatan | Baseline Fase 1 (M0–M8) beserta tambahan fitur retail/toko cabang/B2B (MST-F06 s.d. MST-F10, WHS-F04 s.d. WHS-F05, RCV-F05, TRF-F06, INV-F07, INV-F08) menjadi scope MVP aktif baik di Backend maupun Frontend. Status RTM pada dokumen ini tetap `Mapped` sesuai aturan bagian 11.1; klaim implementasi dan hasil test wajib dibuktikan pada [QA.MD](../QA/QA.MD). Fase 2 tetap mencakup `TNT`, `CFG`, `tenant_id` + RLS sebelum Fase 3 (`ISS`, `RPT`). |
 
 Dokumen ini adalah sumber utama requirement produk. Dokumen Backend, Frontend,
 Database, API, dan QA hanya menjabarkan konsekuensi requirement ini dan tidak boleh
@@ -80,13 +80,14 @@ dan jejak audit yang dapat diperiksa.
 | PLT | PLT-F01..F05 | Numbering, query convention, error, request ID/health, migration | Must Have |
 | IAM | IAM-F01..F09 | Auth, RBAC, user, warehouse scope, menu, profile | Must Have |
 | AUD | AUD-F01..F02 | Write/read audit log | Must Have |
-| MST | MST-F01..F09 | Category, UoM, item, supplier, deactivation, import massal item, import massal supplier, barcode barang, auto-generate barcode | Must Have |
-| WHS | WHS-F01..F03 | Warehouse, location, validation | Must Have |
+| MST | MST-F01..F10 | Category, UoM, item, supplier, deactivation, import massal item & supplier, barcode barang, auto-generate barcode, visual barcode SVG & cetak stiker barang | Must Have |
+| WHS | WHS-F01..F05 | Warehouse, location, validation, barcode & QR Code 2D lokasi rak/gudang, dual-format stiker label, dan inspeksi rak multi-SKU | Must Have |
 | INV | INV-F01..F08 | Balance, ledger, movement gateway, negative stock, freeze enforcement, integrasi pemindaian barcode/QR, pindai cek stok & posisi rak | Must Have |
 | PUR | PUR-F01..F04 | PO lifecycle and fulfillment | Must Have |
 | RCV | RCV-F01..F05 | Goods receipt, posting, cetak bukti penerimaan barang fisik (GRN) | Must Have |
 | TRF | TRF-F01..F06 | Transfer lifecycle, in-transit, cetak surat jalan transfer fisik | Must Have |
 | OPN | OPN-F01..F06 | Count, freeze, approval, adjustment, opening balance | Must Have |
+| DSH | DSH-F01 | Dashboard operasional real-time & ringkasan metrik berbasis penugasan gudang | Must Have |
 
 ### 2.3 Fase 2 (M9 — Multi-Tenant SaaS), Fase 3, Future Development, dan Out of Scope
 
@@ -104,7 +105,7 @@ dan jejak audit yang dapat diperiksa.
 | Out of Scope | UoM conversion | OOS-07 |
 | Out of Scope | Partial transfer receiving | OOS-08 |
 | Out of Scope | Multi-level PO approval | OOS-09 |
-| Out of Scope | UI/frontend di repository API, notification, ERP/barcode/email/WhatsApp integration | OOS-10 |
+| Out of Scope | Integrasi ERP eksternal, notifikasi email/WhatsApp otomatis | OOS-10 |
 
 ## 3. Pengguna dan akses
 
@@ -197,6 +198,7 @@ Pada Fase 2 (M9), sistem memisahkan secara tegas antara **konteks Platform (`sco
 | RCV | Goods Receipt | GR lifecycle dan atomic posting | MVP (Fase 1) + Ekstensi M9 |
 | TRF | Transfer Stok | Transfer lifecycle, variance, in-transit | MVP (Fase 1) + Ekstensi M9 |
 | OPN | Stock Opname | Snapshot, freeze, count, approval, adjustment | MVP (Fase 1) + Ekstensi M9 |
+| DSH | Dashboard | Agregasi metrik stok, dokumen tertunda, & aktivitas terkini ter-scope | MVP (Fase 1) + Ekstensi M9 |
 | TNT | Tenant | Provisioning tenant, siklus hidup (`TRIAL`/`ACTIVE`/`SUSPENDED`/`DEACTIVATED`), paket kuota (`plans`), dan `Platform Admin` | Phase 2 (M9 — Approved) |
 | CFG | Konfigurasi | Registri pengaturan dan pewarisan nilai (`warehouse -> tenant -> platform default`) | Phase 2 (M9 — Approved) |
 
@@ -245,6 +247,21 @@ Semua contract dipanggil di dalam transaksi use case pemanggil. Contract yang
 menghasilkan perubahan data mengikuti lock ordering dan invariant owner. Kegagalan
 contract menggagalkan transaksi pemanggil secara keseluruhan; tidak boleh ada
 success-shaped fallback atau perubahan sebagian.
+
+### 4.4 Spesifikasi teknis arsitektur Backend & Frontend
+
+Workspace monorepo terdiri atas dua komponen utama yang berjalan berdampingan dan terhubung melalui kontrak REST API `/api/v1`:
+
+| Dimensi | Backend (`api_warehouse_app/`) | Frontend (`warehouse_app/`) |
+| --- | --- | --- |
+| **Runtime & Bahasa** | Python `3.12+` | TypeScript `5.9+`, Node.js / Browser ES2022 |
+| **Framework Utama** | FastAPI + Uvicorn (ASGI, route sinkron pada threadpool) | React `19.3`, Vite `8`, React Router `7` |
+| **Data & Persistence / State** | PostgreSQL `16+` via `psycopg` 3 (`psycopg_pool` sinkron, `dict_row`, tanpa ORM); migrasi SQL forward-only (`001`–`012`) | TanStack Query `5` (server state & cache), Zustand `5` (auth/session state di memori), pemulihan sesi via cookie `HttpOnly` peramban |
+| **Validasi & Skema** | Pydantic v2 + `pydantic-settings`; kuantitas `Decimal` (`NUMERIC(18,4)`) diserialisasi sebagai string | React Hook Form + Zod; TanStack Table untuk tabel berpaginasi |
+| **Keamanan & Autentikasi** | Password hashing `argon2-cffi` (Argon2id), JWT `HS256` (`PyJWT`, access 15m, refresh 7d via cookie `HttpOnly; SameSite=Lax; Secure; Path=/api/v1/auth`), role aplikasi `wms_app` tanpa hak `UPDATE`/`DELETE` di tabel append-only | Axios interceptor (`lib/api-client.ts`) dengan `withCredentials: true`, injeksi in-memory `Bearer` token, auto-refresh cookie pada `401`, serta guard `ProtectedRoute` dan permission UI |
+| **Fitur Khusus Gudang & Retail** | Import Excel batch (`openpyxl`, `python-multipart`), indeks barcode `uq_items_barcode_lower`, serta pencarian multi-dimensi stok & lokasi rak (`inventory_repo.list_stock_by_location`) | Generator visual SVG 1D (`BarcodeVisual`: EAN-13 & Code-128B) dan 2D (`QrCodeVisual`: QR Code Level M), hook hardware scanner (`useBarcodeScanner`), kamera web (`BarcodeScannerModal`), cetak stiker termal `50x30 mm` (`BarcodeStickerSheet`), cetak dokumen A4 GRN & Surat Jalan (`@media print`), serta desain responsif semua perangkat (`360px`–`1280px+`) |
+| **Pengujian Otomatis** | `pytest` + `httpx` pada database PostgreSQL `wms_test` sungguhan (49 tes mencakup AC-01 s.d. AC-22, AC-30 s.d. AC-33, AC-36) | `vitest` + React Testing Library + `jsdom` (45 tes pada 11 suite mencakup auth, RBAC UI, CRUD master, scanner, QR/barcode, cetak dokumen, dan lookup rak) |
+| **Dokumen Spesifikasi Layer** | [PRD_BACKEND.md](PRD_BACKEND.md) & [FOLDER_STRUCTURE.MD](FOLDER_STRUCTURE.MD) | [PRD_FRONTEND.md](PRD_FRONTEND.md) |
 
 ## 5. Aturan bisnis global
 
@@ -681,7 +698,28 @@ BR-GLB-014.
 **Acceptance:** `AC-04` frozen location; `AC-10` adjustment dan opening balance;
 `AC-21` invalid active-session transition.
 
-### 6.11 TNT, Manajemen Tenant & Langganan (Phase 2 — M9)
+### 6.11 DSH, Dashboard Operasional & Metrik Ringkasan
+
+| Feature ID | Requirement ID | Kebutuhan | Priority |
+| --- | --- | --- | --- |
+| DSH-F01 | FR-DSH-001 | Endpoint agregasi metrik stok, dokumen tertunda (action items), dan riwayat aktivitas terkini yang ter-scope per penugasan gudang | MVP |
+
+**Business rules dan workflow:**
+- Setiap pengguna terautentikasi dapat mengakses ringkasan dashboard melalui `GET /api/v1/dashboard/summary`.
+- **Penegakan Warehouse Scoping (`BR-GLB-007`):**
+  - Peran `Super Admin` dan `Auditor` menerima agregat statistik global yang mencakup seluruh gudang aktif.
+  - Peran `Warehouse Manager`, `Warehouse Staff`, dan `Purchasing Staff` hanya menerima agregat data dari gudang yang ditugaskan kepada mereka (`user_warehouses`). Bila pengguna belum memiliki penugasan gudang, metrik stok dan dokumen terkait gudang bernilai nol/kosong secara aman.
+- **Data yang dikembalikan (`DashboardSummaryOut`):**
+  1. *Ringkasan Stok:* Total macam SKU aktif, total unit saldo tersimpan (*qty on hand*), total unit *in-transit*, serta jumlah item dengan stok menipis/kritis (`qty_on_hand <= 0`).
+  2. *Dokumen Perlu Tindakan Segera (Action Items):* Jumlah PO berstatus `ISSUED` / `PARTIALLY_RECEIVED` yang menunggu penerimaan fisik, jumlah draft GR yang belum diposting, jumlah transfer `APPROVED` yang menunggu pengiriman, jumlah transfer `SHIPPED` yang menunggu penerimaan cabang, dan jumlah sesi opname aktif (`IN_PROGRESS` / `WAITING_APPROVAL`) yang membekukan lokasi.
+  3. *Aktivitas Terkini:* Daftar 5–10 pergerakan mutasi stok terakhir (`stock_movements`) atau perubahan status dokumen yang relevan dengan gudang pengguna.
+  4. *Informasi Gudang Aktif:* Daftar nama dan ID gudang yang menjadi dasar perhitungan agregat.
+
+**Data, permission, dependency:** `inventory_balances`, `items`, `purchase_orders`, `goods_receipts`, `stock_transfers`, `stock_opnames`, `stock_movements`, `user_warehouses`; memerlukan autentikasi sesi valid; membaca modul `MST`, `WHS`, `INV`, `PUR`, `RCV`, `TRF`, `OPN`.
+
+**Acceptance:** `AC-38` keakuratan agregasi nilai metrik dan penegakan *warehouse scoping* pengguna.
+
+### 6.12 TNT, Manajemen Tenant & Langganan (Phase 2 — M9)
 
 | Feature ID | Requirement ID | Kebutuhan | Priority |
 | --- | --- | --- | --- |
@@ -945,6 +983,7 @@ Pada migrasi Fase 2 (`012_create_tenants_settings.sql` dan `013_add_tenant_scope
 | AC-35 | *(Tambahan Fase 1 — MST-F10)* Visualisasi Barcode Vektor SVG (EAN-13 & Code-128) & Cetak Label Stiker Fisik Barang (`50x30 mm`) serta penyematan barcode visual pada dokumen cetak GRN dan Surat Jalan | MST/RCV/TRF | Mapped |
 | AC-36 | *(Tambahan Fase 1 — WHS-F04 / LOC-F03, INV-F08)* Barcode Lokasi Rak & Gudang + Inspeksi Isi Rak Multi-Barang: cetak label barcode rak/gudang dan pemindaian kode rak (`storage_locations.code`) atau gudang (`warehouses.code`) menampilkan ringkasan lokasi beserta seluruh daftar macam barang (multi-SKU) di dalamnya | WHS/INV | Mapped |
 | AC-37 | *(Tambahan Fase 1 — WHS-F05 / LOC-F04)* QR Code 2D Lokasi Rak & Gudang serta Dukungan Dual-Format (QR Code / Barcode 1D): visualisasi QR Code 2D berbasis vektor SVG murni, toleransi noda/goresan fisik rak berkat Error Correction, serta tombol toggle pilihan format stiker label rak/gudang | WHS/INV | Mapped |
+| AC-38 | *(Tambahan Fase 1 — DSH-F01)* API Dashboard Operasional & Metrik Real-Time: agregasi metrik stok, pemantauan dokumen tertunda (action items), dan riwayat aktivitas terkini yang terisolasi sesuai penugasan gudang pengguna (warehouse scoping) | DSH | Mapped |
 
 ### 10.1 Spesifikasi acceptance criteria terpisah (numbering, query, platform, master, warehouse, dan audit)
 
@@ -1045,12 +1084,16 @@ pada dokumen bukti layer dan laporan QA.
 | `FR-OPN-004` | `OPN-F04` | `stock_opnames`, `stock_opname_lines`, `inventory_balances`, `stock_movements` | opname service (`approve`, `reject`) | layar review selisih, approve, atau reject dengan alasan | action endpoint `approve` dan `reject` opname | `AC-10`, `AC-21`, `AC-22` | `Mapped` |
 | `FR-OPN-005` | `OPN-F05` | `stock_opname_lines`, `inventory_balances`, `stock_movements` | opname service (penambahan item saldo awal) | aksi tambah baris item temuan fisik (`qty_system = 0`) | endpoint tambah line opname dan `approve` | `AC-10` | `Mapped` |
 | `FR-OPN-006` | `OPN-F06` | `stock_opnames` | opname service (`is_location_frozen`) | badge/status lokasi beku pada layar operasional | diperiksa saat post GR, ship Transfer, receive Transfer, start Opname | `AC-04`, `AC-10`, `AC-21` | `Mapped` |
-| `FR-MST-008` | `MST-F08` | `items.barcode`, `uq_items_barcode_lower` | master item service/repository | input barcode pada form barang dan pencarian | CRUD item & filter `search`/`barcode` | `AC-33` | `Mapped` |
-| `FR-MST-009` | `MST-F09` | n/a | generator barcode helper/utility | tombol auto-generate barcode internal (EAN-13/Code-128) pada form item | `POST /api/v1/items`, `PATCH /api/v1/items/{id}` | `AC-33` | `Mapped` |
+| `FR-MST-008` | `MST-F08` | `items.barcode`, `uq_items_barcode_lower` (`012_add_barcode_to_items.sql`) | master item service/repository | input barcode pada form barang dan pencarian | CRUD item & filter `search`/`barcode` | `AC-33` | `Mapped` |
+| `FR-MST-009` | `MST-F09` | n/a | generator barcode helper/validasi keunikan | tombol auto-generate barcode internal (EAN-13/Code-128) pada form item | `POST /api/v1/items`, `PATCH /api/v1/items/{id}` | `AC-33`, `AC-34` | `Mapped` |
+| `FR-MST-010` | `MST-F10` | n/a (0 KB overhead gambar di DB) | penyediaan atribut `barcode` & `sku` pada respons item, GR, dan Transfer | komponen `BarcodeVisual.tsx` (SVG EAN-13 & Code-128B), pratinjau barcode, & cetak stiker barang `50x30 mm` | `GET /api/v1/items/{id}`, `GET /api/v1/goods-receipts/{id}`, `GET /api/v1/stock-transfers/{id}` | `AC-35` | `Mapped` |
+| `FR-WHS-004` | `WHS-F04` (`LOC-F03`) | `storage_locations`, `warehouses`, `inventory_balances` | perluasan filter `search` pada `inventory_repo.list_stock_by_location` untuk mencocokkan kode/nama rak & gudang | cetak label rak/gudang & mode inspeksi multi-SKU rak pada `StockLookupModal` | `GET /api/v1/stock/by-location?search=` | `AC-36` | `Mapped` |
+| `FR-WHS-005` | `WHS-F05` (`LOC-F04`) | n/a (0 KB overhead di DB) | penyediaan `code` lokasi rak & gudang pada endpoint master dan stok | komponen `QrCodeVisual` (SVG QR 2D Level M), toggle format (QR vs Barcode 1D), dan cetak stiker QR di `StorageLocationDetailDialog` & `WarehouseDetailDialog` | `GET /api/v1/warehouses`, `GET /api/v1/storage-locations`, `GET /api/v1/stock/by-location` | `AC-37` | `Mapped` |
 | `FR-INV-007` | `INV-F07` | n/a | endpoint lookup barcode item & lokasi | hook hardware scanner & modal kamera scanner | auto-matching pada GR, Transfer, Opname | `AC-33` | `Mapped` |
-| `FR-INV-008` | `INV-F08` | `inventory_balances`, `storage_locations` | stock balance service & location view | shortcut pemindai Topbar & modal lookup posisi rak & saldo | `GET /api/v1/stock/by-location?search=` | `AC-34` | `Mapped` |
-| `FR-RCV-005` | `RCV-F05` | n/a | detail GR service/repository | layout cetak Bukti Terima Barang (GRN) | `GET /api/v1/goods-receipts/{id}` | `AC-32` | `Mapped` |
-| `FR-TRF-006` | `TRF-F06` | n/a | detail transfer service/repository | layout cetak Surat Jalan (Delivery Note) | `GET /api/v1/stock-transfers/{id}` | `AC-32` | `Mapped` |
+| `FR-INV-008` | `INV-F08` | `inventory_balances`, `storage_locations` | stock balance service & location view (`list_stock_by_location`) | shortcut pemindai Topbar & modal lookup posisi rak & saldo (`StockLookupModal`) | `GET /api/v1/stock/by-location?search=` | `AC-34`, `AC-36`, `AC-37` | `Mapped` |
+| `FR-RCV-005` | `RCV-F05` | n/a | detail GR service/repository | layout cetak Bukti Terima Barang (GRN) (`GoodsReceiptPrintSheet`) | `GET /api/v1/goods-receipts/{id}` | `AC-32`, `AC-35` | `Mapped` |
+| `FR-TRF-006` | `TRF-F06` | n/a | detail transfer service/repository | layout cetak Surat Jalan (Delivery Note) (`StockTransferPrintSheet`) | `GET /api/v1/stock-transfers/{id}` | `AC-32`, `AC-35` | `Mapped` |
+| `FR-DSH-001` | `DSH-F01` | `inventory_balances`, `purchase_orders`, `goods_receipts`, `stock_transfers`, `stock_opnames`, `stock_movements`, `user_warehouses` | dashboard service & repository | kartu metrik KPI stok, widget action items dokumen pending, & aktivitas terkini | `GET /api/v1/dashboard/summary` | `AC-38` | `Mapped` |
 
 ### 11.3 Matriks traceability Fase 2 (M9 — Multi-Tenant SaaS Foundation)
 
@@ -1113,9 +1156,9 @@ Audit lengkap, termasuk konflik dan gap, ada pada
 
 ### 13.2 Asumsi
 
-- Frontend adalah consumer terpisah dan belum menjadi deliverable repository API.
-- Target benchmark belum final.
-- Status `Mapped` tidak sama dengan `Implemented`, `Tested`, atau `Verified`.
+- Backend (`api_warehouse_app/`) dan Frontend (`warehouse_app/`) berada dalam satu workspace monorepo dengan batas tanggung jawab tegas melalui REST API `/api/v1`.
+- Target benchmark produksi final (`CONF-007`) dievaluasi sesuai kapasitas environment deployment.
+- Status `Mapped` pada RTM dokumen ini merujuk pada pemetaan desain; bukti `Implemented`, `Tested`, dan `Verified` dicatat secara aktual pada [QA.MD](../QA/QA.MD).
 
 ### 13.3 Status Keputusan Produk (`CONF-001` s.d. `CONF-010`)
 
@@ -1128,7 +1171,7 @@ Audit lengkap, termasuk konflik dan gap, ada pada
 | CONF-005 | **Selesai pada baseline PRD:** `INTERNAL_ERROR` (HTTP 500) terdaftar resmi dalam katalog error pada `PRD_BACKEND.md` dan `API_CONTRACT.md` |
 | CONF-006 | **Selesai pada baseline PRD:** AC terpisah untuk numbering (`AC-15`), query (`AC-16`), platform (`AC-17`, `AC-18`), master (`AC-19`), warehouse (`AC-20`), audit (`AC-22`), serta multi-tenant & konfigurasi Fase 2 (`AC-23` s.d. `AC-29`) telah ditetapkan |
 | CONF-007 | Dataset dan environment benchmark produksi final apa? |
-| CONF-008 | Kontrak penyimpanan refresh token pada frontend consumer apa (JSON body vs HttpOnly cookie)? |
+| CONF-008 | **Selesai / Ditetapkan:** Refresh token disimpan sebagai cookie `HttpOnly`, `SameSite=Lax`, dan `Secure` (`Path=/api/v1/auth`, TTL 7 hari) demi mencegah risiko kebocoran token akibat serangan XSS peramban, sedangkan access token (TTL 15 menit) disimpan di memori aplikasi (Zustand state). |
 | CONF-009 | **Selesai / Disetujui:** Fitur MST-F06 dan dependensi `openpyxl` serta `python-multipart` disetujui pemilik proyek dan ditambahkan ke konfigurasi proyek. |
 | CONF-010 | **Selesai / Disetujui:** Batas import ditetapkan pada 1.000 baris data dan ukuran file 5 MiB. |
 
@@ -1144,7 +1187,7 @@ perubahan lintas modul.
 - Seluruh modul dan fitur lama memiliki mapping.
 - Fase 1 (MVP M0–M8), Fase 2 (M9 Multi-Tenant SaaS), Fase 3 (`ISS`, `RPT`), Future Development, dan Out of Scope terpisah secara tegas.
 - Feature ID dan requirement ID unik serta memiliki owner.
-- Seluruh feature Fase 1 (`AC-01` s.d. `AC-22`, serta tambahan `AC-30` dan `AC-31`) dan Fase 2 (`AC-23` s.d. `AC-29`) memiliki acceptance criteria eksplisit.
+- Seluruh feature Fase 1 (`AC-01` s.d. `AC-22`, serta tambahan `AC-30` s.d. `AC-37`) dan Fase 2 (`AC-23` s.d. `AC-29`) memiliki acceptance criteria eksplisit.
 - Konflik dan asumsi tidak diperlakukan sebagai fakta.
 - RTM menghubungkan database, backend, frontend, API, dan QA baik untuk Fase 1 maupun Fase 2 (M9).
 - Tidak ada klaim implementasi/test tanpa evidence.
@@ -1159,3 +1202,4 @@ perubahan lintas modul.
 | 2026-11-11 | 2.3-general | Sinkronisasi dokumen: scope Fase 1 §2.2 menjadi `MST-F01..F07`; catatan status pada header diselaraskan dengan aturan evidence §11.1 (RTM tetap `Mapped`, bukti test di QA); koreksi jumlah tabel bisnis Fase 1 menjadi 24 pada §8.3. Tidak ada perubahan requirement maupun skema database. |
 | 2026-11-11 | 2.4-general | Penambahan kebutuhan operasional retail, toko cabang, dan B2B ke dalam Fase 1: `MST-F08` (barcode item unik dan lookup), `INV-F07` (integrasi barcode/QR scanner hardware & kamera), `RCV-F05` (cetak bukti penerimaan barang GRN fisik), `TRF-F06` (cetak surat jalan transfer fisik), serta penambahan `AC-32` dan `AC-33`. |
 | 2026-11-11 | 2.5-general | Penambahan `MST-F09` (Generator Barcode Internal Otomatis EAN-13/Code-128 untuk produk non-barcode pabrik) dan `INV-F08` (Pindai Barcode Cek Stok & Posisi Rak Gudang secara instan — `AC-34`). |
+| 2026-11-12 | 2.6-general | Penambahan `MST-F10` (`AC-35`: visualisasi barcode SVG & cetak stiker barang `50x30 mm`), `WHS-F04`/`LOC-F03` (`AC-36`: barcode lokasi rak/gudang & inspeksi multi-SKU rak), `WHS-F05`/`LOC-F04` (`AC-37`: QR Code 2D lokasi rak/gudang dengan toggle dual-format), kolom `barcode` pada import Excel item (`MST-F06`), serta tabel spesifikasi teknis arsitektur Backend & Frontend pada §4.4 dan pelengkapan RTM §11.2. |
