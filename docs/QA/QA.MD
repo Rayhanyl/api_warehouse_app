@@ -59,7 +59,7 @@ Gunakan matriks ini sebagai daftar regresi wajib. Nama test ditulis sesuai imple
 | AC-08 | `stock_movements` dan `audit_logs` tidak dapat diubah/dihapus | `test_ac08_immutability_stock_movements_and_audit_logs` |
 | AC-09 | Validasi kuantitas terima transfer dan pencatatan selisih | `test_ac09_transfer_receipt_variance_validation_and_accounting` |
 | AC-10 | Lokasi dibekukan selama Opname dan dibuka kembali pada akhir/saat pembatalan | `test_ac10_location_freeze_during_opname_and_unfreeze_on_complete_or_cancel` |
-| AC-11 | Rotasi refresh token, deteksi pemakaian ulang, dan logout | `test_ac11_refresh_token_rotation_reuse_detection_and_logout` |
+| AC-11 | Rotasi refresh token, deteksi pemakaian ulang, logout, dan pengamanan cookie HttpOnly (`Set-Cookie`, SameSite=Lax, Secure, pembersihan saat logout, CORS `allow_credentials=True`) | `test_ac11_refresh_token_rotation_reuse_detection_and_logout`; `test_ac11_cookie_httponly_refresh_rotation_and_cleanup` |
 | AC-12 | Penugasan gudang dan penolakan akses di luar cakupan | `test_ac12_warehouse_scoping_assignment_and_access_enforcement` |
 | AC-13 | Dua posting GR bersamaan tidak mem-posting dokumen dua kali | `test_ac13_concurrent_gr_post_prevents_double_posting` |
 | AC-14 | Pohon menu terfilter permission, akses administrasi, audit, validasi parent, dan penonaktifan tanpa hard delete | `test_ac14_menu_tree_filters_permissions_and_keeps_visible_parents`; `test_ac14_menu_admin_permission_crud_and_audit_log`; `test_ac14_menu_parent_validation_and_soft_deactivation` |
