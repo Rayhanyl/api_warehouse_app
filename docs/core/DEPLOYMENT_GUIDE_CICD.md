@@ -507,6 +507,8 @@ services:
     env_file: .env.production
     volumes:
       - postgres_prod_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432" # Akses aman lokal via SSH Tunnel (untuk DBeaver / pgAdmin)
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
