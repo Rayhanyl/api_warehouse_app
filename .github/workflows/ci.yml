@@ -1,0 +1,55 @@
+name: Backend CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [development]
+
+jobs:
+  test:
+    name: Backend Test (pytest)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: wms_owner
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: wms_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Kode
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install Dependensi
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install openpyxl pytest httpx pytest-cov
+
+      - name: Jalankan Migrasi Database Uji & Pytest
+        env:
+          DATABASE_URL: postgresql://wms_owner:test_password@localhost:5432/wms_test
+          MIGRATION_DATABASE_URL: postgresql://wms_owner:test_password@localhost:5432/wms_test
+          TEST_DATABASE_URL: postgresql://wms_owner:test_password@localhost:5432/wms_test
+          JWT_SECRET: ci-secret-key-must-be-at-least-32-bytes-long
+          COOKIE_SECURE: "false"
+          COOKIE_SAMESITE: "lax"
+        run: |
+          python -m db.migrate
+          pytest -v
