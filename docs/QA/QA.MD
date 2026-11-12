@@ -79,6 +79,7 @@ Gunakan matriks ini sebagai daftar regresi wajib. Nama test ditulis sesuai imple
 | AC-35 | Visualisasi Gambar Barcode Vektor SVG (EAN-13 & Code-128) & Cetak Label Stiker Fisik Barang (`50x30 mm`) serta barcode visual pada dokumen cetak GRN dan Surat Jalan | `warehouse_app/src/features/master-data/stocks/stocks.test.tsx`, `warehouse_app/src/features/goods-receipts/print-documents.test.tsx` |
 | AC-36 | Barcode Lokasi Rak & Gudang + Inspeksi Isi Rak Multi-Barang: cetak label barcode rak/gudang dan pemindaian barcode rak (`storage_locations.code`) atau gudang (`warehouses.code`) untuk menampilkan seluruh daftar SKU barang di lokasi tersebut | `tests/test_ac33_item_barcode.py` (backend search), `warehouse_app/src/features/stock/stock-lookup.test.tsx`, `warehouse_app/src/features/master-data/storage-locations/storageLocations.test.tsx` |
 | AC-37 | QR Code 2D Lokasi Rak & Gudang serta Dukungan Dual-Format (QR Code / Barcode 1D): visualisasi QR Code 2D berbasis SVG murni (error correction M), tombol toggle format label stiker (QR Code vs Barcode 1D), dan cetak stiker label QR thermal (`50x30 mm`) | `warehouse_app/src/features/master-data/storage-locations/storageLocations.test.tsx`, `warehouse_app/src/features/master-data/warehouses/Warehouses.test.tsx`, `warehouse_app/src/features/stock/stock-lookup.test.tsx` |
+| AC-38 | API Dashboard Summary & Real-Time Monitoring: agregasi metrik stok (katalog SKU aktif, saldo on-hand, saldo in-transit, low stock warning), antrean dokumen operasional (PO waiting GR, draft GR, transfer ship, transfer receive, opname aktif), riwayat aktivitas mutasi terakhir, dan daftar assigned warehouses sesuai isolasi warehouse scoping pengguna | `tests/test_dashboard.py`, `warehouse_app/src/features/dashboard/dashboard.test.tsx` |
 
 Test AC-06 dan AC-13 harus tetap diuji dengan konkurensi nyata: koneksi database terpisah dan sinkronisasi dua request. Jangan menggantinya dengan test berurutan atau mock, karena itu tidak menguji perlombaan transaksi.
 
@@ -114,9 +115,9 @@ Catatan M8 di `docs/API/README.md` memuat benchmark lokal yang pernah dilakukan.
 
 ### 2.5. Kriteria selesai QA backend
 
-- Seluruh AC yang terdampak perubahan lulus; sebelum rilis, suite `AC-01` s.d. `AC-22`, `AC-30`, `AC-31`, `AC-33`, `AC-34`, `AC-35`, `AC-36`, dan `AC-37` lulus.
+- Seluruh AC yang terdampak perubahan lulus; sebelum rilis, suite `AC-01` s.d. `AC-22`, `AC-30`, `AC-31`, `AC-33`, `AC-34`, `AC-35`, `AC-36`, `AC-37`, dan `AC-38` lulus.
 - AC-14 menguji menu pada PostgreSQL nyata; permission menu hanya menyaring navigasi dan tidak menggantikan otorisasi endpoint backend.
-- Status run backend: 49 tes lulus di `wms_test`, mencakup seluruh skenario `AC-01` s.d. `AC-22`, `AC-30` (import massal item termasuk kolom barcode), `AC-31` (import massal supplier), `AC-33` (master data barcode unik & serialisasi transaksi), `AC-34` (pencarian stok lokasi via barcode/SKU), dan `AC-36` (pencarian stok per lokasi rak & gudang).
+- Status run backend: 51 tes lulus di `wms_test`, mencakup seluruh skenario `AC-01` s.d. `AC-22`, `AC-30` (import massal item termasuk kolom barcode), `AC-31` (import massal supplier), `AC-33` (master data barcode unik & serialisasi transaksi), `AC-34` (pencarian stok lokasi via barcode/SKU), `AC-36` (pencarian stok per lokasi rak & gudang), dan `AC-38` (API dashboard summary dengan warehouse scoping & auth guard).
 - Tidak ada temuan terbuka yang mengancam integritas saldo/ledger, autentikasi, atau pembatasan akses.
 - Pemeriksaan saldo, ledger, audit, dan rollback konsisten dengan PRD.
 - Kinerja dilaporkan dengan lingkungan, ukuran data, metode, dan hasil p95; klaim target hanya dibuat bila hasilnya memang terukur.
@@ -128,9 +129,10 @@ Catatan M8 di `docs/API/README.md` memuat benchmark lokal yang pernah dilakukan.
 
 Aplikasi frontend dikembangkan pada folder `warehouse_app/` berbasis React 19, TypeScript, Vite, dan pengujian unit/integrasi menggunakan **Vitest + React Testing Library + MSW**.
 
-Rangkaian pengujian frontend yang aktif mencakup 11 test suite:
+Rangkaian pengujian frontend yang aktif mencakup 12 test suite (47 tes lulus, lulus `tsc -b` dan `vite build`):
 - `App.test.tsx` (routing & inisialisasi aplikasi shell).
 - `features/auth/auth.test.tsx` (login form, validasi kredensial, state sesi, dan penanganan error autentikasi).
+- `features/dashboard/dashboard.test.tsx` (AC-38: verifikasi 4 kartu KPI, antrean pending actions, aktivitas mutasi terkini, cakupan gudang, dan tombol refresh).
 - `features/master-data/categories/categories.test.tsx` (CRUD kategori, validasi, dan penonaktifan).
 - `features/master-data/stocks/stocks.test.tsx` (katalog barang, pencarian/filter barcode/SKU, dan dialog form).
 - `features/master-data/storage-locations/storageLocations.test.tsx` (lokasi per gudang, filter, dan dialog).
