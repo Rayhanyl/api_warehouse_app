@@ -280,6 +280,8 @@ jobs:
         with:
           context: ./warehouse_app
           file: ./warehouse_app/Dockerfile
+          build-args: |
+            VITE_API_BASE_URL=https://api-jkstok.my.id
           push: true
           tags: ${{ steps.meta-frontend.outputs.tags }}
           labels: ${{ steps.meta-frontend.outputs.labels }}
@@ -427,9 +429,63 @@ server {
 
 ---
 
-## 6. Konfigurasi Server Production
+## 6. Persiapan Server Production & Konfigurasi Host
 
-### 6.1 Struktur Direktori di Server (`/opt/wms/`)
+### 6.1 Paket yang Wajib Di-install di Server Production
+Server production menggunakan sistem operasi **Ubuntu 22.04 LTS atau Ubuntu 24.04 LTS**. Sesuai prinsip **Zero Build**, server hanya bertugas menjalankan container siap pakai sehingga **TIDAK PERLU** menginstal Node.js, npm, Python, pip, GCC, atau build tools lainnya.
+
+Jalankan perintah berikut di server (sebagai user dengan akses `sudo`):
+
+```bash
+# 1. Update repository dan instalasi paket utilitas sistem dasar
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y curl ufw apt-transport-https ca-certificates gnupg lsb-release
+
+# 2. Instalasi Docker Engine & Docker Compose Plugin dari Repository Resmi Docker
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+# 3. Instalasi Nginx (Host Reverse Proxy) & Certbot Let's Encrypt (SSL)
+sudo apt install -y nginx certbot python3-certbot-nginx
+
+# 4. Konfigurasi Firewall (UFW)
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
+sudo ufw allow OpenSSH
+sudo ufw allow 'Nginx Full' # Membuka port 80 (HTTP) dan port 443 (HTTPS)
+sudo ufw --force enable
+```
+
+### 6.2 Setup Pengguna Deployment & Direktori Kerja
+Buat pengguna non-root khusus deployment (`deployer`) dan izinkan menjalankan Docker tanpa `sudo`:
+
+```bash
+# Buat user deployer dan tambahkan ke grup docker
+sudo adduser --gecos "" deployer
+sudo usermod -aG docker deployer
+
+# Siapkan SSH authorized_keys untuk autentikasi GitHub Actions
+sudo mkdir -p /home/deployer/.ssh
+sudo cp ~/.ssh/authorized_keys /home/deployer/.ssh/ # Atau salin public key GitHub Actions
+sudo chown -R deployer:deployer /home/deployer/.ssh
+sudo chmod 700 /home/deployer/.ssh
+sudo chmod 600 /home/deployer/.ssh/authorized_keys
+
+# Siapkan direktori aplikasi /opt/wms
+sudo mkdir -p /opt/wms/backups
+sudo chown -R deployer:deployer /opt/wms
+```
+
+### 6.3 Struktur Direktori di Server (`/opt/wms/`)
 ```text
 /opt/wms/
 ├── docker-compose.prod.yml   # Definisi container production
@@ -437,8 +493,8 @@ server {
 └── backups/                  # Direktori backup dump database harian
 ```
 
-### 6.2 Docker Compose Production (`/opt/wms/docker-compose.prod.yml`)
-> **PENTING**: File ini **TIDAK memiliki direktif `build:`**. Seluruh image di-pull langsung dari registry.
+### 6.4 Docker Compose Production (`/opt/wms/docker-compose.prod.yml`)
+> **PENTING**: File ini **TIDAK memiliki direktif `build:`**. Seluruh image di-pull langsung dari GHCR registry.
 
 ```yaml
 version: '3.8'
@@ -504,52 +560,151 @@ networks:
     driver: bridge
 ```
 
+### 6.5 Konfigurasi Host Reverse Proxy Nginx & Sertifikat SSL
+Host Nginx bertugas menerima traffic HTTPS dari internet publik dan meneruskannya ke port internal container Docker (`127.0.0.1:8000` untuk Backend dan `127.0.0.1:3000` untuk Frontend).
+
+Buat file konfigurasi di `/etc/nginx/sites-available/jejakstok.conf`:
+
+```nginx
+# ==============================================================================
+# 1. Virtual Host untuk Backend API (api-jkstok.my.id)
+# ==============================================================================
+server {
+    listen 80;
+    server_name api-jkstok.my.id;
+
+    client_max_body_size 20M;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https; # Krusial: Beritahu FastAPI bahwa request berasal dari HTTPS
+
+        proxy_connect_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+}
+
+# ==============================================================================
+# 2. Virtual Host untuk Frontend Web (jejakstok.site)
+# ==============================================================================
+server {
+    listen 80;
+    server_name jejakstok.site www.jejakstok.site;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+}
+```
+
+Aktifkan konfigurasi Nginx dan pasang sertifikat SSL Let's Encrypt gratis:
+```bash
+# Aktifkan virtual host
+sudo ln -s /etc/nginx/sites-available/jejakstok.conf /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+
+# Dapatkan sertifikat SSL otomatis melalui Certbot
+sudo certbot --nginx -d api-jkstok.my.id -d jejakstok.site -d www.jejakstok.site
+```
+> **Catatan DNS**: Pastikan A-Record DNS `api-jkstok.my.id` dan `jejakstok.site` di dashboard penyedia domain Anda sudah mengarah ke IP Publik server sebelum menjalankan Certbot.
+
 ---
 
-## 7. Pengelolaan Environment Variables & GitHub Secrets
+## 7. Pengelolaan Environment Variables & GitHub Settings
 
-### 7.1 GitHub Repository Secrets
-Daftarkan secrets berikut pada repository GitHub (**Settings -> Secrets and variables -> Actions**):
+### 7.1 Pengaturan di Repositori GitHub
 
-| Nama Secret | Deskripsi / Contoh Nilai |
+#### A. Branch Protection Rules (Wajib)
+Masuk ke menu **Settings -> Branches -> Add branch protection rule**:
+1. **Branch name pattern**: `main`
+2. Centang **Require a pull request before merging**:
+   - Required approvals: `1`
+   - Centang *Dismiss stale pull request approvals when new commits are pushed*
+3. Centang **Require status checks to pass before merging**:
+   - Status checks yang wajib lolos: `Backend Test (pytest)` dan `Frontend Test & Build (vitest & tsc)`
+4. Centang **Require branches to be up to date before merging**
+5. Centang **Do not allow bypassing the above settings** (berlaku untuk admin repository)
+
+#### B. GitHub Actions Secrets
+Daftarkan rahasia berikut pada repository GitHub (**Settings -> Secrets and variables -> Actions -> Repository secrets**):
+
+| Nama Secret | Deskripsi / Nilai Riil |
 | --- | --- |
-| `PROD_SERVER_HOST` | Alamat IP Publik atau domain server production (misal: `203.0.113.10`) |
-| `PROD_SERVER_USER` | Username SSH untuk deployment (misal: `deployer` / `ubuntu`) |
-| `PROD_SERVER_SSH_KEY` | Private SSH Key (ed25519/rsa) milik server |
+| `PROD_SERVER_HOST` | Alamat IP Publik server production Anda (misal: `103.xxx.xxx.xxx`) |
+| `PROD_SERVER_USER` | Username SSH untuk deployment (yaitu: `deployer`) |
+| `PROD_SERVER_SSH_KEY` | Private SSH Key (ed25519/rsa) milik deployer (tanpa passphrase) |
 | `PROD_SERVER_PORT` | Port SSH server (default `22`) |
-| `CR_PAT` | GitHub Personal Access Token (dengan permission `read:packages`) untuk docker pull di server |
+| `CR_PAT` | GitHub Personal Access Token (PAT) dengan scope `read:packages` agar server dapat melakukan `docker pull` dari `ghcr.io` |
 
-### 7.2 File `.env.production` di Server
-File `.env.production` disimpan langsung di server pada `/opt/wms/.env.production` dan dilindungi dengan izin akses ketat:
+#### C. Pengaturan Visibilitas Package GHCR
+Buka tab **Packages** di profil GitHub / Organisasi:
+- Cari package `wms-backend` dan `wms-frontend`.
+- Masuk ke **Package settings**:
+  - Jika diset **Private**: Server wajib login menggunakan `CR_PAT` (sudah otomatis ditangani di CD pipeline).
+  - Jika diset **Public**: Server dapat melakukan `docker pull` tanpa kredensial.
+
+---
+
+### 7.2 File `.env.production` di Server (`/opt/wms/.env.production`)
+File ini disimpan langsung di server pada `/opt/wms/.env.production` dan dilindungi dengan izin akses ketat:
 ```bash
 chmod 600 /opt/wms/.env.production
 ```
 
-Contoh isi `/opt/wms/.env.production`:
+Isi konfigurasi `/opt/wms/.env.production`:
 ```env
+# ==============================================================================
 # Database Credentials
+# ==============================================================================
 POSTGRES_USER=wms_owner
-POSTGRES_PASSWORD=GENERATE_PASSWORD_YANG_SANGAT_KUAT_DI_SINI
+POSTGRES_PASSWORD=GANTI_DENGAN_PASSWORD_DATABASE_KUAT
 POSTGRES_DB=wms_production
 
+# ==============================================================================
 # Application Database Connection Strings
+# ==============================================================================
 DATABASE_URL=postgresql://wms_app:APP_PASSWORD@postgres:5432/wms_production
 MIGRATION_DATABASE_URL=postgresql://wms_owner:OWNER_PASSWORD@postgres:5432/wms_production
 
-# JWT & Keamanan
-JWT_SECRET=STRING_ACAK_MINIMAL_32_KARAKTER_UNTUK_PRODUKSI
+# ==============================================================================
+# JWT & Keamanan Sesi
+# ==============================================================================
+JWT_SECRET=GANTI_DENGAN_STRING_RANDOM_MINIMAL_32_KARAKTER_HEX
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_MINUTES=15
 REFRESH_TOKEN_DAYS=7
 
-# Konfigurasi Cookie & CORS
+# ==============================================================================
+# Konfigurasi Cross-Site Cookie & CORS (Domain Riil Produksi)
+# ==============================================================================
 COOKIE_SECURE=True
-FRONTEND_ORIGINS=["https://wms.perusahaan.com"]
+COOKIE_SAMESITE=none
+FRONTEND_ORIGINS=["https://jejakstok.site", "https://www.jejakstok.site"]
 
-# Proteksi Login
+# ==============================================================================
+# Proteksi Brute-Force Login
+# ==============================================================================
 LOGIN_MAX_ATTEMPTS=5
 LOGIN_LOCK_MINUTES=15
 ```
+
+> [!IMPORTANT]
+> **Mengapa `COOKIE_SAMESITE=none` dan `COOKIE_SECURE=True` Wajib?**
+> Domain Frontend (`https://jejakstok.site`) dan Backend API (`https://api-jkstok.my.id`) memiliki *effective Top-Level Domain* (eTLD+1) yang **berbeda** (`jejakstok.site` vs `jkstok.my.id`).
+> Sesuai standar keamanan RFC 6265bis, browser memblokir pengiriman cookie `SameSite=Lax` pada request asinkron AJAX/Axios (`withCredentials: true`) lintas domain.
+> Oleh karena itu, cookie `refresh_token` **wajib** menggunakan `SameSite=None` dan `Secure=True` (HTTPS). Jika tidak, sesi pengguna di frontend tidak akan bisa dipulihkan setelah reload halaman (*refresh token hilang*).
 
 ---
 
