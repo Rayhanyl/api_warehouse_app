@@ -92,8 +92,11 @@ setiap endpoint. Detail operasional dan contoh request/response berada di
   - Pemindaian barcode produk fisik maupun barcode lokasi rak/gudang di lantai gudang memanggil `GET /api/v1/stock/by-location?search=<query>` yang mencocokkan `i.sku`, `i.barcode`, `i.name`, `sl.code`, `sl.name`, `w.code`, dan `w.name`.
   - Jika query cocok dengan barang (SKU/Barcode), `StockLookupModal` menampilkan Kartu Identitas Barang dan sebaran rak penyimpanannya.
   - Jika query cocok dengan kode/nama Lokasi Rak (`sl.code`) atau Gudang (`w.code`), `StockLookupModal` menampilkan Kartu Identitas Rak/Gudang (jumlah macam SKU unik, total stok fisik, total in-transit) beserta daftar seluruh barang (multi-SKU) yang tersimpan di lokasi tersebut.
-- **Visualisasi Barcode Vektor & Cetak Label Stiker (`FR-MST-010`, `AC-35`):**
-  - Database hanya menyimpan string `barcode` dan `sku`; gambar batang barcode (`<svg>` EAN-13 / Code-128) dirender secara deterministik *on-the-fly* di sisi klien (frontend) baik untuk pratinjau layar maupun pencetakan stiker fisik (`50x30 mm`).
+- **Visualisasi Barcode Vektor, QR Code 2D, & Cetak Label Stiker (`FR-MST-010`, `FR-WHS-005`, `AC-35`, `AC-37`):**
+  - Database hanya menyimpan string `barcode`, `sku`, `storage_locations.code`, dan `warehouses.code`.
+  - Gambar batang barcode (`<svg>` EAN-13 / Code-128) dan QR Code 2D (`<svg>` matriks modul berbasis Error Correction) dirender secara deterministik *on-the-fly* di sisi klien (frontend).
+  - Lokasi rak dan gudang secara default menggunakan representasi **QR Code 2D** yang lebih tahan noda/debu dan dapat dipindai 360 derajat dari kamera mobile/tablet, serta menyediakan tombol pemilih format (*Toggle*: QR Code vs Barcode 1D) untuk fleksibilitas alat scanner operator.
+  - Pencetakan stiker label termal (`50x30 mm`) untuk barang, rak, maupun gudang langsung siap pakai melalui `@media print`.
 
 ## Kontrak cetak dokumen fisik (`FR-RCV-005`, `FR-TRF-006`, `AC-32`)
 

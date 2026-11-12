@@ -120,6 +120,13 @@ Untuk mendukung kecepatan operasional toko cabang dan kasir retail:
   - `StockLookupModal` mendukung deteksi cerdas dua arah (*Dual-Mode Lookup*):
     1. **Mode Barang (Scan SKU / Barcode Produk):** Menampilkan identitas barang dan tabel sebaran di rak mana saja barang tersebut berada.
     2. **Mode Lokasi Rak / Gudang (Scan Barcode Rak `JKT-RAK-A1` atau Gudang `WH-JKT-01`):** Menampilkan Kartu Identitas Rak/Gudang (jumlah macam SKU barang di rak tersebut, total unit fisik, dan stok in-transit) beserta tabel rincian seluruh macam barang yang tersimpan di lokasi tersebut.
+- **Penerapan QR Code 2D & Opsi Dual-Format Label Rak & Gudang (`WHS-F05` / `LOC-F04`, `AC-37`):**
+  - Untuk lingkungan fisik gudang (rak bertingkat, tiang, lorong), representasi lokasi rak dan gudang secara default menggunakan **QR Code 2D** (`QrCodeVisual` SVG dengan error correction level M).
+  - Keunggulan QR Code pada rak:
+    1. Pemindaian instan 360 derajat tanpa harus memposisikan kamera sejajar lurus.
+    2. Tahan noda, debu, atau goresan fisik pada bibir rak berkat koreksi kesalahan (*Reed-Solomon Error Correction*).
+    3. Label stiker thermal (`50x30 mm`) lebih proporsional dan mudah dibaca dari jarak jauh.
+  - Dialog detail rak dan gudang dilengkapi kontrol pemilih format (*Toggle*: QR Code vs Barcode 1D Code-128) sehingga operator dengan scanner gun 1D laser lama tetap dapat mencetak format barcode garis standar.
 
 ## 4. Komponen dan state
 
@@ -183,6 +190,7 @@ Alur request umum:
 | `FR-MST-010` | `MST-F10` | Visualisasi barcode vektor SVG (EAN-13 / Code-128) & cetak label stiker barang (`50x30 mm`) serta barcode visual pada dokumen cetak | `BarcodeVisual.tsx`, `StockDetailDialog`, `GoodsReceiptPrintSheet`, `StockTransferPrintSheet` | `AC-35` |
 | `FR-WHS-001..003` | `WHS-F01..F03` | Layar CRUD warehouse, pengaturan `allow_negative_stock`, lokasi penyimpanan | warehouse dan storage location CRUD/list | `AC-12`, `AC-16`, `AC-20` |
 | `FR-WHS-004` | `LOC-F03` | Visualisasi barcode rak/gudang, cetak stiker label rak/gudang, dan inspeksi isi rak multi-SKU via scan barcode | `StorageLocationDetailDialog`, `WarehouseDetailDialog`, `StockLookupModal`, `GET /api/v1/stock/by-location?search=` | `AC-36` |
+| `FR-WHS-005` | `LOC-F04` | Visualisasi QR Code 2D rak/gudang, toggle format (QR vs Barcode 1D), dan cetak label stiker QR | `QrCodeVisual.tsx`, `StorageLocationDetailDialog`, `WarehouseDetailDialog`, `StockLookupModal` | `AC-37` |
 | `FR-INV-001..003` | `INV-F01..F03` | Saldo per lokasi, per gudang, ringkasan, in-transit, dan movement ledger | stock balances, by-warehouse, summary, movements | `AC-03`, `AC-12`, `AC-16` |
 | `FR-INV-007` | `INV-F07` | Hook pemindai scanner hardware & modal scanner kamera web pada form operasional | lookup barcode item dan lokasi | `AC-33` |
 | `FR-INV-008` | `INV-F08` | Shortcut pemindai Topbar & modal lookup posisi rak & saldo barang (`StockLookupModal`) | `GET /api/v1/stock/by-location?search=` | `AC-34` |
@@ -202,7 +210,7 @@ Alur request umum:
 - **Bahasa & tanggal:** Antarmuka utama berbahasa Indonesia, format tanggal menggunakan standar lokal `Intl.DateTimeFormat("id-ID")` dan pustaka `date-fns`.
 - **Halaman & alur yang telah tersedia:** Landing page publik (`/`, menampilkan proposisi nilai kendali stok per lokasi, pemindai barcode barang & rak multi-SKU, cetak label stiker termal `50x30 mm`, serta cetak dokumen fisik Surat Jalan & GRN), Login (`/login`), Dashboard (`/dashboard`), Profil & ganti password (`/profile`), Administrasi Pengguna/Role/Menu (`/admin/*`), Master Data Kategori/UoM/Pemasok/Barang/Gudang/Lokasi (`/master/*`), Saldo Stok & Ledger (`/stock/*`), Purchase Order (`/purchase-orders/*`), Goods Receipt (`/goods-receipts/*`), Stock Transfer (`/stock-transfers/*`), Stock Opname (`/stock-opnames/*`), dan Audit Log (`/audit-logs`).
 - **Import massal di frontend:** Import massal item (`MST-F06`, mendukung kolom opsional `barcode`) telah diintegrasikan (`StockImportDialog.tsx`), sedangkan import massal supplier (`MST-F07`) menggunakan kontrak backend yang sama dan siap dipasang pada dialog pemasok.
-- **Fitur Retail & Toko Cabang (Fase 1):** Fitur cetak fisik Surat Jalan (`TRF-F06`), Bukti Penerimaan Barang GRN (`RCV-F05`), pemindaian Barcode/QR (`MST-F08`, `MST-F09`, `INV-F07`, `INV-F08`), cetak label stiker barcode SVG (`MST-F10`), serta barcode lokasi rak & inspeksi multi-SKU (`LOC-F03`) telah diimplementasikan pada rilis Fase 1.
+- **Fitur Retail & Toko Cabang (Fase 1):** Fitur cetak fisik Surat Jalan (`TRF-F06`), Bukti Penerimaan Barang GRN (`RCV-F05`), pemindaian Barcode/QR (`MST-F08`, `MST-F09`, `INV-F07`, `INV-F08`), cetak label stiker barcode SVG (`MST-F10`), barcode & QR Code lokasi rak serta inspeksi multi-SKU (`LOC-F03`, `LOC-F04`) telah diimplementasikan pada rilis Fase 1.
 - **Batasan di luar MVP (Fase 2 & Fase 3):**
   - Modul Multi-Tenant SaaS (UI pemilihan tenant/slug login tenant dan panel Platform Admin) akan dikembangkan pada Fase 2 (M9).
   - Modul Goods Issue (`ISS`) dan Pelaporan Analitik Lengkap (`RPT`) direncanakan pada Fase 3 (M10).
