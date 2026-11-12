@@ -668,17 +668,15 @@ chmod 600 /opt/wms/.env.production
 Isi konfigurasi `/opt/wms/.env.production`:
 ```env
 # ==============================================================================
-# Database Credentials
+# Database Credentials & Connection Strings (Cukup gunakan 1 password kuat)
 # ==============================================================================
 POSTGRES_USER=wms_owner
 POSTGRES_PASSWORD=GANTI_DENGAN_PASSWORD_DATABASE_KUAT
 POSTGRES_DB=wms_production
 
-# ==============================================================================
-# Application Database Connection Strings
-# ==============================================================================
-DATABASE_URL=postgresql://wms_app:APP_PASSWORD@postgres:5432/wms_production
-MIGRATION_DATABASE_URL=postgresql://wms_owner:OWNER_PASSWORD@postgres:5432/wms_production
+# URL koneksi untuk runtime FastAPI & migrasi database
+DATABASE_URL=postgresql://wms_owner:GANTI_DENGAN_PASSWORD_DATABASE_KUAT@postgres:5432/wms_production
+MIGRATION_DATABASE_URL=postgresql://wms_owner:GANTI_DENGAN_PASSWORD_DATABASE_KUAT@postgres:5432/wms_production
 
 # ==============================================================================
 # JWT & Keamanan Sesi
