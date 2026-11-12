@@ -518,7 +518,7 @@ services:
       - wms_internal
 
   backend-migration:
-    image: ghcr.io/<ORGANISASI>/wms-backend:latest
+    image: ghcr.io/rayhanyl/api_warehouse_app/wms-backend:latest
     container_name: wms_prod_migration
     restart: "no"
     env_file: .env.production
@@ -530,7 +530,7 @@ services:
       - wms_internal
 
   backend:
-    image: ghcr.io/<ORGANISASI>/wms-backend:latest
+    image: ghcr.io/rayhanyl/api_warehouse_app/wms-backend:latest
     container_name: wms_prod_backend
     restart: always
     env_file: .env.production
@@ -543,7 +543,7 @@ services:
       - wms_internal
 
   frontend:
-    image: ghcr.io/<ORGANISASI>/wms-frontend:latest
+    image: ghcr.io/rayhanyl/warehouse_app/wms-frontend:latest
     container_name: wms_prod_frontend
     restart: always
     depends_on:
@@ -642,13 +642,13 @@ Masuk ke menu **Settings -> Branches -> Add branch protection rule**:
 #### B. GitHub Actions Secrets
 Daftarkan rahasia berikut pada repository GitHub (**Settings -> Secrets and variables -> Actions -> Repository secrets**):
 
-| Nama Secret | Deskripsi / Nilai Riil |
-| --- | --- |
-| `PROD_SERVER_HOST` | Alamat IP Publik server production Anda (misal: `103.xxx.xxx.xxx`) |
-| `PROD_SERVER_USER` | Username SSH untuk deployment (yaitu: `deployer`) |
-| `PROD_SERVER_SSH_KEY` | Private SSH Key (ed25519/rsa) milik deployer (tanpa passphrase) |
-| `PROD_SERVER_PORT` | Port SSH server (default `22`) |
-| `CR_PAT` | GitHub Personal Access Token (PAT) dengan scope `read:packages` agar server dapat melakukan `docker pull` dari `ghcr.io` |
+| Nama Secret | Deskripsi / Nilai Riil di Server Production |
+| :--- | :--- |
+| `PROD_SERVER_HOST` | `43.173.33.195` (IP Publik server VPS) |
+| `PROD_SERVER_USER` | `deployer` (User deployment khusus di server) |
+| `PROD_SERVER_PORT` | `22` (Port SSH server default) |
+| `PROD_SERVER_SSH_KEY` | Private SSH Key ed25519 (tersimpan di server pada `/home/deployer/.ssh/id_ed25519_github_actions`) |
+| `CR_PAT` | GitHub Personal Access Token (Classic) dengan scope `read:packages` untuk login GHCR |
 
 #### C. Pengaturan Visibilitas Package GHCR
 Buka tab **Packages** di profil GitHub / Organisasi:
@@ -665,23 +665,23 @@ File ini disimpan langsung di server pada `/opt/wms/.env.production` dan dilindu
 chmod 600 /opt/wms/.env.production
 ```
 
-Isi konfigurasi `/opt/wms/.env.production`:
+Isi konfigurasi riil `/opt/wms/.env.production`:
 ```env
 # ==============================================================================
 # Database Credentials & Connection Strings (Cukup gunakan 1 password kuat)
 # ==============================================================================
 POSTGRES_USER=wms_owner
-POSTGRES_PASSWORD=GANTI_DENGAN_PASSWORD_DATABASE_KUAT
+POSTGRES_PASSWORD=Wmsdatabaseprod123!#
 POSTGRES_DB=wms_production
 
 # URL koneksi untuk runtime FastAPI & migrasi database
-DATABASE_URL=postgresql://wms_owner:GANTI_DENGAN_PASSWORD_DATABASE_KUAT@postgres:5432/wms_production
-MIGRATION_DATABASE_URL=postgresql://wms_owner:GANTI_DENGAN_PASSWORD_DATABASE_KUAT@postgres:5432/wms_production
+DATABASE_URL=postgresql://wms_owner:Wmsdatabaseprod123!#@postgres:5432/wms_production
+MIGRATION_DATABASE_URL=postgresql://wms_owner:Wmsdatabaseprod123!#@postgres:5432/wms_production
 
 # ==============================================================================
 # JWT & Keamanan Sesi
 # ==============================================================================
-JWT_SECRET=GANTI_DENGAN_STRING_RANDOM_MINIMAL_32_KARAKTER_HEX
+JWT_SECRET=b7f8c92a14e5903b4d8123fa98e1039871bcde9123847aef981034bcdef12890
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_MINUTES=15
 REFRESH_TOKEN_DAYS=7
@@ -722,7 +722,7 @@ Jika versi terbaru yang di-deploy mengalami bug kritis atau anomali:
 Jika server harus segera dipulihkan dalam hitungan detik tanpa menunggu build pipeline:
 1. Login ke server via SSH:
    ```bash
-   ssh deployer@server-ip
+   ssh deployer@43.173.33.195
    cd /opt/wms
    ```
 2. Jalankan container dengan merujuk tag SHA commit sebelumnya yang stabil:
@@ -749,3 +749,95 @@ Jika server harus segera dipulihkan dalam hitungan detik tanpa menunggu build pi
 - [x] **Atomic DB Migrations**: Migrasi dijalankan sebagai task terisolasi (`backend-migration`) sebelum container utama menerima traffic.
 - [x] **Healthcheck Verification**: Setiap service memiliki healthcheck native (`/health` pada backend, `wget` pada frontend).
 - [x] **Strict Secret Permissions**: File `.env.production` berizin `600` dan tidak pernah dimasukkan ke version control git.
+
+---
+
+## 10. Panduan Operasional Docker & Pemeliharaan Server
+
+### A. Perintah Rutin Operasional Docker Compose
+Seluruh perintah operasional dijalankan di `/opt/wms`:
+
+```bash
+cd /opt/wms
+
+# 1. Melihat status seluruh container beserta healthcheck
+docker compose -f docker-compose.prod.yml ps
+
+# 2. Melihat log real-time aplikasi backend
+docker compose -f docker-compose.prod.yml logs -f backend
+
+# 3. Melihat log database PostgreSQL
+docker compose -f docker-compose.prod.yml logs -f postgres
+
+# 4. Merestart container tertentu
+docker compose -f docker-compose.prod.yml restart backend
+
+# 5. Menerapkan ulang variabel environment baru (Force Recreate)
+# PENTING: Jalankan perintah ini setiap kali Anda mengubah file .env.production!
+docker compose -f docker-compose.prod.yml up -d --force-recreate backend
+```
+
+### B. Monitoring Penggunaan Resource Server
+```bash
+# Pantau konsumsi CPU, Memory, dan I/O setiap container secara live
+docker stats
+
+# Periksa kapasitas disk yang digunakan oleh Docker
+docker system df
+```
+
+### C. Pembersihan Image Kadaluarsa (Disk Cleanup)
+Untuk mencegah disk VPS penuh akibat penumpukan image lama dari alur CI/CD:
+```bash
+# Hapus image dan container gantung yang tidak digunakan lebih dari 72 jam
+docker image prune -af --filter "until=72h"
+```
+
+---
+
+## 11. Manajemen Database, Backup & Akses DBeaver
+
+### A. Backup Database Berkala
+File cadangan disimpan otomatis di direktori `/opt/wms/backups/`:
+
+```bash
+# 1. Backup dump database SQL standar
+docker exec wms_prod_postgres pg_dump -U wms_owner wms_production > /opt/wms/backups/backup_wms_$(date +%F_%H%M%S).sql
+
+# 2. Backup dump terkompresi Gzip (menghemat disk space)
+docker exec wms_prod_postgres pg_dump -U wms_owner wms_production | gzip > /opt/wms/backups/backup_wms_$(date +%F_%H%M%S).sql.gz
+```
+
+### B. Restore Database dari File Backup
+```bash
+cat /opt/wms/backups/nama_file_backup.sql | docker exec -i wms_prod_postgres psql -U wms_owner -d wms_production
+```
+
+### C. Akses Database Production via DBeaver (SSH Tunnel)
+Database PostgreSQL aman dan dapat dikelola langsung via DBeaver tanpa membuka port 5432 ke internet:
+1. **Tab Main**:
+   * **Host**: `localhost` *(atau `127.0.0.1`)*
+   * **Port**: `5432`
+   * **Database**: `wms_production`
+   * **Username**: `wms_owner`
+   * **Password**: `Wmsdatabaseprod123!#`
+2. **Tab SSH**:
+   * Centang **Use SSH Tunnel**
+   * **Host / IP**: `43.173.33.195`
+   * **Port**: `22`
+   * **User name**: `ubuntu` *(atau `deployer`)*
+   * **Auth**: Kunci SSH atau password SSH server Anda.
+3. Klik **Test Connection** $\rightarrow$ Status **Connected** $\rightarrow$ Selesai.
+
+---
+
+## 12. Catatan Kritis Dependensi Backend (`requirements.txt`)
+
+> [!WARNING]
+> **Penting untuk Developer Backend:**
+> Pada repositori GitHub (`Rayhanyl/api_warehouse_app`), pastikan dependensi berikut tercantum di `requirements.txt` dan disimpan dalam encoding **UTF-8**:
+> ```text
+> openpyxl>=3.1.0
+> python-multipart>=0.0.9
+> ```
+> Modul `openpyxl` digunakan oleh `app/services/master_service.py` untuk parsing file Excel `.xlsx`. Jika dependensi ini tidak ada di `requirements.txt`, build GitHub Actions runner akan gagal saat aplikasi diinisialisasi.
