@@ -146,6 +146,25 @@ Pada halaman Dashboard (`/dashboard`), pengguna disajikan ringkasan operasional 
 - **Widget Tugas Tertunda (Action Items):** Menampilkan dokumen yang menunggu aksi operator (PO siap diterima, GR draft belum posting, Transfer siap dikirim/diterima, dan Opname aktif) yang dilengkapi tautan navigasi langsung ke dokumen terkait.
 - **Daftar Aktivitas Terkini (Recent Activities):** Menampilkan 5–10 catatan mutasi stok atau dokumen operasional terakhir.
 
+### 3.7 Restrukturisasi Navigasi Persediaan: Monitoring Saldo Stok Terpadu (UX Opsi B)
+
+Untuk meningkatkan efisiensi navigasi dan menjaga sidebar tetap ringkas tanpa dropdown bertingkat yang berulang:
+- **Menu Navigasi Sidebar Tunggal:**
+  - Sidebar aplikasi hanya menampilkan satu menu utama persediaan bernama **"Monitoring Saldo Stok"** dengan path rute `/stock`, ikon `layers` atau `boxes`, dan guard permission `stock:read`.
+  - Mengeliminasi 4 submenu terpisah di sidebar (`/stock/by-location`, `/stock/by-warehouse`, `/stock/summary`, `/stock/ledger`) sehingga hierarki navigasi sidebar lebih ramping dan mudah dipahami.
+- **Antarmuka Tab Navigasi Terpadu (`StockPage.tsx`):**
+  - Mengakses `/stock` secara otomatis menampilkan sudut pandang default yaitu **Saldo Stok per Lokasi** (`/stock/by-location`).
+  - Halaman menyediakan baris navigasi tab horizontal di bagian atas untuk berpindah sudut pandang secara instan tanpa memuat ulang seluruh halaman shell:
+    1. *Per lokasi (`/stock/by-location`):* Menampilkan saldo persediaan detail hingga level rak penyimpanan fisik, dengan kolom Gudang, Lokasi Rak, Barang, Saldo On-Hand, dan Status Tersedia.
+    2. *Per gudang (`/stock/by-warehouse`):* Menampilkan total agregat unit barang per fasilitas gudang fisik.
+    3. *Ringkasan (`/stock/summary`):* Menampilkan ringkasan global konsolidasi saldo barang lintas seluruh gudang perusahaan.
+    4. *Dalam perjalanan (`/stock/in-transit`):* Menampilkan unit barang yang sedang dalam proses pengiriman transfer antar-gudang (`qty_in_transit`).
+    5. *Buku besar (`/stock/ledger`):* Menampilkan riwayat transaksi kartu stok lengkap dengan saldo sebelum, kuantitas mutasi, saldo sesudah, dan tautan nomor referensi dokumen.
+- **Kontrol Hak Akses Dinamis pada Tab:**
+  - Tab *Buku Besar* secara dinamis memeriksa izin `ledger:read` milik pengguna aktif. Jika pengguna (misal staf pembelian atau staf operasional tertentu) tidak memiliki izin `ledger:read`, tab *Buku Besar* otomatis disembunyikan dari baris navigasi dan akses langsung ke `/stock/ledger` dialihkan secara aman.
+- **Pintasan Modal Cek Rak & Barcode (`StockLookupModal`):**
+  - Pada baris filter halaman stok dan pada Topbar navigasi aplikasi, tersedia tombol pintasan **"Cek Rak"** / pemindai barcode yang langsung membuka modal pencarian dua arah (scan barcode barang untuk melihat sebaran rak, atau scan barcode rak untuk menginspeksi seluruh barang multi-SKU di dalam rak tersebut).
+
 ## 4. Komponen, struktur direktori, dan state
 
 Komponen bersama minimum: authenticated shell, navigation/menu tree, data table,

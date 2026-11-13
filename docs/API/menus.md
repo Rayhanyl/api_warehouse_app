@@ -257,6 +257,16 @@ Tabel `menus` dibuat di `db/migrations/009_create_menu_tables.sql`. `parent_id` 
 
 Migrasi mengisi menu awal untuk Dashboard, Master Data, Stok & Buku Besar, Pengadaan & Penerimaan, Operasional Gudang, dan Administrasi & Keamanan beserta submenu modul. Permission pada submenu berasal dari permission RBAC yang sudah tersedia. Seed menggunakan `ON CONFLICT (code) DO NOTHING`.
 
+Khusus untuk modul persediaan, navigasi diselaraskan dengan arsitektur **UX Opsi B (Monitoring Saldo Stok Terpadu)**:
+- Menu sidebar disederhanakan menjadi **satu menu utama root**:
+  - `code`: `stock_monitoring` (atau `inventory`)
+  - `name`: `Monitoring Saldo Stok`
+  - `path`: `/stock`
+  - `icon`: `boxes` (atau `layers`)
+  - `permission_code`: `stock:read`
+  - `parent_id`: `null` (tanpa submenu dropdown di sidebar)
+- Seluruh 5 dimensi visualisasi persediaan (*Per lokasi*, *Per gudang*, *Ringkasan*, *Dalam perjalanan*, dan *Buku besar*) dikonsolidasikan langsung di dalam satu halaman terpadu melalui *tab segmented navigation* horizontal di frontend. Tab *Buku besar* terproteksi dinamis oleh permission `ledger:read`.
+
 ## 7. Catatan dan Status Verifikasi
 
 - Tes AC-14 berada di `tests/test_menus.py`; ketiga skenario menu dan seluruh suite (21 tes) lulus pada PostgreSQL `wms_test` saat verifikasi dokumentasi ini disusun.
