@@ -28,6 +28,8 @@ perubahan yang terdokumentasi.
 ## Cara menemukan informasi
 
 - Kebutuhan atau batas fitur: mulai dari [core/README.md](core/README.md).
+- Konfigurasi environment & proxy lokal vs dev server: gunakan [core/environment-setup-guide.md](core/environment-setup-guide.md).
+- Standar hardening & keamanan server/aplikasi: gunakan [core/security-server-and-app.md](core/security-server-and-app.md).
 - Endpoint, request, response, dan error: gunakan [API/README.md](API/README.md).
 - Acuan lengkap validasi form & UI di sisi Frontend: gunakan [FRONTEND_VALIDATION_GUIDE.md](FRONTEND_VALIDATION_GUIDE.md).
 - Transisi status atau aturan transaksi: gunakan

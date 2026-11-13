@@ -644,7 +644,7 @@ Daftarkan rahasia berikut pada repository GitHub (**Settings -> Secrets and vari
 
 | Nama Secret | Deskripsi / Nilai Riil di Server Production |
 | :--- | :--- |
-| `PROD_SERVER_HOST` | `43.173.33.195` (IP Publik server VPS) |
+| `PROD_SERVER_HOST` | `<IP_PUBLIK_SERVER_PROD>` (IP Publik server VPS, contoh: `203.0.113.10`) |
 | `PROD_SERVER_USER` | `deployer` (User deployment khusus di server) |
 | `PROD_SERVER_PORT` | `22` (Port SSH server default) |
 | `PROD_SERVER_SSH_KEY` | Private SSH Key ed25519 (tersimpan di server pada `/home/deployer/.ssh/id_ed25519_github_actions`) |
@@ -668,20 +668,20 @@ chmod 600 /opt/wms/.env.production
 Isi konfigurasi riil `/opt/wms/.env.production`:
 ```env
 # ==============================================================================
-# Database Credentials & Connection Strings (Cukup gunakan 1 password kuat)
+# Database Credentials & Connection Strings (Gunakan password acak kuat minimal 32 karakter)
 # ==============================================================================
 POSTGRES_USER=wms_owner
-POSTGRES_PASSWORD=Wmsdatabaseprod123!#
+POSTGRES_PASSWORD=<GANTI_DENGAN_PASSWORD_DB_PRODUKSI_YANG_KUAT>
 POSTGRES_DB=wms_production
 
 # URL koneksi untuk runtime FastAPI & migrasi database
-DATABASE_URL=postgresql://wms_owner:Wmsdatabaseprod123!#@postgres:5432/wms_production
-MIGRATION_DATABASE_URL=postgresql://wms_owner:Wmsdatabaseprod123!#@postgres:5432/wms_production
+DATABASE_URL=postgresql://wms_owner:<GANTI_DENGAN_PASSWORD_DB_PRODUKSI_YANG_KUAT>@postgres:5432/wms_production
+MIGRATION_DATABASE_URL=postgresql://wms_owner:<GANTI_DENGAN_PASSWORD_DB_PRODUKSI_YANG_KUAT>@postgres:5432/wms_production
 
 # ==============================================================================
-# JWT & Keamanan Sesi
+# JWT & Keamanan Sesi (Generate via: openssl rand -hex 32)
 # ==============================================================================
-JWT_SECRET=b7f8c92a14e5903b4d8123fa98e1039871bcde9123847aef981034bcdef12890
+JWT_SECRET=<GANTI_DENGAN_RANDOM_SECRET_HEX_64_CHAR>
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_MINUTES=15
 REFRESH_TOKEN_DAYS=7
@@ -722,7 +722,7 @@ Jika versi terbaru yang di-deploy mengalami bug kritis atau anomali:
 Jika server harus segera dipulihkan dalam hitungan detik tanpa menunggu build pipeline:
 1. Login ke server via SSH:
    ```bash
-   ssh deployer@43.173.33.195
+   ssh deployer@<IP_PUBLIK_SERVER_PROD>
    cd /opt/wms
    ```
 2. Jalankan container dengan merujuk tag SHA commit sebelumnya yang stabil:
@@ -820,10 +820,10 @@ Database PostgreSQL aman dan dapat dikelola langsung via DBeaver tanpa membuka p
    * **Port**: `5432`
    * **Database**: `wms_production`
    * **Username**: `wms_owner`
-   * **Password**: `Wmsdatabaseprod123!#`
+   * **Password**: `<password_wms_owner_prod>`
 2. **Tab SSH**:
    * Centang **Use SSH Tunnel**
-   * **Host / IP**: `43.173.33.195`
+   * **Host / IP**: `<IP_PUBLIK_SERVER_PROD>`
    * **Port**: `22`
    * **User name**: `ubuntu` *(atau `deployer`)*
    * **Auth**: Kunci SSH atau password SSH server Anda.

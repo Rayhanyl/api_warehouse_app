@@ -1,13 +1,25 @@
 """Konfigurasi aplikasi WMS API berbasis variabel lingkungan (.env) sesuai PRD 7.2 & AGENTS.md §6."""
 
-from pydantic import Field
+from typing import Literal
+
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app.core.env_files import resolve_env_files
+
+# Placeholder yang ada di berkas contoh; tidak boleh dipakai di production.
+_PLACEHOLDER_JWT_MARKERS = ("ganti-dengan", "change_me", "changeme")
 
 
 class Settings(BaseSettings):
     app_name: str = "WMS REST API"
     app_version: str = "2.0.0"
     api_v1_prefix: str = "/api/v1"
+
+    app_env: Literal["local", "development", "staging", "production"] = Field(
+        default="local",
+        description="Nama lingkungan aktif; dipakai untuk label log/alert dan guard production",
+    )
 
     # Kredensial database dan rahasia JWT wajib berasal dari environment / .env (tanpa rahasia di kode)
     database_url: str = Field(..., description="URL koneksi PostgreSQL untuk aplikasi")
@@ -38,12 +50,28 @@ class Settings(BaseSettings):
     )
     trusted_proxy_ips: list[str] = Field(default_factory=list)
 
+    # Berkas env dipilih oleh `resolve_env_files()` (default `.env` + `.env.local`,
+    # atau satu berkas eksplisit lewat variabel OS `ENV_FILE`).
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
+        env_file=resolve_env_files(),
+        env_file_encoding="utf-8-sig",  # toleran BOM (Notepad / PowerShell 5.1 di Windows)
         case_sensitive=False,
         extra="ignore",
     )
+
+    @model_validator(mode="after")
+    def _enforce_production_guards(self) -> "Settings":
+        """Menolak konfigurasi production yang jelas tidak aman agar gagal saat startup."""
+        if self.app_env != "production":
+            return self
+        problems: list[str] = []
+        if any(marker in self.jwt_secret.lower() for marker in _PLACEHOLDER_JWT_MARKERS):
+            problems.append("JWT_SECRET masih berisi placeholder dari berkas contoh")
+        if not self.cookie_secure:
+            problems.append("COOKIE_SECURE wajib True saat APP_ENV=production")
+        if problems:
+            raise ValueError("Konfigurasi production tidak aman: " + "; ".join(problems))
+        return self
 
 
 settings = Settings()

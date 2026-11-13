@@ -1,6 +1,14 @@
-# Dokumentasi 03: Panduan Frontend Lokal Terhubung ke Backend Server Production
+# Dokumentasi 03: Panduan Koneksi Frontend Lokal ke Server Backend
 
-Dokumentasi ini merupakan panduan praktis bagi developer frontend agar aplikasi **React 19 / Vite** yang berjalan di komputer lokal (`localhost`) dapat melakukan request API (*hit*) langsung ke server backend production **JejakStok WMS** ([https://api-jkstok.my.id](https://api-jkstok.my.id)).
+> [!IMPORTANT]
+> **Dokumen Resmi Terpusat:**
+> Dokumen ini telah diselaraskan dengan arsitektur multi-environment Tahap 12. Panduan komprehensif seluruh skenario (lokal vs development server vs production guard) kini terpusat di:
+> 👉 **[environment-setup-guide.md](environment-setup-guide.md)**.
+>
+> **Perubahan Kebijakan Sejak Tahap 12:**
+> - `npm run dev` secara **default** mengarah ke Backend Lokal (`http://localhost:8000`).
+> - Untuk terhubung ke Backend Server Development, gunakan: `npm run dev:server` (membaca konfigurasi `.env.dev-server`).
+> - Menghubungkan dev server lokal ke server **Production** (`https://api-jkstok.my.id`) diblokir oleh guard Vite secara default untuk mencegah transaksi uji coba merusak data produksi. Untuk mengizinkannya secara sadar, pasang `VITE_ALLOW_PRODUCTION_PROXY=true`.
 
 ---
 
