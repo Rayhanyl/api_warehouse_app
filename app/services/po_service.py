@@ -217,17 +217,24 @@ def list_purchase_orders(
         default_dir="DESC",
     )
 
-    clean_status: str | None = None
+    clean_status: str | list[str] | None = None
     if status is not None:
-        clean_status = status.strip().upper()
-        if clean_status not in ALLOWED_PO_STATUSES:
-            raise ValidationDomainError(
-                f"Filter status PO '{status}' tidak valid.",
-                details={
-                    "status": status,
-                    "allowed_values": sorted(ALLOWED_PO_STATUSES),
-                },
-            )
+        raw_tokens = [s.strip().upper() for s in status.split(",") if s.strip()]
+        if not raw_tokens:
+            clean_status = None
+        else:
+            for s in raw_tokens:
+                if s not in ALLOWED_PO_STATUSES:
+                    raise ValidationDomainError(
+                        f"Filter status PO '{s}' tidak valid.",
+                        details={
+                            "status": status,
+                            "allowed_values": sorted(ALLOWED_PO_STATUSES),
+                        },
+                    )
+            clean_status = list(dict.fromkeys(raw_tokens))
+            if len(clean_status) == 1:
+                clean_status = clean_status[0]
 
     if date_from is not None and date_to is not None and date_from > date_to:
         raise ValidationDomainError(

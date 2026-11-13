@@ -15,7 +15,7 @@ def list_purchase_orders(
     scoped_warehouse_ids: list[int] | None = None,
     warehouse_id: int | None = None,
     supplier_id: int | None = None,
-    status: str | None = None,
+    status: str | list[str] | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
     search: str | None = None,
@@ -41,8 +41,16 @@ def list_purchase_orders(
         params.append(supplier_id)
 
     if status is not None:
-        conditions.append("po.status = %s")
-        params.append(status)
+        if isinstance(status, list):
+            if len(status) == 1:
+                conditions.append("po.status = %s")
+                params.append(status[0])
+            elif len(status) > 1:
+                conditions.append("po.status = ANY(%s)")
+                params.append(status)
+        else:
+            conditions.append("po.status = %s")
+            params.append(status)
 
     if date_from is not None:
         conditions.append("po.order_date >= %s")
