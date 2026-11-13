@@ -6,6 +6,7 @@
 | --- | --- |
 | **Modul** | Audit Log (Jejak Audit Aktivitas & Perubahan Data) |
 | **Base path** | `/api/v1/audit-logs` |
+| **Rute frontend** | `/audit-logs`, `/audit`, `/admin/audit-logs` (dipetakan ke `<AuditLogsPage />` dengan permission `audit:read`) |
 | **Rujukan PRD** | FR-09, FR-11, Bagian 3.1, 6.4 (Imutabilitas), AC-05, AC-08 |
 | **Status implementasi** | ✅ Sudah diimplementasikan dan diuji (`tests/test_auth.py`, `tests/test_rbac_scoping.py`, `tests/test_immutability.py`) |
 | **Kode sumber** | [routes/audit_logs.py](../../app/api/routes/audit_logs.py), [audit_service.py](../../app/services/audit_service.py), [audit_repo.py](../../app/repositories/audit_repo.py), [schemas/audit_log.py](../../app/schemas/audit_log.py) |

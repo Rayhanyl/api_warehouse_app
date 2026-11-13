@@ -133,6 +133,12 @@ Untuk mendukung kecepatan operasional toko cabang dan kasir retail:
 - **Adaptasi Viewport Penuh (`360px` – `1280px+`):**
   - *Mobile (`360px–639px`):* Navigasi menggunakan drawer *slide-over* (`Sidebar`), filter & tombol aksi membungkus otomatis (`flex-wrap`), input pencarian & barcode memiliki `min-w-[180px] flex-1`, dan seluruh tabel data dibungkus `overflow-x-auto` dengan `min-w` proporsional (`min-w-[560px]` s.d. `min-w-[720px]`) agar kolom tidak tergencet.
   - *Modal & Dialog (`max-h-[90vh] overflow-y-auto`):* Seluruh modal form, detail master data, pemindai kamera (`BarcodeScannerModal`), dan pencarian stok (`StockLookupModal`) membatasi tinggi maksimum `90vh` dengan *vertical scroll* serta membungkus visualisasi `BarcodeVisual` / `QrCodeVisual` dengan `max-w-full overflow-x-auto`.
+  - *Standardisasi Dimensi Modal yang Lega:* Untuk kenyamanan visual pada resolusi desktop maupun tablet, seluruh dialog telah diperbesar dan distandardisasi:
+    1. `ConfirmDialog`: `max-w-lg` (~512px).
+    2. `BarcodeScannerModal`: `max-w-xl` (~576px).
+    3. Master Data Sederhana (`CategoryFormDialog`, `CategoryDetailDialog`, `UomFormDialog`, `UomDetailDialog`): `max-w-2xl` (~672px).
+    4. Master Data Kompleks (`WarehouseFormDialog`, `WarehouseDetailDialog`, `StorageLocationFormDialog`, `StorageLocationDetailDialog`, `SupplierFormDialog`, `SupplierDetailDialog`, `StockFormDialog`, `StockDetailDialog`): `max-w-3xl` (~768px) hingga `max-w-4xl` (~896px).
+    5. Transaksi Dokumen, Impor, & Pencarian Lintas Rak (`GoodsReceiptForm`, `GoodsReceiptDetail`, `PurchaseOrderForm`, `PurchaseOrdersPage`, `StockTransferForm`, `StockTransferDetail`, `StockOpnamesPage`, `StockLookupModal`, `StockImportDialog`, `AdministrationPage`): `max-w-5xl` (~1024px).
   - *Isolasi Layout Cetak (`@media print` di `src/styles/globals.css`):* Saat `window.print()` dipanggil (baik untuk dokumen A4 GRN/Surat Jalan maupun stiker termal `50x30 mm`), kontainer `.print-dialog-panel` otomatis melepas batasan tinggi (`max-height: none !important; overflow: visible !important;`), menyembunyikan kontainer notifikasi toast (`[data-sonner-toaster]` + `toast.dismiss()`), dan mengunci grid cetak menjadi 3 kolom (`print:grid-cols-3`).
 
 ### 3.6 Metrik Operasional Real-Time & Kartu KPI Dashboard (`DSH-F01`, `AC-38`)
@@ -160,10 +166,27 @@ Untuk meningkatkan efisiensi navigasi dan menjaga sidebar tetap ringkas tanpa dr
     3. *Ringkasan (`/stock/summary`):* Menampilkan ringkasan global konsolidasi saldo barang lintas seluruh gudang perusahaan.
     4. *Dalam perjalanan (`/stock/in-transit`):* Menampilkan unit barang yang sedang dalam proses pengiriman transfer antar-gudang (`qty_in_transit`).
     5. *Buku besar (`/stock/ledger`):* Menampilkan riwayat transaksi kartu stok lengkap dengan saldo sebelum, kuantitas mutasi, saldo sesudah, dan tautan nomor referensi dokumen.
+- **Kompatibilitas Rute & Pengalihan Alias (`/stock/balances`):**
+  - Rute `/stock/balances` dan `/inventory/balances` secara otomatis dialihkan melalui `<Navigate to="/stock" replace />` ke `/stock` untuk memastikan tautan eksternal, riwayat peramban, maupun bookmark pengguna tetap berfungsi mulus tanpa layar kosong (blank screen).
+  - Kartu KPI Dashboard (Total Stok On-Hand & In-Transit) langsung mengarahkan pengguna ke `/stock` dan `/stock/in-transit`.
 - **Kontrol Hak Akses Dinamis pada Tab:**
   - Tab *Buku Besar* secara dinamis memeriksa izin `ledger:read` milik pengguna aktif. Jika pengguna (misal staf pembelian atau staf operasional tertentu) tidak memiliki izin `ledger:read`, tab *Buku Besar* otomatis disembunyikan dari baris navigasi dan akses langsung ke `/stock/ledger` dialihkan secara aman.
 - **Pintasan Modal Cek Rak & Barcode (`StockLookupModal`):**
   - Pada baris filter halaman stok dan pada Topbar navigasi aplikasi, tersedia tombol pintasan **"Cek Rak"** / pemindai barcode yang langsung membuka modal pencarian dua arah (scan barcode barang untuk melihat sebaran rak, atau scan barcode rak untuk menginspeksi seluruh barang multi-SKU di dalam rak tersebut).
+
+### 3.8 Alur Pembuatan Penerimaan Barang Cepat & Sinkronisasi PO Multi-Status (`RCV-F01`, `RCV-F02`, `PUR-F02`)
+
+- **Rute Langsung Pembuatan Dokumen (`/goods-receipts/new` & `/purchasing/goods-receipts/new`):**
+  - Untuk mendukung integrasi kartu "Tugas Tertunda" pada Dashboard (ketika operator mengklik item *PO siap diterima*), sistem menyediakan halaman dedikasi `GoodsReceiptCreatePage` pada rute `/goods-receipts/new` (serta alias `/purchasing/goods-receipts/new`).
+  - Halaman ini menyajikan antarmuka penerimaan barang dengan dialog pembuatan (`GoodsReceiptFormDialog`) yang langsung terbuka secara otomatis, mendukung tombol batal/kembali ke daftar dokumen, serta terhubung dengan pemindai barcode gun scanner maupun kamera perangkat.
+- **Konsistensi Penghitungan Dokumen Siap Terima (Multi-Status Support):**
+  - Status PO yang valid untuk dilakukan penerimaan barang di gudang adalah **`ISSUED`** (baru diterbitkan) dan **`PARTIALLY_RECEIVED`** (telah diterima sebagian namun masih memiliki sisa barang yang belum terkirim).
+  - Hook referensi form penerimaan barang (`useGoodsReceiptReferences`) secara otomatis memanggil endpoint daftar PO dengan filter multi-status: `GET /api/v1/purchase-orders?status=ISSUED,PARTIALLY_RECEIVED&limit=100`.
+  - Frontend memvalidasi dan menghitung kuantitas tersisa (`remaining_qty = ordered_qty - received_qty > 0`) per baris item, sehingga PO parsial yang masih memiliki sisa kuantitas tampil di dropdown pilihan, selaras 100% dengan angka rekapitulasi pada kartu metrik Dashboard (`dashboard_repo.py`).
+
+### 3.9 Standardisasi Pemetaan Rute Audit Log (`AUD-F02`)
+
+- Rute audit log didaftarkan pada `/audit-logs`, `/audit`, serta rute administratif `/admin/audit-logs` yang seluruhnya memetakan ke komponen `<AuditLogsPage />` dengan guard izin `audit:read`, mencegah terjadinya halaman kosong (404/blank) ketika pengguna mengakses dari menu sidebar administratif maupun tautan modul audit langsung.
 
 ## 4. Komponen, struktur direktori, dan state
 
@@ -193,7 +216,7 @@ warehouse_app/src/
 │   └── audit/                  # Penelusuran dan filter audit log
 ├── hooks/                      # useBarcodeScanner.ts (deteksi hardware gun scanner USB/Bluetooth)
 ├── lib/                        # api-client.ts (Axios + auto-refresh 401), barcode.ts (EAN-13/Code-128 generator), utils
-├── pages/                      # LandingPage.tsx, LoginPage.tsx, DashboardPage.tsx, ProfilePage.tsx
+├── pages/                      # LandingPage.tsx, LoginPage.tsx, DashboardPage.tsx, ProfilePage.tsx, GoodsReceiptCreatePage.tsx
 └── styles/                     # globals.css (Tailwind v4 theme + aturan @media print dokumen A4 & stiker 50x30 mm)
 ```
 
@@ -244,7 +267,7 @@ Alur request umum:
 | --- | --- | --- | --- | --- |
 | `FR-PLT-001..004` | `PLT-F01..F04` | Nomor dokumen read-only, kontrol list/pagination/filter/sort, error state | query params list, error envelope, `X-Request-ID`, health | `AC-15`, `AC-16`, `AC-17` |
 | `FR-IAM-001..009` | `IAM-F01..F09` | Login, session refresh, profil, ganti password, manajemen user/role/assignment, sidebar menu dinamis | auth, user, role/permission, warehouse assignment, `my-menu` | `AC-05`, `AC-11`, `AC-12`, `AC-14` |
-| `FR-AUD-002` | `AUD-F02` | Penelusuran dan filter daftar audit log (`old_values`/`new_values`) | audit log list (`GET /api/v1/audit-logs`) | `AC-16`, `AC-22` |
+| `FR-AUD-002` | `AUD-F02` | Penelusuran dan filter daftar audit log (`old_values`/`new_values`) serta pemetaan rute terpadu (`/audit-logs`, `/admin/audit-logs`) | audit log list (`GET /api/v1/audit-logs`) | `AC-16`, `AC-22` |
 | `FR-MST-001..005` | `MST-F01..F05` | Layar CRUD dan aktivasi/deaktivasi kategori, UoM, item, supplier | master data CRUD dan list | `AC-16`, `AC-19` |
 | `FR-MST-006` | `MST-F06` | Aksi unduh template, unggah workbook, ringkasan hasil dan tabel error per baris | `GET /api/v1/items/import-template`, `POST /api/v1/items/import` | `AC-30` |
 | `FR-MST-007` | `MST-F07` | Aksi unduh template supplier, unggah workbook, ringkasan hasil dan tabel error per baris | `GET /api/v1/suppliers/import-template`, `POST /api/v1/suppliers/import` | `AC-31` |
@@ -254,16 +277,16 @@ Alur request umum:
 | `FR-WHS-001..003` | `WHS-F01..F03` | Layar CRUD warehouse, pengaturan `allow_negative_stock`, lokasi penyimpanan | warehouse dan storage location CRUD/list | `AC-12`, `AC-16`, `AC-20` |
 | `FR-WHS-004` | `LOC-F03` | Visualisasi barcode rak/gudang, cetak stiker label rak/gudang, dan inspeksi isi rak multi-SKU via scan barcode | `StorageLocationDetailDialog`, `WarehouseDetailDialog`, `StockLookupModal`, `GET /api/v1/stock/by-location?search=` | `AC-36` |
 | `FR-WHS-005` | `LOC-F04` | Visualisasi QR Code 2D rak/gudang, toggle format (QR vs Barcode 1D), dan cetak label stiker QR | `QrCodeVisual.tsx`, `StorageLocationDetailDialog`, `WarehouseDetailDialog`, `StockLookupModal` | `AC-37` |
-| `FR-INV-001..003` | `INV-F01..F03` | Saldo per lokasi, per gudang, ringkasan, in-transit, dan movement ledger | stock balances, by-warehouse, summary, movements | `AC-03`, `AC-12`, `AC-16` |
+| `FR-INV-001..003` | `INV-F01..F03` | Monitoring Saldo Stok terpadu (tab per lokasi, per gudang, ringkasan, in-transit, ledger) serta pengalihan `/stock/balances` | stock balances, by-warehouse, summary, in-transit, movements | `AC-03`, `AC-12`, `AC-16` |
 | `FR-INV-007` | `INV-F07` | Hook pemindai scanner hardware & modal scanner kamera web pada form operasional | lookup barcode item dan lokasi | `AC-33` |
 | `FR-INV-008` | `INV-F08` | Shortcut pemindai Topbar & modal lookup posisi rak & saldo barang (`StockLookupModal`) | `GET /api/v1/stock/by-location?search=` | `AC-34` |
-| `FR-PUR-001..003` | `PUR-F01..F03` | Daftar/detail PO, form draft, aksi issue/cancel/close, progres fulfillment | purchase order CRUD, list, dan action endpoints | `AC-01`, `AC-15`, `AC-16`, `AC-21` |
-| `FR-RCV-001..004` | `RCV-F01..F04` | Daftar/detail GR, form penerimaan dari PO, aksi post dan cancel draft | goods receipt CRUD, list, dan action endpoints | `AC-01`, `AC-07`, `AC-12`, `AC-13`, `AC-21` |
+| `FR-PUR-001..003` | `PUR-F01..F03` | Daftar/detail PO, form draft, aksi issue/cancel/close, filter multi-status (`status=ISSUED,PARTIALLY_RECEIVED`) | purchase order CRUD, list multi-status, dan action endpoints | `AC-01`, `AC-15`, `AC-16`, `AC-21` |
+| `FR-RCV-001..004` | `RCV-F01..F04` | Daftar/detail GR, rute dedikasi buat GR (`/goods-receipts/new`), form penerimaan referensi PO parsial/issued, aksi post dan cancel draft | goods receipt CRUD, list, useGoodsReceiptReferences, dan action endpoints | `AC-01`, `AC-07`, `AC-12`, `AC-13`, `AC-21` |
 | `FR-RCV-005` | `RCV-F05` | Tombol dan layout cetak Bukti Penerimaan Barang (GRN) siap cetak/PDF | detail GR (`GET /api/v1/goods-receipts/{id}`) | `AC-32` |
 | `FR-TRF-001..005` | `TRF-F01..F05` | Daftar/detail transfer, form draft, approve, ship, receive (beserta alasan selisih), cancel | stock transfer CRUD, list, dan action endpoints | `AC-02`, `AC-03`, `AC-06`, `AC-09`, `AC-12`, `AC-21` |
 | `FR-TRF-006` | `TRF-F06` | Tombol dan layout cetak Surat Jalan Transfer (Delivery Note) siap cetak/PDF | detail transfer (`GET /api/v1/stock-transfers/{id}`) | `AC-32` |
 | `FR-OPN-001..006` | `OPN-F01..F06` | Sesi opname, indikator lokasi beku, input count fisik, submit, approve/reject | stock opname CRUD, list, count lines, dan action endpoints | `AC-04`, `AC-10`, `AC-12`, `AC-21` |
-| `FR-DSH-001` | `DSH-F01` | Kartu metrik KPI stok, widget action items dokumen pending, riwayat aktivitas terkini, alur kerja gudang, dan pintasan modul | `GET /api/v1/dashboard/summary`, `GET /api/v1/menus/my-menu` | `AC-38` |
+| `FR-DSH-001` | `DSH-F01` | Kartu metrik KPI stok (tautan langsung `/stock`), widget action items dokumen pending (tautan langsung `/goods-receipts/new`), riwayat aktivitas terkini | `GET /api/v1/dashboard/summary`, `GET /api/v1/menus/my-menu` | `AC-38` |
 | `FR-TNT-001..006` *(Fase 2 — M9)* | `TNT-F01..F06` | Input `tenant_slug` pada login tenant, panel `Platform Admin` (daftar/provisioning/status/kuota tenant), serta layar profil & penggunaan kuota bagi `Super Admin` tenant | `/api/v1/auth/login` (`tenant_slug`), `/api/v1/platform/*`, `/api/v1/tenant/profile` | `AC-23`, `AC-24`, `AC-25`, `AC-27`, `AC-28`, `AC-29` |
 | `FR-CFG-001..004` *(Fase 2 — M9)* | `CFG-F01..F04` | Layar pengaturan tenant dan override pengaturan per gudang beserta indikator sumber pewarisan nilai | `/api/v1/settings`, `/api/v1/warehouses/{id}/settings` | `AC-26` |
 
@@ -272,7 +295,7 @@ Alur request umum:
 - **Lokasi & repositori:** Frontend aktif dikembangkan di folder `warehouse_app/` (berdampingan dengan `api_warehouse_app/` dalam satu workspace monorepo).
 - **Fondasi teknologi yang telah diputuskan:** React 19, TypeScript, Vite, Tailwind CSS v4, shadcn/ui, TanStack Query v5, Zustand v5, Axios dengan interceptor auto-refresh token JWT, dan penyimpanan refresh token di `localStorage` dengan sinkronisasi multi-tab.
 - **Bahasa & tanggal:** Antarmuka utama berbahasa Indonesia, format tanggal menggunakan standar lokal `Intl.DateTimeFormat("id-ID")` dan pustaka `date-fns`.
-- **Halaman & alur yang telah tersedia:** Landing page publik (`/`, menampilkan proposisi nilai kendali stok per lokasi, pemindai barcode barang & rak multi-SKU, cetak label stiker termal `50x30 mm`, serta cetak dokumen fisik Surat Jalan & GRN), Login (`/login`), Dashboard (`/dashboard`), Profil & ganti password (`/profile`), Administrasi Pengguna/Role/Menu (`/admin/*`), Master Data Kategori/UoM/Pemasok/Barang/Gudang/Lokasi (`/master/*`), Saldo Stok & Ledger (`/stock/*`), Purchase Order (`/purchase-orders/*`), Goods Receipt (`/goods-receipts/*`), Stock Transfer (`/stock-transfers/*`), Stock Opname (`/stock-opnames/*`), dan Audit Log (`/audit-logs`).
+- **Halaman & alur yang telah tersedia:** Landing page publik (`/`, menampilkan proposisi nilai kendali stok per lokasi, pemindai barcode barang & rak multi-SKU, cetak label stiker termal `50x30 mm`, serta cetak dokumen fisik Surat Jalan & GRN), Login (`/login`), Dashboard (`/dashboard`), Profil & ganti password (`/profile`), Administrasi Pengguna/Role/Menu (`/admin/*`), Master Data Kategori/UoM/Pemasok/Barang/Gudang/Lokasi (`/master/*`), Saldo Stok Terpadu & Ledger (`/stock`, `/stock/*`, alias `/stock/balances`), Purchase Order (`/purchase-orders/*`), Goods Receipt (`/goods-receipts/*`, `/goods-receipts/new`), Stock Transfer (`/stock-transfers/*`), Stock Opname (`/stock-opnames/*`), dan Audit Log (`/audit-logs`, `/admin/audit-logs`).
 - **Import massal di frontend:** Import massal item (`MST-F06`, mendukung kolom opsional `barcode`) telah diintegrasikan (`StockImportDialog.tsx`), sedangkan import massal supplier (`MST-F07`) menggunakan kontrak backend yang sama dan siap dipasang pada dialog pemasok.
 - **Fitur Retail & Toko Cabang (Fase 1):** Fitur cetak fisik Surat Jalan (`TRF-F06`), Bukti Penerimaan Barang GRN (`RCV-F05`), pemindaian Barcode/QR (`MST-F08`, `MST-F09`, `INV-F07`, `INV-F08`), cetak label stiker barcode SVG (`MST-F10`), barcode & QR Code lokasi rak serta inspeksi multi-SKU (`LOC-F03`, `LOC-F04`) telah diimplementasikan pada rilis Fase 1.
 - **Responsivitas Lintas Perangkat (Mobile, Tablet, Desktop, & Print):** Seluruh halaman operasional, tabel data (`overflow-x-auto` dengan `min-w` proporsional), dialog modal (`max-h-[90vh] overflow-y-auto` dengan pelepasan otomatis pada `@media print`), pemindai kamera/barcode, serta pratinjau lembar cetak GRN & Surat Jalan (`print:grid-cols-3`) telah dioptimalkan untuk ukuran layar ponsel (`360px–480px`), tablet (`768px–1024px`), hingga desktop (`1280px+`).

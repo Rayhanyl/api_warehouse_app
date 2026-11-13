@@ -106,12 +106,16 @@ Mengambil daftar ringkasan Purchase Order dengan dukungan pagination, filter, pe
 | `offset` | integer | Tidak | `0` | Minimal `0`. |
 | `warehouse_id` | integer | Tidak | `null` | Filter gudang tujuan. Untuk *Warehouse Staff*, wajib termasuk gudang yang ditugaskan (`403 WAREHOUSE_NOT_ASSIGNED` bila di luar cakupan). |
 | `supplier_id` | integer | Tidak | `null` | Filter ID pemasok. |
-| `status` | string | Tidak | `null` | Salah satu dari: `DRAFT`, `ISSUED`, `PARTIALLY_RECEIVED`, `RECEIVED`, `CLOSED`, `CANCELLED`. |
+| `status` | string | Tidak | `null` | Status tunggal atau gabungan multi-status dipisahkan koma (misal: `status=ISSUED,PARTIALLY_RECEIVED`). Whitelist nilai: `DRAFT`, `ISSUED`, `PARTIALLY_RECEIVED`, `RECEIVED`, `CLOSED`, `CANCELLED`. |
 | `date_from` | date (`YYYY-MM-DD`) | Tidak | `null` | Batas awal tanggal pesanan (`order_date >= date_from`). |
 | `date_to` | date (`YYYY-MM-DD`) | Tidak | `null` | Batas akhir tanggal pesanan (`order_date <= date_to`). Tidak boleh `< date_from`. |
 | `search` | string | Tidak | `null` | Pencarian `ILIKE` pada `po_number`, `supplier_code`, `supplier_name`, atau `notes`. |
 | `sort_by` | string | Tidak | `"id"` | Whitelist: `"id"`, `"po_number"`, `"order_date"`, `"status"`, `"created_at"`. |
 | `sort_dir` | string | Tidak | `"desc"` | `"asc"` atau `"desc"`. |
+
+> [!TIP]
+> **Dukungan Multi-Status:** Untuk mengambil pesanan pembelian yang siap dilakukan penerimaan barang (baik pesanan baru maupun pesanan yang baru diterima sebagian), gunakan query gabungan:
+> `GET /api/v1/purchase-orders?status=ISSUED,PARTIALLY_RECEIVED&limit=100`.
 
 **Contoh Response Berhasil (`200 OK` — `Page[PurchaseOrderSummaryOut]`)**
 
