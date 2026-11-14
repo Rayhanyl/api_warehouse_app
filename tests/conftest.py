@@ -11,7 +11,7 @@ import psycopg
 from psycopg.rows import dict_row
 import pytest
 
-from app.core import database as db_module
+from app.core import database as db_module, telegram_alert
 from app.core.config import settings
 from app.main import app
 from db.migrate import run_migrations
@@ -63,6 +63,13 @@ def setup_test_database() -> Generator[str, None, None]:
         yield test_url
     finally:
         db_module.close_pool()
+
+
+@pytest.fixture(autouse=True)
+def _disable_live_telegram_alerts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mencegah pytest mengirim HTTP request sungguhan ke API Telegram secara tidak sengaja."""
+    monkeypatch.setattr(settings, "telegram_enabled", False)
+    telegram_alert.reset_rate_limit_cache()
 
 
 @pytest.fixture(autouse=True)

@@ -455,8 +455,8 @@ migrasi terakhir yang diterapkan. Catat tanggal, berkas, dan hasil uji.
 
 ## 9. Monitoring aktivitas dan keamanan
 
-Notifikasi otomatis (error aplikasi dan status container lewat Telegram) dikerjakan pada
-Tahap 13; sebelum itu gunakan pemeriksaan manual berikut.
+- **Status Aktual (Tahap 13):** Notifikasi real-time error aplikasi (`HTTP 500` / startup DB failure) dan status container Docker (`Up`, `Down`, `Exited`, `Crash/Restart`, `unhealthy`) melalui Telegram sudah diimplementasikan dengan sanitasi credential dan PII. Lihat panduan konfigurasi, uji coba, dan instalasi daemon di [telegram-monitoring-guide.md](telegram-monitoring-guide.md).
+- Lengkapi pemeriksaan manual berikut secara berkala untuk aspek sistem operasi dan database:
 
 | Frekuensi | Pemeriksaan | Perintah | Normal bila |
 | --- | --- | --- | --- |
@@ -494,3 +494,4 @@ Centang setelah dijalankan di server, lalu catat tanggalnya.
 - [ ] Cadangan terjadwal berjalan dan satu uji pemulihan berhasil
 - [ ] GitHub secret scanning dan push protection aktif
 - [ ] Keputusan tentang pemisahan role `wms_app` (§4.1) dan pemeriksaan `Origin` (§6) dicatat
+- [ ] Notifikasi error Telegram (`TELEGRAM_ENABLED=True` di server) & daemon monitor Docker (`wms-docker-monitor.service` / sidecar) teruji end-to-end ([panduan](telegram-monitoring-guide.md))

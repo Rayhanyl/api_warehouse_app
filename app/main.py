@@ -2,14 +2,14 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-import re
-import uuid
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.encoders import jsonable_encoder
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.routes import (
     audit_logs,
@@ -26,7 +26,7 @@ from app.api.routes import (
     users,
     warehouses,
 )
-from app.core import database
+from app.core import database, telegram_alert
 from app.core.config import settings
 from app.core.exceptions import DomainError
 from app.core.logging import logger, request_id_ctx
@@ -37,7 +37,16 @@ from app.core.middleware import register_request_id_middleware
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Membuka dan menutup connection pool PostgreSQL sesuai siklus hidup aplikasi."""
     logger.info("Membuka connection pool database...")
-    database.open_pool()
+    try:
+        database.open_pool()
+    except Exception as exc:
+        logger.exception("Gagal membuka connection pool database saat startup: %s", exc)
+        await telegram_alert.notify_exception_async(
+            exc,
+            http_status=None,
+            source="lifespan/startup (database.open_pool)",
+        )
+        raise
     logger.info("Connection pool database siap digunakan.")
     try:
         yield
@@ -100,11 +109,35 @@ def create_app() -> FastAPI:
             },
         )
 
+    @application.exception_handler(StarletteHTTPException)
+    async def handle_http_exception(
+        request: Request, exc: StarletteHTTPException
+    ) -> Response:
+        response = await http_exception_handler(request, exc)
+        if exc.status_code >= 500:
+            logger.error("Unhandled HTTP %s error: %s", exc.status_code, exc.detail)
+            bg = telegram_alert.create_error_background_task(
+                exc,
+                request=request,
+                http_status=exc.status_code,
+            )
+            if bg is not None:
+                response.background = bg
+        return response
+
     @application.exception_handler(Exception)
-    def handle_unexpected_error(_request: Request, exc: Exception) -> JSONResponse:
-        logger.exception("Unhandled internal error: %s", exc)
+    async def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+        req_id = getattr(request.state, "request_id", None) or request_id_ctx.get("-")
+        token = request_id_ctx.set(req_id)
+        try:
+            logger.error("Unhandled internal error: %s", exc, exc_info=exc)
+        finally:
+            request_id_ctx.reset(token)
+
+        headers = {"X-Request-ID": req_id} if req_id and req_id != "-" else None
         return JSONResponse(
             status_code=500,
+            headers=headers,
             content={
                 "error": {
                     "code": "INTERNAL_ERROR",
@@ -112,6 +145,12 @@ def create_app() -> FastAPI:
                     "details": {},
                 }
             },
+            background=telegram_alert.create_error_background_task(
+                exc,
+                request=request,
+                trace_id=req_id,
+                http_status=500,
+            ),
         )
 
     # Daftarkan endpoint health di root (/health, PRD 7.6) dan di bawah prefix /api/v1 (Lampiran B)

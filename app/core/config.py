@@ -1,8 +1,8 @@
 """Konfigurasi aplikasi WMS API berbasis variabel lingkungan (.env) sesuai PRD 7.2 & AGENTS.md §6."""
 
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.env_files import resolve_env_files
@@ -49,6 +49,43 @@ class Settings(BaseSettings):
         description="Nilai SameSite untuk cookie refresh token (lax / strict / none)",
     )
     trusted_proxy_ips: list[str] = Field(default_factory=list)
+
+    # Notifikasi error real-time via Telegram Bot HTTP API (Tahap 13 / Poin 6)
+    telegram_enabled: bool = Field(
+        default=False,
+        description="Aktifkan pengiriman notifikasi error real-time ke Telegram",
+    )
+    telegram_bot_token: str | None = Field(
+        default=None,
+        description="Token Bot Telegram HTTP API (simpan hanya di .env aktif, jangan di Git)",
+    )
+    telegram_chat_id: str | None = Field(
+        default=None,
+        description="Chat ID / Group ID Telegram penerima notifikasi error",
+    )
+    telegram_thread_id: int | None = Field(
+        default=None,
+        description="Opsional: message_thread_id untuk grup Telegram bertopik",
+    )
+    telegram_timeout_seconds: float = Field(
+        default=5.0,
+        ge=0.5,
+        le=30.0,
+        description="Timeout permintaan HTTP ke API Telegram (detik)",
+    )
+    telegram_cooldown_seconds: int = Field(
+        default=60,
+        ge=0,
+        le=3600,
+        description="Jeda cooldown deduplikasi per signature error (detik) agar bebas rate-limit",
+    )
+
+    @field_validator("telegram_bot_token", "telegram_chat_id", "telegram_thread_id", mode="before")
+    @classmethod
+    def _empty_str_to_none(cls, value: Any) -> Any:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
     # Berkas env dipilih oleh `resolve_env_files()` (default `.env` + `.env.local`,
     # atau satu berkas eksplisit lewat variabel OS `ENV_FILE`).

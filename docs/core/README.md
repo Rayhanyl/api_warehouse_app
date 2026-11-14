@@ -20,6 +20,7 @@ padanya dan tidak boleh menambah business requirement.
 | [DEPLOYMENT_GUIDE_CICD.md](DEPLOYMENT_GUIDE_CICD.md) | Approved / panduan operasional | Panduan deployment production, Git workflow, PR rules, dan CI/CD GitHub Actions |
 | [environment-setup-guide.md](environment-setup-guide.md) | Approved / panduan environment | Panduan multi-environment lokal vs server dev, pemuatan `.env`, dan Vite proxy |
 | [security-server-and-app.md](security-server-and-app.md) | Approved / standar keamanan | Hardening SSH, firewall UFW, isolasi DB, rotasi rahasia, audit log, dan backup otomatis |
+| [telegram-monitoring-guide.md](telegram-monitoring-guide.md) | Approved / panduan observabilitas | Notifikasi real-time error aplikasi (HTTP 500) & status container Docker via Telegram |
 | [API_CONTRACT.md](API_CONTRACT.md) | Ringkasan kontrak | Batas kontrak API dan rujukan detail aktual |
 | [PRD Modular](PRD%20JejakStok%20%E2%80%94%20Sistem%20Manajemen%20Gudang%20%28Modular%29.md) | Draft / perlu konfirmasi | Usulan modular dan multi-tenant; bukan scope aktif |
 | [DOCUMENTATION_AUDIT.md](DOCUMENTATION_AUDIT.md) | Audit | Temuan, asumsi, dan hal belum terverifikasi |

@@ -698,6 +698,19 @@ FRONTEND_ORIGINS=["https://jejakstok.site", "https://www.jejakstok.site"]
 # ==============================================================================
 LOGIN_MAX_ATTEMPTS=5
 LOGIN_LOCK_MINUTES=15
+
+# ==============================================================================
+# Notifikasi Real-Time Telegram (Tahap 13)
+# Lihat panduan lengkap di docs/core/telegram-monitoring-guide.md
+# ==============================================================================
+TELEGRAM_ENABLED=True
+TELEGRAM_BOT_TOKEN=<ganti-dengan-token-bot-dari-botfather>
+TELEGRAM_CHAT_ID=<ganti-dengan-chat-id-tujuan>
+TELEGRAM_THREAD_ID=
+TELEGRAM_TIMEOUT_SECONDS=5.0
+TELEGRAM_COOLDOWN_SECONDS=60
+DOCKER_MONITOR_FILTERS=wms_prod_
+DOCKER_MONITOR_COOLDOWN_SECONDS=30
 ```
 
 > [!IMPORTANT]

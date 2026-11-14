@@ -24,6 +24,7 @@ def register_request_id_middleware(app: FastAPI) -> None:
             else str(uuid.uuid4())
         )
         token = request_id_ctx.set(req_id)
+        request.state.request_id = req_id
         try:
             response = await call_next(request)
             response.headers["X-Request-ID"] = req_id
