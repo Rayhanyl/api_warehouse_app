@@ -1,7 +1,6 @@
 """Service Manajemen Pengguna, Role/Permission, dan Penugasan Gudang (Bagian 3 PRD, FR-01, FR-09)."""
 
 from datetime import datetime, timezone
-import re
 from typing import Any
 
 from psycopg import Connection
@@ -14,22 +13,14 @@ from app.core.exceptions import (
 )
 from app.core.permissions import ROLE_SUPER_ADMIN, USER_MANAGE
 from app.core.security import hash_password
+from app.core.validation import (
+    ensure_non_blank_str,
+    validate_email_format,
+    validate_username_format,
+)
 from app.repositories import permission_repo, token_repo, user_repo
 from app.services import audit_service
 from app.utils.pagination import normalize_pagination
-
-EMAIL_REGEX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-USERNAME_REGEX = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$")
-
-
-def _validate_email_format(email: str) -> str:
-    clean_email = email.strip().lower()
-    if not EMAIL_REGEX.match(clean_email):
-        raise ValidationDomainError(
-            "Format alamat email tidak valid.",
-            details={"email": email},
-        )
-    return clean_email
 
 
 def _public_user_snapshot(user: dict[str, Any]) -> dict[str, Any]:
@@ -107,22 +98,15 @@ def create_user(
     """Membuat akun pengguna baru, menetapkan penugasan gudang bila ada, dan menulis Audit Log."""
     if len(password) < 8 or not password.strip():
         raise ValidationDomainError(
-            "Kata sandi minimal harus terdiri dari 8 karakter dan tidak boleh hanya berisi spasi."
+            "Kata sandi minimal harus terdiri dari 8 karakter dan tidak boleh hanya berisi spasi.",
+            details={"field": "password"},
         )
 
-    clean_username = username.strip()
-    if not USERNAME_REGEX.match(clean_username):
-        raise ValidationDomainError(
-            "Format username tidak valid (3-64 karakter huruf, angka, titik, garis bawah, atau tanda hubung tanpa spasi).",
-            details={"field": "username", "value": clean_username},
-        )
-    clean_email = _validate_email_format(email)
-    clean_name = full_name.strip()
-    if not clean_name:
-        raise ValidationDomainError(
-            "Nama lengkap pengguna tidak boleh kosong.",
-            details={"field": "full_name"},
-        )
+    clean_username = validate_username_format(username)
+    clean_email = validate_email_format(email)
+    clean_name = ensure_non_blank_str(
+        full_name, field_name="full_name", label="Nama lengkap pengguna", max_length=150
+    )
 
     with conn.transaction():
         if user_repo.get_user_by_username(conn, clean_username):
@@ -228,7 +212,7 @@ def update_user(
         assert before_ctx is not None
 
         new_email = (
-            _validate_email_format(email)
+            validate_email_format(email)
             if email is not None
             else before_ctx["email"]
         )
@@ -241,8 +225,20 @@ def update_user(
                 )
 
         new_full_name = (
-            full_name.strip() if full_name is not None else before_ctx["full_name"]
+            ensure_non_blank_str(
+                full_name,
+                field_name="full_name",
+                label="Nama lengkap pengguna",
+                max_length=150,
+            )
+            if full_name is not None
+            else before_ctx["full_name"]
         )
+        if password is not None and (len(password) < 8 or not password.strip()):
+            raise ValidationDomainError(
+                "Kata sandi minimal harus terdiri dari 8 karakter dan tidak boleh hanya berisi spasi.",
+                details={"field": "password"},
+            )
         new_role_id = int(role_id) if role_id is not None else int(before_ctx["role_id"])
         if new_role_id != int(before_ctx["role_id"]):
             role = permission_repo.get_role_by_id(conn, new_role_id)
@@ -421,9 +417,15 @@ def set_role_permissions(
 def _validate_warehouses_exist_and_active(
     conn: Connection[dict[str, Any]], warehouse_ids: list[int]
 ) -> None:
-    """Memastikan seluruh warehouse_id yang akan ditugaskan benar-benar ada dan berstatus aktif."""
+    """Memastikan seluruh warehouse_id valid (> 0), benar-benar ada, dan berstatus aktif."""
     if not warehouse_ids:
         return
+    invalid_ids = [wid for wid in warehouse_ids if wid <= 0]
+    if invalid_ids:
+        raise ValidationDomainError(
+            "ID gudang pada penugasan pengguna harus berupa bilangan bulat positif (> 0).",
+            details={"field": "warehouse_ids", "invalid_warehouse_ids": invalid_ids},
+        )
     rows = permission_repo.get_existing_warehouses_by_ids(conn, warehouse_ids)
     found_map = {int(r["id"]): r for r in rows}
     missing = [wid for wid in warehouse_ids if wid not in found_map]

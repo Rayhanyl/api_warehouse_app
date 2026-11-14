@@ -31,6 +31,7 @@ from app.core.config import settings
 from app.core.exceptions import DomainError
 from app.core.logging import logger, request_id_ctx
 from app.core.middleware import register_request_id_middleware
+from app.core.validation import format_pydantic_errors
 from app.services import audit_service
 
 
@@ -113,13 +114,16 @@ def create_app() -> FastAPI:
         request: Request, exc: RequestValidationError
     ) -> JSONResponse:
         encoded_errors = jsonable_encoder(exc.errors())
+        summary_message, translated_errors, field_errors = format_pydantic_errors(
+            encoded_errors
+        )
         if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
             audit_service.record_http_failure(
                 request,
                 action="VALIDATION_ERROR",
                 error_code="VALIDATION_ERROR",
                 http_status=422,
-                message="Payload permintaan tidak valid.",
+                message=summary_message,
                 error_details={
                     "errors": audit_service.sanitize_validation_errors(encoded_errors)
                 },
@@ -129,8 +133,11 @@ def create_app() -> FastAPI:
             content={
                 "error": {
                     "code": "VALIDATION_ERROR",
-                    "message": "Payload permintaan tidak valid.",
-                    "details": {"errors": encoded_errors},
+                    "message": summary_message,
+                    "details": {
+                        "errors": translated_errors,
+                        "field_errors": field_errors,
+                    },
                 }
             },
         )

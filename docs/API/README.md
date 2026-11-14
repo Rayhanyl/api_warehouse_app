@@ -32,6 +32,30 @@ Seluruh error bisnis (`DomainError`), error validasi request (`RequestValidation
 }
 ```
 
+Khusus error validasi input (`VALIDATION_ERROR`, HTTP `422`), `details` menyertakan daftar detail (`errors`) dan peta pesan siap tampil per field (`field_errors`):
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Data yang dikirim tidak valid. Periksa kembali isian Anda.",
+    "details": {
+      "errors": [
+        {
+          "loc": ["body", "email"],
+          "field": "email",
+          "msg": "Format alamat email belum valid.",
+          "type": "value_error"
+        }
+      ],
+      "field_errors": {
+        "email": "Format alamat email belum valid."
+      }
+    }
+  }
+}
+```
+
 ### Katalog Kode Error yang Terdaftar (`app/core/exceptions.py`)
 
 | Kode Error | HTTP Status | Kelas Exception | Status Pemakaian di Endpoint Saat Ini |

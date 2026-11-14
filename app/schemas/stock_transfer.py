@@ -6,13 +6,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.core.validation import pydantic_optional_str, pydantic_validate_decimal_qty
 from app.schemas.common import DecimalStr
-
-
-def _reject_float(v: Any) -> Any:
-    if isinstance(v, float):
-        raise ValueError("Kuantitas tidak boleh bertipe float; gunakan string desimal atau bilangan bulat.")
-    return v
 
 
 class StockTransferLineInput(BaseModel):
@@ -21,8 +16,8 @@ class StockTransferLineInput(BaseModel):
 
     @field_validator("qty", mode="before")
     @classmethod
-    def _reject_float_qty(cls, v: Any) -> Any:
-        return _reject_float(v)
+    def _validate_qty(cls, v: Any) -> Decimal:
+        return pydantic_validate_decimal_qty(v, label="Jumlah transfer", allow_zero=False)
 
 
 class StockTransferLineOut(BaseModel):
@@ -75,8 +70,13 @@ class StockTransferReceiveLine(BaseModel):
 
     @field_validator("qty_received", mode="before")
     @classmethod
-    def _reject_float_qty(cls, v: Any) -> Any:
-        return _reject_float(v)
+    def _validate_qty_received(cls, v: Any) -> Decimal:
+        return pydantic_validate_decimal_qty(v, label="Jumlah diterima", allow_zero=True)
+
+    @field_validator("variance_reason")
+    @classmethod
+    def _val_variance_reason(cls, v: Any) -> str | None:
+        return pydantic_optional_str(v)
 
 
 class StockTransferReceive(BaseModel):

@@ -1,13 +1,21 @@
 """Schema Pydantic untuk Autentikasi & Profil Pengguna Aktif (FR-01)."""
 
 from datetime import datetime
+from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from app.core.validation import pydantic_required_str
 
 
 class LoginRequest(BaseModel):
     username: str = Field(..., min_length=1, max_length=64)
     password: str = Field(..., min_length=1, max_length=255)
+
+    @field_validator("username")
+    @classmethod
+    def _clean_username(cls, v: Any) -> str:
+        return pydantic_required_str(v, label="Username")
 
 
 class RefreshTokenRequest(BaseModel):
@@ -21,6 +29,13 @@ class LogoutRequest(BaseModel):
 class ChangePasswordRequest(BaseModel):
     current_password: str = Field(..., min_length=1, max_length=255)
     new_password: str = Field(..., min_length=8, max_length=255)
+
+    @field_validator("new_password")
+    @classmethod
+    def _non_blank_new_password(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Kata sandi baru tidak boleh hanya berisi spasi.")
+        return v
 
 
 class TokenOut(BaseModel):

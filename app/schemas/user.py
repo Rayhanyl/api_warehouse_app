@@ -1,8 +1,17 @@
 """Schema Pydantic untuk Manajemen Pengguna, Role/Permission, dan Penugasan Gudang (Bagian 3 PRD)."""
 
 from datetime import datetime
+from typing import Any
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from app.core.validation import (
+    pydantic_optional_non_blank_str,
+    pydantic_required_str,
+    pydantic_validate_email,
+    pydantic_validate_positive_id_list,
+    pydantic_validate_username,
+)
 
 
 class UserCreate(BaseModel):
@@ -14,6 +23,33 @@ class UserCreate(BaseModel):
     is_active: bool = True
     warehouse_ids: list[int] = Field(default_factory=list)
 
+    @field_validator("username")
+    @classmethod
+    def _val_username(cls, v: Any) -> str:
+        return pydantic_validate_username(v)
+
+    @field_validator("email")
+    @classmethod
+    def _val_email(cls, v: Any) -> str:
+        return pydantic_validate_email(v)
+
+    @field_validator("password")
+    @classmethod
+    def _val_password(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Kata sandi tidak boleh hanya berisi spasi.")
+        return v
+
+    @field_validator("full_name")
+    @classmethod
+    def _val_full_name(cls, v: Any) -> str:
+        return pydantic_required_str(v, label="Nama lengkap")
+
+    @field_validator("warehouse_ids")
+    @classmethod
+    def _val_warehouse_ids(cls, v: list[int]) -> list[int]:
+        return pydantic_validate_positive_id_list(v, label="Daftar gudang") or []
+
 
 class UserUpdate(BaseModel):
     email: str | None = Field(default=None, min_length=3, max_length=255)
@@ -21,6 +57,23 @@ class UserUpdate(BaseModel):
     role_id: int | None = Field(default=None, gt=0)
     is_active: bool | None = None
     password: str | None = Field(default=None, min_length=8, max_length=255)
+
+    @field_validator("email")
+    @classmethod
+    def _val_email(cls, v: Any) -> str | None:
+        return pydantic_validate_email(v)
+
+    @field_validator("full_name")
+    @classmethod
+    def _val_full_name(cls, v: Any) -> str | None:
+        return pydantic_optional_non_blank_str(v, label="Nama lengkap")
+
+    @field_validator("password")
+    @classmethod
+    def _val_password(cls, v: str | None) -> str | None:
+        if v is not None and not v.strip():
+            raise ValueError("Kata sandi tidak boleh hanya berisi spasi.")
+        return v
 
     @model_validator(mode="after")
     def _ensure_non_empty_patch(self) -> "UserUpdate":
@@ -48,6 +101,11 @@ class UserOut(BaseModel):
 
 class UserWarehouseSet(BaseModel):
     warehouse_ids: list[int] = Field(default_factory=list)
+
+    @field_validator("warehouse_ids")
+    @classmethod
+    def _val_warehouse_ids(cls, v: list[int]) -> list[int]:
+        return pydantic_validate_positive_id_list(v, label="Daftar gudang") or []
 
 
 class UserWarehouseOut(BaseModel):

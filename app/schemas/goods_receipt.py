@@ -6,6 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.core.validation import pydantic_optional_str, pydantic_validate_decimal_qty
 from app.schemas.common import DecimalStr
 
 
@@ -17,10 +18,13 @@ class GRLineInput(BaseModel):
 
     @field_validator("qty_received", mode="before")
     @classmethod
-    def _reject_float_qty(cls, v: Any) -> Any:
-        if isinstance(v, float):
-            raise ValueError("Kuantitas tidak boleh bertipe float; gunakan string desimal atau bilangan bulat.")
-        return v
+    def _validate_qty_received(cls, v: Any) -> Decimal:
+        return pydantic_validate_decimal_qty(v, label="Jumlah diterima", allow_zero=False)
+
+    @field_validator("notes")
+    @classmethod
+    def _val_notes(cls, v: Any) -> str | None:
+        return pydantic_optional_str(v)
 
 
 class GRLineOut(BaseModel):

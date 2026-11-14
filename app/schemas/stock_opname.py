@@ -6,15 +6,12 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.core.validation import (
+    pydantic_optional_str,
+    pydantic_required_str,
+    pydantic_validate_decimal_qty,
+)
 from app.schemas.common import DecimalStr
-
-
-def _reject_float(v: Any) -> Any:
-    if isinstance(v, float):
-        raise ValueError(
-            "Kuantitas tidak boleh bertipe float; gunakan string desimal atau bilangan bulat."
-        )
-    return v
 
 
 class StockOpnameCreate(BaseModel):
@@ -22,11 +19,21 @@ class StockOpnameCreate(BaseModel):
     location_id: int | None = Field(default=None, gt=0)
     notes: str | None = Field(default=None, max_length=1000)
 
+    @field_validator("notes")
+    @classmethod
+    def _val_notes(cls, v: Any) -> str | None:
+        return pydantic_optional_str(v)
+
 
 class StockOpnameUpdate(BaseModel):
     location_id: int | None = Field(default=None, gt=0)
     clear_location: bool = False
     notes: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("notes")
+    @classmethod
+    def _val_notes(cls, v: Any) -> str | None:
+        return pydantic_optional_str(v)
 
     @model_validator(mode="after")
     def _ensure_non_empty_patch(self) -> "StockOpnameUpdate":
@@ -44,8 +51,13 @@ class StockOpnameCountLineInput(BaseModel):
 
     @field_validator("qty_physical", mode="before")
     @classmethod
-    def _reject_float_qty(cls, v: Any) -> Any:
-        return _reject_float(v)
+    def _validate_qty_physical(cls, v: Any) -> Decimal:
+        return pydantic_validate_decimal_qty(v, label="Jumlah fisik", allow_zero=True)
+
+    @field_validator("notes")
+    @classmethod
+    def _val_notes(cls, v: Any) -> str | None:
+        return pydantic_optional_str(v)
 
 
 class StockOpnameCountRequest(BaseModel):
@@ -54,6 +66,11 @@ class StockOpnameCountRequest(BaseModel):
 
 class StockOpnameRejectRequest(BaseModel):
     rejection_reason: str = Field(..., min_length=1, max_length=500)
+
+    @field_validator("rejection_reason")
+    @classmethod
+    def _val_rejection_reason(cls, v: Any) -> str:
+        return pydantic_required_str(v, label="Alasan penolakan")
 
 
 class StockOpnameLineOut(BaseModel):

@@ -18,6 +18,13 @@ from app.core.exceptions import (
     NotFoundError,
     ValidationDomainError,
 )
+from app.core.validation import (
+    FOUR_PLACES,
+    MAX_QTY,
+    ZERO,
+    clean_optional_str as _clean_text,
+    normalize_decimal_qty,
+)
 from app.repositories import inventory_repo, opname_repo, warehouse_repo
 from app.services import (
     access_service,
@@ -29,9 +36,6 @@ from app.services import (
 from app.utils.enums import DocType, MovementType, OpnameStatus, ReferenceType
 from app.utils.pagination import build_order_by, normalize_pagination
 
-FOUR_PLACES = Decimal("0.0001")
-ZERO = Decimal("0.0000")
-MAX_QTY = Decimal("99999999999999.9999")
 ENTITY_TYPE = "stock_opnames"
 
 OPNAME_SORT_COLUMNS: dict[str, str] = {
@@ -49,13 +53,6 @@ CANCELLABLE_OPNAME_STATUSES: frozenset[str] = frozenset(
 )
 
 
-def _clean_text(value: str | None) -> str | None:
-    if value is None:
-        return None
-    stripped = value.strip()
-    return stripped or None
-
-
 def is_location_frozen(
     conn: Connection[dict[str, Any]],
     *,
@@ -70,42 +67,7 @@ def is_location_frozen(
 
 def _normalize_non_negative_qty(value: Any, *, field_name: str = "qty_physical") -> Decimal:
     """Memastikan qty_physical bertipe Decimal >= 0 dengan maksimum 4 angka di belakang koma (FR-07, PRD 6.9)."""
-    if isinstance(value, float):
-        raise ValidationDomainError(
-            f"Field '{field_name}' harus bertipe Decimal, tidak boleh float.",
-            details={"field": field_name, "value": str(value)},
-        )
-    if not isinstance(value, Decimal):
-        try:
-            value = Decimal(str(value))
-        except Exception as exc:
-            raise ValidationDomainError(
-                f"Format angka desimal pada '{field_name}' tidak valid.",
-                details={"field": field_name, "value": str(value)},
-            ) from exc
-
-    if not value.is_finite():
-        raise ValidationDomainError(
-            f"Field '{field_name}' harus berupa angka yang valid.",
-            details={"field": field_name, "value": str(value)},
-        )
-    quantized = value.quantize(FOUR_PLACES)
-    if quantized != value:
-        raise ValidationDomainError(
-            f"Field '{field_name}' maksimal memiliki 4 angka di belakang koma.",
-            details={"field": field_name, "value": str(value)},
-        )
-    if quantized < ZERO:
-        raise ValidationDomainError(
-            f"Field '{field_name}' tidak boleh bernilai negatif (harus >= 0).",
-            details={"field": field_name, "value": str(quantized)},
-        )
-    if quantized > MAX_QTY:
-        raise ValidationDomainError(
-            f"Field '{field_name}' melebihi batas maksimum NUMERIC(18,4) ({MAX_QTY}).",
-            details={"field": field_name, "value": str(quantized), "max_qty": str(MAX_QTY)},
-        )
-    return quantized
+    return normalize_decimal_qty(value, field_name=field_name, allow_zero=True)
 
 
 def _validate_warehouse_and_optional_location(
