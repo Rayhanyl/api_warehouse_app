@@ -80,6 +80,7 @@ Modul ini mengelola struktur fisik penyimpanan barang dalam dua tingkatan:
 * **Autentikasi & Permission:** Bearer Token, `master:read` + **Warehouse Scoping `(g)`**
 * **Query Parameter:**
   * `limit` (`1..200`, default `50`), `offset` (`>= 0`, default `0`)
+  * `warehouse_id` (integer, opsional) — Filter eksplisit satu gudang aktif (tetap divalidasi terhadap penugasan pengguna untuk non-admin kecuali jika `purpose=transfer_destination`)
   * `is_active` (boolean, opsional)
   * `purpose` (string, opsional) — Nilai: `"transfer_destination"`. Mengembalikan gudang-gudang aktif untuk tujuan transfer tanpa dibatasi oleh penugasan user saat ini.
   * `search` (string, opsional) — Pencarian `ILIKE` pada `code`, `name`, atau `address`.

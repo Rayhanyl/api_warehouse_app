@@ -65,7 +65,7 @@ Seluruh endpoint di modul ini dapat dipakai oleh **semua peran**. Tidak ada *per
 | Token | Format | Umur | Penyimpanan di server | Cara pakai |
 | --- | --- | --- | --- | --- |
 | **Access Token** | JWT HS256, klaim `sub` (id pengguna, string), `jti`, `iat`, `exp` | `ACCESS_TOKEN_MINUTES` (bawaan **15 menit**) | Tidak disimpan (*stateless*) | Header `Authorization: Bearer <access_token>` |
-| **Refresh Token** | String acak opak (`secrets.token_urlsafe(48)`) | `REFRESH_TOKEN_DAYS` (bawaan **7 hari**) | Hanya **hash SHA-256** di `refresh_tokens.token_hash` | Dikirim di *body* JSON ke `/auth/refresh` dan `/auth/logout` |
+| **Refresh Token** | String acak opak (`secrets.token_urlsafe(48)`) | `REFRESH_TOKEN_DAYS` (bawaan **7 hari**) | Hanya **hash SHA-256** di `refresh_tokens.token_hash` | Dikirim otomatis via cookie `HttpOnly` (`Path=/api/v1/auth`, `SameSite=Lax`, `Secure` sesuai `COOKIE_SECURE`), dengan fallback body JSON opsional ke `/auth/refresh` dan `/auth/logout` untuk klien API/CLI |
 
 Kata sandi di-*hash* dengan **Argon2id** (`argon2-cffi`).
 
@@ -106,10 +106,10 @@ Pemeriksaan penugasan gudang dilakukan di lapisan **service** oleh [`access_serv
 
 | Method | Endpoint | Fungsi | Auth | Permission |
 | --- | --- | --- | --- | --- |
-| POST | `/api/v1/auth/login` | Login dan menerbitkan pasangan token | Tidak | – |
-| POST | `/api/v1/auth/refresh` | Merotasi *Refresh Token* dan menerbitkan *Access Token* baru | Tidak (memakai *Refresh Token* di body) | – |
-| POST | `/api/v1/auth/logout` | Mencabut *Refresh Token* yang dipakai | Bearer | – (cukup terautentikasi) |
-| GET | `/api/v1/auth/me` | Profil pengguna aktif beserta permission & gudang | Bearer | – (cukup terautentikasi) |
+| POST | `/api/v1/auth/login` | Login, set cookie `HttpOnly` `refresh_token`, dan terbitkan pasangan token | Tidak | – |
+| POST | `/api/v1/auth/refresh` | Merotasi *Refresh Token* (via cookie `HttpOnly` atau body JSON opsional) dan menerbitkan *Access Token* baru | Tidak (memakai cookie/body *Refresh Token*) | – |
+| POST | `/api/v1/auth/logout` | Mencabut *Refresh Token* dan menghapus cookie sesi | Bearer | – (cukup terautentikasi) |
+| GET | `/api/v1/auth/me` | Profil pengguna aktif beserta permission, status akses global, & daftar gudang | Bearer | – (cukup terautentikasi) |
 | POST | `/api/v1/auth/change-password` | Mengganti kata sandi sendiri | Bearer | – (cukup terautentikasi) |
 
 ---
@@ -193,15 +193,15 @@ Contoh 429:
 
 ### POST `/api/v1/auth/refresh` — Rotasi Refresh Token
 
-Menukar *Refresh Token* yang valid dengan pasangan token baru. Token lama otomatis dicabut.
+Menukar *Refresh Token* yang valid dengan pasangan token baru dan menyetel cookie `HttpOnly` `refresh_token` terbaru. Token lama otomatis dicabut.
 
-**Autentikasi:** tidak memakai header Bearer; *Refresh Token* dikirim di body.
+**Autentikasi:** tidak memakai header Bearer; *Refresh Token* dibaca dari payload body `refresh_token` (prioritas untuk klien API/CLI) atau otomatis dari cookie `HttpOnly` `refresh_token` yang dikirim peramban.
 
-**Request body** (`RefreshTokenRequest`)
+**Request body opsional** (`RefreshTokenRequest`)
 
 | Field | Tipe | Wajib | Validasi |
 | --- | --- | --- | --- |
-| `refresh_token` | string | Ya | Minimal 1 karakter. |
+| `refresh_token` | string \| null | Opsional (wajib jika cookie tidak dikirim) | Minimal 1 karakter bila dikirim di body. |
 
 **Contoh request**
 
@@ -209,38 +209,39 @@ Menukar *Refresh Token* yang valid dengan pasangan token baru. Token lama otomat
 { "refresh_token": "vPNPkAVta_wUOHY3XQ84nc3UB33Bw-2o_xO8ZamuJovx..." }
 ```
 
-**Response 200** — format sama dengan [`/auth/login`](#post-apiv1authlogin--login) (`TokenOut`), berisi `refresh_token` **baru**.
+**Response 200** — format sama dengan [`/auth/login`](#post-apiv1authlogin--login) (`TokenOut`), berisi `refresh_token` **baru** beserta header `Set-Cookie: refresh_token=...; HttpOnly; SameSite=Lax; Path=/api/v1/auth`.
 
 **Kemungkinan error**
 
 | Status | Kode | Pesan | Penyebab & efek |
 | --- | --- | --- | --- |
+| 401 | `AUTH_TOKEN_INVALID` | `Refresh token tidak disediakan.` | Baik body maupun cookie `refresh_token` kosong/tidak dikirim. |
 | 401 | `AUTH_TOKEN_INVALID` | `Refresh token tidak valid.` | Hash token tidak ditemukan. |
 | 401 | `AUTH_TOKEN_INVALID` | `Refresh token sudah dicabut; seluruh sesi aktif telah dihentikan demi keamanan.` | **Deteksi penggunaan ulang**: token sudah dicabut sebelumnya. **Seluruh** *Refresh Token* aktif milik pengguna dicabut dan dicatat `AUTH_REFRESH_TOKEN_REUSE_DETECTED`. |
 | 401 | `AUTH_TOKEN_INVALID` | `Refresh token sudah kedaluwarsa.` | `expires_at` sudah lewat; token ditandai dicabut dan dicatat `AUTH_TOKEN_REFRESH_FAILED` (`reason = TOKEN_EXPIRED`). |
 | 401 | `AUTH_TOKEN_INVALID` | `Akun pengguna sudah tidak aktif.` | Pemilik token nonaktif; seluruh token aktif pengguna dicabut dan dicatat `AUTH_TOKEN_REFRESH_FAILED` (`reason = USER_INACTIVE`). |
-| 422 | `VALIDATION_ERROR` | – | `refresh_token` kosong/hilang. |
+| 422 | `VALIDATION_ERROR` | – | Format payload JSON tidak valid. |
 
 **Aturan bisnis**
 
 * Baris token dikunci `FOR UPDATE`, sehingga dua permintaan *refresh* bersamaan dengan token yang sama tidak bisa sama-sama berhasil.
 * Saat rotasi: token baru disimpan, token lama diisi `revoked_at = now` dan `replaced_by_id = <id token baru>`.
-* Audit: `AUTH_TOKEN_REFRESHED` dengan `old_values.previous_token_id` dan `new_values.new_token_id`.
-* Diuji di `test_ac11_refresh_token_rotation_reuse_detection_and_logout` (**AC-11**).
+* **Kebersihan Audit Log (Tahap 26):** Rotasi *refresh token* rutin yang sukses **tidak** menulis entri audit log agar tidak membanjiri jejak aktivitas; insiden keamanan atau kegagalan (`AUTH_TOKEN_REFRESH_FAILED`, `AUTH_REFRESH_TOKEN_REUSE_DETECTED`) tetap dicatat dengan `status=FAILED`.
+* Diuji di `test_ac11_refresh_token_rotation_reuse_detection_and_logout` dan `test_ac11_cookie_httponly_refresh_rotation_and_cleanup` (**AC-11**).
 
 ---
 
 ### POST `/api/v1/auth/logout` — Logout
 
-Mencabut *Refresh Token* yang dipakai pada sesi ini.
+Mencabut *Refresh Token* yang dipakai pada sesi ini dan menghapus cookie `refresh_token` di peramban (`delete_cookie`).
 
 **Autentikasi:** Bearer *Access Token* wajib. Tidak memerlukan *permission* khusus.
 
-**Request body** (`LogoutRequest`)
+**Request body opsional** (`LogoutRequest`)
 
 | Field | Tipe | Wajib | Validasi |
 | --- | --- | --- | --- |
-| `refresh_token` | string | Ya | Minimal 1 karakter; harus milik pengguna pada *Access Token*. |
+| `refresh_token` | string \| null | Opsional (jika kosong, dibaca dari cookie `HttpOnly` `refresh_token`) | Minimal 1 karakter bila dikirim di body; harus milik pengguna pada *Access Token*. |
 
 **Response 200** (`MessageOut`)
 
@@ -287,6 +288,15 @@ Mengembalikan profil pengguna pemilik *Access Token*, termasuk daftar permission
     "po:read", "stock:read", "transfer:create", "transfer:read", "transfer:receive", "transfer:ship"
   ],
   "warehouse_ids": [1],
+  "has_all_warehouse_access": false,
+  "warehouses": [
+    {
+      "id": 1,
+      "code": "WH-JKT-01",
+      "name": "Gudang Utama Jakarta",
+      "is_active": true
+    }
+  ],
   "last_login_at": "2026-10-21T14:13:09.068883+07:00",
   "created_at": "2026-10-21T14:13:08.757507+07:00",
   "updated_at": "2026-10-21T14:13:08.757507+07:00"
@@ -296,7 +306,9 @@ Mengembalikan profil pengguna pemilik *Access Token*, termasuk daftar permission
 | Field | Keterangan |
 | --- | --- |
 | `permissions` | Kode permission milik peran pengguna, diurutkan alfabetis. |
-| `warehouse_ids` | ID gudang di `user_warehouses`. Untuk *Super Admin* biasanya kosong karena tidak dibatasi penugasan. |
+| `warehouse_ids` | ID gudang aktif di `user_warehouses`. Untuk *Super Admin*/*Auditor* dapat berisi seluruh ID gudang atau dikombinasikan dengan `has_all_warehouse_access = true`. |
+| `has_all_warehouse_access` | `true` bagi *Super Admin* dan *Auditor* (*unscoped*), `false` untuk peran operasional terikat gudang. |
+| `warehouses` | Daftar ringkas objek `WarehouseRefOut` (`id`, `code`, `name`, `is_active`) yang dapat diakses pengguna untuk mengisi selektor cakupan gudang global di frontend. |
 
 **Kemungkinan error**
 

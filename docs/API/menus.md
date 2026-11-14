@@ -8,7 +8,7 @@
 | Status | Diimplementasikan dan diuji melalui AC-14 |
 | Tujuan | Menyediakan struktur navigasi frontend dari database dan menyaringnya berdasarkan permission pengguna aktif. |
 | Dependensi | JWT/authentication, RBAC (`permissions`), `menus`, dan `audit_logs`. |
-| Sumber utama | `app/api/routes/menus.py`, `app/schemas/menu.py`, `app/services/menu_service.py`, `app/repositories/menu_repo.py`, dan migrasi `009_create_menu_tables.sql`. |
+| Sumber utama | `app/api/routes/menus.py`, `app/schemas/menu.py`, `app/services/menu_service.py`, `app/repositories/menu_repo.py`, serta migrasi `009_create_menu_tables.sql`, `013_consolidate_stock_monitoring_menu.sql`, dan `015_create_document_templates_table.sql`. |
 
 Menu hanya menyediakan metadata navigasi seperti label, path, ikon, urutan, parent, dan permission yang diperlukan. Endpoint backend tetap memeriksa permission masing-masing; menyembunyikan menu di frontend bukan kontrol otorisasi.
 
@@ -257,15 +257,18 @@ Tabel `menus` dibuat di `db/migrations/009_create_menu_tables.sql`. `parent_id` 
 
 Migrasi mengisi menu awal untuk Dashboard, Master Data, Stok & Buku Besar, Pengadaan & Penerimaan, Operasional Gudang, dan Administrasi & Keamanan beserta submenu modul. Permission pada submenu berasal dari permission RBAC yang sudah tersedia. Seed menggunakan `ON CONFLICT (code) DO NOTHING`.
 
-Khusus untuk modul persediaan, navigasi diselaraskan dengan arsitektur **UX Opsi B (Monitoring Saldo Stok Terpadu)**:
+Khusus untuk modul persediaan, navigasi diselaraskan melalui migrasi `013_consolidate_stock_monitoring_menu.sql` dengan arsitektur **UX Opsi B (Monitoring Saldo Stok Terpadu)**:
 - Menu sidebar disederhanakan menjadi **satu menu utama root**:
-  - `code`: `stock_monitoring` (atau `inventory`)
+  - `code`: `inventory`
   - `name`: `Monitoring Saldo Stok`
   - `path`: `/stock`
-  - `icon`: `boxes` (atau `layers`)
+  - `icon`: `boxes`
   - `permission_code`: `stock:read`
-  - `parent_id`: `null` (tanpa submenu dropdown di sidebar)
+  - `parent_id`: `null` (menonaktifkan submenu `stock_by_location`, `stock_by_warehouse`, `stock_summary`, dan `stock_ledger`)
 - Seluruh 5 dimensi visualisasi persediaan (*Per lokasi*, *Per gudang*, *Ringkasan*, *Dalam perjalanan*, dan *Buku besar*) dikonsolidasikan langsung di dalam satu halaman terpadu melalui *tab segmented navigation* horizontal di frontend. Tab *Buku besar* terproteksi dinamis oleh permission `ledger:read`.
+
+Selain itu, migrasi `015_create_document_templates_table.sql` menambahkan submenu administrasi berikut di bawah grup `administration`:
+- `code`: `admin_document_templates`, `name`: `Template Dokumen`, `path`: `/admin/document-templates`, `icon`: `printer`, `sort_order`: `35`, `permission_code`: `user:manage`.
 
 ## 7. Catatan dan Status Verifikasi
 

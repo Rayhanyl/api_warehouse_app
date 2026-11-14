@@ -5,8 +5,8 @@
 **Rujukan Sumber Kebenaran:**
 - Backend Schemas: `app/schemas/*.py`
 - Backend Services: `app/services/*.py`
-- Database Migrations: `db/migrations/001_*.sql` s.d. `010_harden_constraints_and_indexes.sql`
-- Kontrak API & PRD: `docs/CORE/PRD_GENERAL.md`, `docs/CORE/PRD_FRONTEND.md`, `docs/CORE/API_CONTRACT.md`
+- Database Migrations: `db/migrations/001_*.sql` s.d. `015_create_document_templates_table.sql`
+- Kontrak API & PRD: `docs/core/PRD_GENERAL.md`, `docs/core/PRD_FRONTEND.md`, `docs/core/API_CONTRACT.md`
 
 ---
 

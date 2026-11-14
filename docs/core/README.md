@@ -22,7 +22,7 @@ padanya dan tidak boleh menambah business requirement.
 | [security-server-and-app.md](security-server-and-app.md) | Approved / standar keamanan | Hardening SSH, firewall UFW, isolasi DB, rotasi rahasia, audit log, dan backup otomatis |
 | [telegram-monitoring-guide.md](telegram-monitoring-guide.md) | Approved / panduan observabilitas | Notifikasi real-time error aplikasi (HTTP 500) & status container Docker via Telegram |
 | [API_CONTRACT.md](API_CONTRACT.md) | Ringkasan kontrak | Batas kontrak API dan rujukan detail aktual |
-| [PRD Modular](PRD%20JejakStok%20%E2%80%94%20Sistem%20Manajemen%20Gudang%20%28Modular%29.md) | Draft / perlu konfirmasi | Usulan modular dan multi-tenant; bukan scope aktif |
+| [PRD_AUDIT_AND_RESTRUCTURING_REPORT.md](PRD_AUDIT_AND_RESTRUCTURING_REPORT.md) | Laporan audit historis | Catatan restrukturisasi dan integrasi PRD v2.0 |
 | [DOCUMENTATION_AUDIT.md](DOCUMENTATION_AUDIT.md) | Audit | Temuan, asumsi, dan hal belum terverifikasi |
 | [SSOT_MAPPING.md](SSOT_MAPPING.md) | Governance | Ownership dan pemetaan sumber kebenaran |
 

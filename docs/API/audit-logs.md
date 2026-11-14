@@ -36,7 +36,7 @@ Berdasarkan seluruh kode layanan yang telah diimplementasikan (`auth_service.py`
 | `AUTH_LOGIN_SUCCESS` | `users` | Login berhasil (`POST /api/v1/auth/login`) | ID pengguna |
 | `AUTH_LOGIN_FAILED` | `users` | Login gagal (username tak dikenal, akun nonaktif, akun sedang terkunci, atau password salah ke-1 s.d. ke-4) | `null` bila username tak dikenal; ID pengguna bila dikenali |
 | `AUTH_LOGIN_LOCKED` | `users` | Kegagalan login ke-5 berturut-turut yang memicu penguncian akun 15 menit | ID pengguna |
-| `AUTH_TOKEN_REFRESHED` | `refresh_tokens` | Rotasi *Refresh Token* berhasil (`POST /api/v1/auth/refresh`) | ID pengguna |
+| `AUTH_TOKEN_REFRESHED` *(historis)* | `refresh_tokens` | Tidak lagi dicatat pada rotasi rutin sejak Tahap 26 untuk mencegah banjir log; data lama disaring kecuali `include_technical=true` | ID pengguna |
 | `AUTH_TOKEN_REFRESH_FAILED` | `refresh_tokens` | Rotasi *Refresh Token* ditolak (`TOKEN_EXPIRED`, `TOKEN_NOT_FOUND`, atau `USER_INACTIVE`) — `status=FAILED` | ID pengguna (atau `null` bila token tak dikenal) |
 | `AUTH_REFRESH_TOKEN_REUSE_DETECTED` | `refresh_tokens` | Penggunaan ulang *Refresh Token* yang sudah dicabut (mencabut seluruh sesi aktif user) — `status=FAILED` | ID pengguna |
 | `AUTH_LOGOUT` | `refresh_tokens` | Logout (`POST /api/v1/auth/logout`) | ID pengguna |
@@ -58,6 +58,7 @@ Berdasarkan seluruh kode layanan yang telah diimplementasikan (`auth_service.py`
 | `GR_CREATED` / `GR_UPDATED` / `GR_POSTED` / `GR_CANCELLED` | `goods_receipts` | Pembuatan, revisi `DRAFT`, posting, atau pembatalan Goods Receipt (`/api/v1/goods-receipts`) | ID pemanggil |
 | `TRANSFER_CREATED` / `TRANSFER_UPDATED` / `TRANSFER_APPROVED` / `TRANSFER_SHIPPED` / `TRANSFER_RECEIVED` / `TRANSFER_CANCELLED` | `stock_transfers` | Pembuatan, revisi `DRAFT`, persetujuan, pengiriman, penerimaan, atau pembatalan Transfer Stok (`/api/v1/stock-transfers`) | ID pemanggil |
 | `OPNAME_CREATED` / `OPNAME_UPDATED` / `OPNAME_STARTED` / `OPNAME_COUNTED` / `OPNAME_SUBMITTED` / `OPNAME_APPROVED` / `OPNAME_REJECTED` / `OPNAME_CANCELLED` | `stock_opnames` | Pembuatan, revisi `DRAFT`, mulai (*snapshot*), input hitung fisik, ajukan, setujui, tolak, atau batalkan sesi Stock Opname (`/api/v1/stock-opnames`) | ID pemanggil |
+| `UPDATE` / `UPLOAD_LOGO` | `document_templates` | Pembaruan template dokumen cetak (`PUT /api/v1/document-templates/{document_type}`) atau unggah logo perusahaan (`POST /api/v1/document-templates/upload-logo`) | ID pemanggil (*Super Admin*) |
 | `<DOMAIN_ERROR_CODE>` (mis. `PERMISSION_DENIED`, `AUTH_TOKEN_INVALID`, `INVALID_STATE_TRANSITION`) / `VALIDATION_ERROR` | Sesuai path endpoint (`infer_entity_from_path`) | Kegagalan domain pada request mutasi (`POST`/`PUT`/`PATCH`/`DELETE`) atau error otentikasi/otorisasi (`401`/`403`), serta error validasi HTTP `422` pada request mutasi — dicatat *out-of-band* dengan `status=FAILED` | ID pengguna terautentikasi (atau `null` bila anonim/401) |
 
 ---
@@ -98,6 +99,8 @@ Mengambil daftar jejak audit secara kronologis beserta `username` pelaku (hasil 
 | `entity_type` | string | Tidak | `null` | Filter pencocokan persis jenis entitas (mis. `users`, `roles`, `user_warehouses`, `refresh_tokens`). |
 | `entity_id` | string | Tidak | `null` | Filter ID entitas yang terdampak (disimpan sebagai string pada kolom `entity_id`). |
 | `status` | string | Tidak | `null` | Filter status aktivitas: `"SUCCESS"` atau `"FAILED"` (case-insensitive dinormalisasi ke uppercase). |
+| `category` | string | Tidak | `null` | Filter kelompok log tingkat tinggi: `"business"` (aktivitas bisnis gudang & master), `"security"` (autentikasi & RBAC), atau `"failed"` (aktivitas gagal). |
+| `include_technical` | boolean | Tidak | `false` | Jika `false`, menyembunyikan noise teknis historis (seperti `AUTH_TOKEN_REFRESHED`). Set `true` untuk menampilkan seluruh entri mentah. |
 | `date_from` | datetime (ISO 8601) | Tidak | `null` | Batas bawah waktu kejadian (`created_at >= date_from`). |
 | `date_to` | datetime (ISO 8601) | Tidak | `null` | Batas atas waktu kejadian (`created_at <= date_to`). |
 | `search` | string | Tidak | `null` | Pencarian substring (*case-insensitive* `ILIKE`) pada `u.username`, `a.action`, `a.entity_type`, `a.entity_id`, `a.ip_address`, dan `a.request_id`. |

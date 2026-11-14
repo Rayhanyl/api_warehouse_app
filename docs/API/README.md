@@ -1,6 +1,6 @@
 # Dokumentasi API — Warehouse Management System (WMS)
 
-Dokumentasi teknis REST API untuk aplikasi **Warehouse Management System (WMS)** berbasis **Python (FastAPI)** dan **PostgreSQL** (`psycopg` 3 tanpa ORM). Seluruh isi dokumentasi ini disusun berdasarkan **implementasi kode aktual**, **skema migrasi SQL (`001`–`009`)**, **pengujian otomatis (`pytest`)**, serta dokumen acuan [PRD_GENERAL.md](../CORE/PRD_GENERAL.md).
+Dokumentasi teknis REST API untuk aplikasi **Warehouse Management System (WMS)** berbasis **Python (FastAPI)** dan **PostgreSQL** (`psycopg` 3 tanpa ORM). Seluruh isi dokumentasi ini disusun berdasarkan **implementasi kode aktual**, **skema migrasi SQL (`001`–`015`)**, **pengujian otomatis (`pytest`)**, serta dokumen acuan [PRD_GENERAL.md](../core/PRD_GENERAL.md).
 
 ---
 
@@ -82,36 +82,37 @@ Khusus error validasi input (`VALIDATION_ERROR`, HTTP `422`), `details` menyerta
 
 ## 2. Daftar Modul & Status Implementasi
 
-Sesuai pentahapan di [`docs/CORE/FOLDER_STRUCTURE.MD`](../CORE/FOLDER_STRUCTURE.MD), berikut status setiap modul API di kode sumber saat ini:
+Sesuai pentahapan di [`docs/core/FOLDER_STRUCTURE.MD`](../core/FOLDER_STRUCTURE.MD), berikut status setiap modul API di kode sumber saat ini:
 
 | Modul / Domain Bisnis | Dokumen API | Status Implementasi | Ringkasan Fungsi |
 | --- | --- | --- | --- |
 | **Health Check** | [health.md](health.md) | ✅ **Aktif** (2 endpoint) | Pemeriksaan status layanan API dan konektivitas pool PostgreSQL. |
-| **Autentikasi & Otorisasi** | [authentication.md](authentication.md) | ✅ **Aktif** (5 endpoint) | Login JWT, rotasi & deteksi penggunaan ulang *Refresh Token*, penguncian akun, logout, profil `/me`, dan ganti kata sandi. |
+| **Autentikasi & Otorisasi** | [authentication.md](authentication.md) | ✅ **Aktif** (5 endpoint) | Login JWT, cookie `HttpOnly` Refresh Token, rotasi & deteksi reuse, penguncian akun, logout, profil `/me` (incl. `warehouses` & `has_all_warehouse_access`), dan ganti kata sandi. |
 | **Pengguna, RBAC & Penugasan Gudang** | [users.md](users.md) | ✅ **Aktif** (9 endpoint) | CRUD pengguna, penonaktifan akun, daftar & pengaturan *role/permission*, serta penugasan gudang (*Warehouse Scoping*). |
-| **Menu Navigasi Dinamis** | [menus.md](menus.md) | ✅ **Aktif** (5 endpoint) | Pohon menu terfilter permission pengguna dan administrasi menu tanpa hard delete (FR-01, AC-14). |
-| **Master Data** (`master.py`) | [master-data.md](master-data.md) | ✅ **Aktif** (16 endpoint) | CRUD Kategori, Satuan Ukur (UoM + `allow_decimal`), Pemasok, dan Barang (SKU + Barcode unik), beserta perlindungan `ENTITY_IN_USE` dan imutabilitas SKU/UoM dasar (FR-02, AC-33). |
-| **Gudang & Lokasi** (`warehouses.py`) | [warehouses.md](warehouses.md) | ✅ **Aktif** (10 endpoint) | CRUD Gudang (`allow_negative_stock`) & Lokasi Penyimpanan (*Bin/Rack*) dengan penegakan *Warehouse Scoping* (`location:manage`) dan perlindungan `ENTITY_IN_USE` (FR-02). |
-| **Audit Log** | [audit-logs.md](audit-logs.md) | ✅ **Aktif** (1 endpoint) | Pembacaan jejak audit *append-only* dengan filter pengguna, aksi, entitas, dan rentang tanggal. |
+| **Menu Navigasi Dinamis** | [menus.md](menus.md) | ✅ **Aktif** (5 endpoint) | Pohon menu terfilter permission pengguna dan administrasi menu tanpa hard delete (FR-01, AC-14, migrasi `009`, `013`, `015`). |
+| **Dashboard Operasional** (`dashboard.py`) | [dashboard.md](dashboard.md) | ✅ **Aktif** (1 endpoint) | Agregasi metrik stok real-time, antrean tugas tertunda, mutasi terkini, dan filter `?warehouse_id=` sesuai *warehouse scoping* pengguna (AC-38). |
+| **Master Data** (`master.py`) | [master-data.md](master-data.md) | ✅ **Aktif** (20 endpoint) | CRUD Kategori, Satuan Ukur (UoM + `allow_decimal`), Pemasok (+ template & import Excel), dan Barang (SKU + Barcode unik + template & import Excel), beserta perlindungan `ENTITY_IN_USE` dan imutabilitas SKU/UoM dasar (FR-02, AC-30, AC-31, AC-33). |
+| **Gudang & Lokasi** (`warehouses.py`) | [warehouses.md](warehouses.md) | ✅ **Aktif** (10 endpoint) | CRUD Gudang (`allow_negative_stock`) & Lokasi Penyimpanan (*Bin/Rack*) dengan filter `warehouse_id` & `purpose=transfer_destination`, penegakan *Warehouse Scoping*, dan perlindungan `ENTITY_IN_USE` (FR-02). |
+| **Audit Log** | [audit-logs.md](audit-logs.md) | ✅ **Aktif** (1 endpoint) | Pembacaan jejak audit *append-only* dengan filter pengguna, aksi, entitas, `status`, `category` (`business`/`security`/`failed`), `include_technical`, dan rentang tanggal (`014_enhance_audit_logs.sql`). |
 | **Stok & Buku Besar** (`stock.py`) | [stock-ledger.md](stock-ledger.md) | ✅ **Aktif** (6 path) | Baca saldo per lokasi, gudang, dan agregat lintas gudang (lengkap dengan informasi barcode produk); barang dalam perjalanan; serta Stock Movement Ledger (FR-03, FR-08). |
 | **Purchase Order** (`purchase_orders.py`) | [purchase-orders.md](purchase-orders.md) | ✅ **Aktif** (7 endpoint) | Pembuatan, revisi `DRAFT`, penerbitan, pembatalan, penutupan, daftar/detail PO, dan pemenuhan otomatis melalui GR (FR-04). |
 | **Goods Receipt** (`goods_receipts.py`) | [goods-receipts.md](goods-receipts.md) | ✅ **Aktif** (6 endpoint) | Penerimaan PO sebagai draft, revisi, posting stok/ledger dan pemenuhan PO, pembatalan, scan barcode penerimaan, serta cetak Bukti Penerimaan Barang / GRN (FR-05, AC-32, AC-33). |
 | **Transfer Stok** (`stock_transfers.py`) | [stock-transfers.md](stock-transfers.md) | ✅ **Aktif** (8 endpoint) | Draft, persetujuan, pengiriman, penerimaan final dengan pencatatan selisih, pembatalan, scan barcode transfer, serta cetak Surat Jalan fisik (FR-06, AC-32, AC-33). |
-| **Stock Opname** (`stock_opnames.py`) | [stock-opnames.md](stock-opnames.md) | ✅ **Aktif** (12 path/method) | Sesi opname per gudang/lokasi, snapshot dan pembekuan, input hitung fisik berbasis scan barcode produk/temuan, persetujuan/penolakan, serta penyesuaian stok (FR-07, AC-33). |
-| **Template Dokumen Cetak** (`document_templates.py`) | `/api/v1/document-templates` | ✅ **Aktif** (5 endpoint) | Pengaturan template dokumen cetak modular berbasis database (`GOODS_RECEIPT`, `STOCK_TRANSFER`, `PURCHASE_ORDER`), unggah & penyajian logo perusahaan, urutan bagian, kolom tabel, serta blok tanda tangan (Tahap 17). |
+| **Stock Opname** (`stock_opnames.py`) | [stock-opnames.md](stock-opnames.md) | ✅ **Aktif** (10 path/method) | Sesi opname per gudang/lokasi, snapshot dan pembekuan, input hitung fisik berbasis scan barcode produk/temuan, persetujuan/penolakan, serta penyesuaian stok (FR-07, AC-33). |
+| **Template Dokumen Cetak** (`document_templates.py`) | [document-templates.md](document-templates.md) | ✅ **Aktif** (5 endpoint) | Pengaturan template dokumen cetak modular berbasis database (`GOODS_RECEIPT`, `STOCK_TRANSFER`, `PURCHASE_ORDER`), unggah & penyajian logo perusahaan, urutan bagian, kolom tabel, serta blok tanda tangan (migrasi `015`). |
 
-> **Catatan:** Modul operasional M5–M7 (Goods Receipt, Transfer Stok, dan Stock Opname) sudah aktif.
+> **Catatan:** Seluruh 14 file router pada `app/api/routes/` (95 path/method) telah aktif dan teruji (`84` skenario `pytest` lulus).
 
 ---
 
-## 3. Ringkasan Endpoint Utama yang Didokumentasikan (87 entri)
+## 3. Ringkasan Endpoint Utama yang Didokumentasikan (95 entri)
 
 | # | Method | Endpoint | Fungsi | Auth | Permission | Dokumen |
 | :-: | --- | --- | --- | --- | --- | --- |
 | 1 | GET | `/health` | Pemeriksaan kesehatan layanan & koneksi DB | Tidak | – | [health.md](health.md) |
 | 2 | GET | `/api/v1/health` | Pemeriksaan kesehatan layanan (prefix v1) | Tidak | – | [health.md](health.md) |
 | 3 | POST | `/api/v1/auth/login` | Login pengguna & terbitkan pasangan token | Tidak | – | [authentication.md](authentication.md#post-apiv1authlogin--login) |
-| 4 | POST | `/api/v1/auth/refresh` | Rotasi *Refresh Token* & terbitkan token baru | Tidak (token di body) | – | [authentication.md](authentication.md#post-apiv1authrefresh--rotasi-refresh-token) |
+| 4 | POST | `/api/v1/auth/refresh` | Rotasi *Refresh Token* & terbitkan token baru | Tidak (cookie `HttpOnly` / body opsional) | – | [authentication.md](authentication.md#post-apiv1authrefresh--rotasi-refresh-token) |
 | 5 | POST | `/api/v1/auth/logout` | Cabut *Refresh Token* sesi saat ini | Bearer | – | [authentication.md](authentication.md#post-apiv1authlogout--logout) |
 | 6 | GET | `/api/v1/auth/me` | Ambil profil, permission, & gudang pengguna aktif | Bearer | – | [authentication.md](authentication.md#get-apiv1authme--profil-pengguna-aktif) |
 | 7 | POST | `/api/v1/auth/change-password` | Ganti kata sandi sendiri & cabut seluruh sesi | Bearer | – | [authentication.md](authentication.md#post-apiv1authchange-password--ganti-kata-sandi-sendiri) |
@@ -197,6 +198,12 @@ Sesuai pentahapan di [`docs/CORE/FOLDER_STRUCTURE.MD`](../CORE/FOLDER_STRUCTURE.
 | 87 | POST | `/api/v1/menus` | Buat menu navigasi | Bearer | `user:manage` | [menus.md](menus.md#43-membuat-menu) |
 | 88 | GET | `/api/v1/menus/{menu_id}` | Detail menu berdasarkan ID | Bearer | `user:manage` | [menus.md](menus.md#44-membaca-detail-menu) |
 | 89 | PATCH | `/api/v1/menus/{menu_id}` | Ubah atau nonaktifkan menu | Bearer | `user:manage` | [menus.md](menus.md#45-memperbarui-atau-menonaktifkan-menu) |
+| 90 | GET | `/api/v1/dashboard/summary` | Ringkasan KPI stok, tugas tertunda, mutasi terkini, & gudang terakses | Bearer | – `(g)` | [dashboard.md](dashboard.md) |
+| 91 | GET | `/api/v1/document-templates` | Daftar seluruh template dokumen cetak modular | Bearer | – | [document-templates.md](document-templates.md) |
+| 92 | POST | `/api/v1/document-templates/upload-logo` | Unggah gambar logo perusahaan (PNG/JPG/WEBP maks. 2 MB) | Bearer | `user:manage` | [document-templates.md](document-templates.md) |
+| 93 | GET | `/api/v1/document-templates/logos/{filename}` | Sajikan berkas logo terunggah | Publik | – | [document-templates.md](document-templates.md) |
+| 94 | GET | `/api/v1/document-templates/{document_type}` | Detail template dokumen cetak berdasarkan tipe | Bearer | – | [document-templates.md](document-templates.md) |
+| 95 | PUT | `/api/v1/document-templates/{document_type}` | Perbarui konfigurasi template dokumen cetak | Bearer | `user:manage` | [document-templates.md](document-templates.md) |
 ---
 
 ## 4. Ringkasan Status Verifikasi & Perbaikan Temuan
@@ -244,4 +251,7 @@ Seluruh temuan hasil tinjauan silang antara kode aktual, skema database, penguji
      * AC-21: Penolakan Transisi Status Dokumen di Luar FSM (`INVALID_STATE_TRANSITION`)
      * AC-22: Kelengkapan Audit Log, Sanitasi Rahasia/Password, & Otorisasi Pembacaan
 8. **Validasi `X-Request-ID` (PRD 7.6)** — ✅ **Terverifikasi** (`tests/test_request_id.py`, `tests/test_ac15_to_ac22.py`): nilai aman hingga 128 karakter dipertahankan; nilai dengan karakter di luar whitelist atau panjang berlebih diganti dengan UUID agar tidak masuk ke log mentah.
-9. **Menu navigasi dinamis (FR-01, AC-14)** — ✅ **Terverifikasi** (`tests/test_menus.py`): pohon menu tersaring menurut permission, parent tanpa anak terlihat disembunyikan, operasi katalog dibatasi `user:manage`, audit log tercatat, dan parent aktif tidak dapat dinonaktifkan selama memiliki anak aktif.
+9. **Menu navigasi dinamis (FR-01, AC-14)** — ✅ **Terverifikasi** (`tests/test_menus.py`): pohon menu tersaring menurut permission, parent tanpa anak terlihat disembunyikan, operasi katalog dibatasi `user:manage`, audit log tercatat, dan parent aktif tidak dapat dinonaktifkan selama memiliki anak aktif (plus konsolidasi menu stok `013` dan menu Template Dokumen `015`).
+10. **Peningkatan Keamanan, Operasional & Ekstensi (Tahap 12–30)** — ✅ **84 Test Backend Lulus Penuh (`pytest`)**:
+    * Cookie `HttpOnly` *Refresh Token*, *cross-site* cookie/CORS config, serta pengayaan `/auth/me` (`has_all_warehouse_access` & `warehouses`).
+    * Dashboard summary (`tests/test_dashboard.py` — AC-38), Template Dokumen Cetak Modular & upload logo aman (`tests/test_document_templates.py`), validasi terpusat Tahap 15 (`tests/test_validation_tahap15.py`), multi-environment & production safety guards (`tests/test_config_environment.py`), Telegram real-time error alerts (`tests/test_telegram_alert.py`, `tests/test_docker_monitor.py`), serta audit log enrichment (`014`), filter `category`/`include_technical`, dan penghentian spam log rotasi token rutin (Tahap 26).

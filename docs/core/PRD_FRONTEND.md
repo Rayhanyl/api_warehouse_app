@@ -198,26 +198,34 @@ confirmation dialog, error panel, loading indicator, dan empty state.
 
 ```text
 warehouse_app/src/
-├── app/                        # Router utama (router.tsx), Providers, ProtectedRoute, App.test.tsx
+├── app/                        # App.tsx, providers.tsx, router.tsx, App/responsive/warehouse-scope tests
 ├── components/
-│   ├── layout/                 # AppShell.tsx, Sidebar.tsx, PageHeader.tsx
-│   └── ui/                     # BarcodeVisual.tsx (EAN-13, Code-128B, QrCodeVisual, BarcodeStickerSheet),
-│                               # BarcodeScannerModal.tsx, StockLookupModal.tsx, ConfirmDialog, DataTable, dll.
-├── content/landing/            # Konten JSON tervalidasi untuk Landing Page (hero, pain-points, workflow, proof-points)
+│   ├── landing/                # Komponen halaman muka modular (Header, Hero, Workflow, PainAndSecurity, CtaFooter)
+│   ├── layout/                 # AppShell.tsx, AppTopbar.tsx, Sidebar.tsx, PageHeader.tsx, CommandPaletteModal.tsx
+│   ├── print/                  # ModularDocumentPrintSheet.tsx (renderer template dokumen cetak dinamis)
+│   ├── shared/                 # DataPagination, DataStateBanner, ResponsiveDataView, RouteTabNav, StatusBadge, StickerPrintDialog
+│   └── ui/                     # Primitif shadcn/ui + BarcodeVisual, BarcodePrintConfigurator, BarcodeScannerModal, StockLookupModal (+ stock-lookup/)
+├── content/landing/            # Konten JSON tervalidasi Zod untuk Landing Page
 ├── features/
-│   ├── auth/                   # Login, store Zustand, token-storage multi-tab, auth.test.tsx
-│   ├── admin/                  # Manajemen pengguna, role & permission, penugasan gudang, katalog menu
-│   ├── master-data/            # Kategori, UoM, Pemasok, Barang (Stocks + Import Excel), Gudang, Lokasi Rak
-│   ├── stock/                  # Saldo stok per lokasi/gudang, ringkasan, in-transit, ledger, stock-lookup.test.tsx
-│   ├── purchase-orders/        # Daftar, detail, form draft, issue/cancel/close PO
-│   ├── goods-receipts/         # Daftar, detail, form GR, GoodsReceiptPrintSheet.tsx, barcode-scanner & print test
-│   ├── stock-transfers/        # Daftar, detail, form transfer, StockTransferPrintSheet.tsx
+│   ├── administration/         # Manajemen pengguna, role & permission, penugasan gudang, katalog menu
+│   ├── audit-logs/             # Penelusuran dan filter audit log (kategori, status, old/new JSON diff)
+│   ├── auth/                   # LoginPage, ProfilePage, ProtectedRoute, store Zustand, tabSync, tokenStorage, auth.test.tsx
+│   ├── dashboard/              # api.ts, KPI grid, WarehouseScopeBar, widget tugas tertunda & mutasi terkini
+│   ├── document-templates/     # Konfigurator template dokumen cetak, upload logo, Live Preview, document-templates.test.tsx
+│   ├── goods-receipts/         # Daftar, detail, form GR, GoodsReceiptPrintSheet, barcode-scanner & print test
+│   ├── master-data/            # categories/, stocks/ (+ barcode & Excel import), storage-locations/, suppliers/, uoms/, warehouses/
+│   ├── navigation/             # api.ts my-menu & allowlist ikon canonical
+│   ├── purchase-orders/        # Daftar, detail, form draft, issue/cancel/close PO, PurchaseOrderPrintSheet
+│   ├── stock/                  # Monitoring Saldo Stok Terpadu (5 tab) & stock-lookup.test.tsx
 │   ├── stock-opnames/          # Sesi opname, hitung fisik + scanner, submit, approve/reject
-│   └── audit/                  # Penelusuran dan filter audit log
-├── hooks/                      # useBarcodeScanner.ts (deteksi hardware gun scanner USB/Bluetooth)
-├── lib/                        # api-client.ts (Axios + auto-refresh 401), barcode.ts (EAN-13/Code-128 generator), utils
-├── pages/                      # LandingPage.tsx, LoginPage.tsx, DashboardPage.tsx, ProfilePage.tsx, GoodsReceiptCreatePage.tsx
-└── styles/                     # globals.css (Tailwind v4 theme + aturan @media print dokumen A4 & stiker 50x30 mm)
+│   ├── stock-transfers/        # Daftar, detail, form transfer, StockTransferPrintSheet
+│   └── user-guide/             # Pusat Panduan Pengguna Interaktif (UserGuideModal, simulasi barcode, kamus field)
+├── hooks/                      # useBarcodeScanner, useIsMobile, usePermission, useWarehouseScope
+├── lib/                        # api-client, decimal, errors, query-client, storage, utils, validation
+├── mocks/                      # Handler MSW untuk unit & integrasi tes
+├── pages/                      # LandingPage.tsx, DashboardPage.tsx
+├── stores/                     # warehouseScopeStore.ts (cakupan gudang global + unit test)
+└── styles/                     # globals.css (Tailwind v4 theme + @media print A4/Letter/F4 & stiker 50x30 mm)
 ```
 
 State minimum:
@@ -232,11 +240,11 @@ Pilihan teknologi dan arsitektur state yang diterapkan pada `warehouse_app/`:
 - **Framework & Build:** React `19.3.1`, Vite `8`, TypeScript `5.9.3`, Tailwind CSS `4.3.3`, shadcn/ui.
 - **Routing:** React Router `7` (`createBrowserRouter`) dengan layout `AppShell`, `Sidebar`, `PageHeader`, dan guard `ProtectedRoute`.
 - **Server State & Caching:** TanStack Query `5` (`@tanstack/react-query`) untuk query caching, deduplikasi request, dan mutasi data terkelola.
-- **Client Session State:** Zustand `5` (`features/auth/store.ts`) untuk sesi login dan profil pengguna aktif.
+- **Client State (Zustand `5`):** `useAuthStore` (`features/auth/store.ts`) untuk sesi login dan profil pengguna aktif; `useWarehouseScopeStore` (`stores/warehouseScopeStore.ts`) untuk pilihan cakupan gudang global di topbar (`warehouse_id`); dan `useUserGuideStore` (`features/user-guide/store.ts`) untuk status modal Panduan Pengguna Interaktif.
 - **Form & Validasi:** React Hook Form + Zod (`@hookform/resolvers/zod`).
-- **Data Table:** TanStack Table (`@tanstack/react-table`) dengan dukungan pagination, sorting, dan filtering.
-- **HTTP Client & Autentikasi:** Axios (`lib/api-client.ts`) dengan `baseURL: /api/v1`, `withCredentials: true`, injeksi otomatis header `Authorization: Bearer <access_token>`, dan interceptor response `401` yang memicu pembaruan token via `POST /api/v1/auth/refresh`.
-- **Penyimpanan Token & Keamanan:** `access_token` (umur 15 menit) disimpan murni di memori aplikasi (Zustand state), sedangkan `refresh_token` (umur 7 hari) disimpan dan dikirim otomatis oleh peramban melalui cookie `HttpOnly; SameSite=Lax; Secure` tanpa pernah menyentuh `localStorage` (mencegah eksfiltrasi token via serangan XSS).
+- **Data Table & Komponen Bersama:** TanStack Table (`@tanstack/react-table`) serta komponen bersama lintas-modul di `src/components/shared/` (`ResponsiveDataView`, `DataPagination`, `StatusBadge`, `DataStateBanner`, `RouteTabNav`, `StickerPrintDialog`).
+- **HTTP Client & Autentikasi:** Axios (`lib/api-client.ts`) dengan `baseURL: /api/v1` (atau `VITE_API_BASE_URL`), `withCredentials: true`, injeksi otomatis header `Authorization: Bearer <access_token>`, dan interceptor response `401` yang memicu pembaruan token via `POST /api/v1/auth/refresh`.
+- **Penyimpanan Token & Keamanan:** `access_token` (umur 15 menit) disimpan murni di memori aplikasi (`useAuthStore`), sedangkan `refresh_token` (umur 7 hari) dikirim melalui cookie `HttpOnly; SameSite=Lax` oleh peramban (disertai koordinasi multi-tab lewat `BroadcastChannel` di `tabSync.ts` dan dukungan cadangan `tokenStorage.ts` bila backend/lingkungan pengujian mengembalikan token di payload JSON).
 
 ## 5. Integrasi API
 
@@ -286,18 +294,19 @@ Alur request umum:
 | `FR-TRF-001..005` | `TRF-F01..F05` | Daftar/detail transfer, form draft, approve, ship, receive (beserta alasan selisih), cancel | stock transfer CRUD, list, dan action endpoints | `AC-02`, `AC-03`, `AC-06`, `AC-09`, `AC-12`, `AC-21` |
 | `FR-TRF-006` | `TRF-F06` | Tombol dan layout cetak Surat Jalan Transfer (Delivery Note) siap cetak/PDF | detail transfer (`GET /api/v1/stock-transfers/{id}`) | `AC-32` |
 | `FR-OPN-001..006` | `OPN-F01..F06` | Sesi opname, indikator lokasi beku, input count fisik, submit, approve/reject | stock opname CRUD, list, count lines, dan action endpoints | `AC-04`, `AC-10`, `AC-12`, `AC-21` |
-| `FR-DSH-001` | `DSH-F01` | Kartu metrik KPI stok (tautan langsung `/stock`), widget action items dokumen pending (tautan langsung `/goods-receipts/new`), riwayat aktivitas terkini | `GET /api/v1/dashboard/summary`, `GET /api/v1/menus/my-menu` | `AC-38` |
+| `FR-DSH-001` | `DSH-F01` | Kartu metrik KPI stok (tautan langsung `/stock`), widget action items dokumen pending (tautan langsung `/goods-receipts/new`), riwayat aktivitas terkini, & selektor cakupan gudang global di Topbar (`useWarehouseScopeStore`) | `GET /api/v1/dashboard/summary`, `GET /api/v1/menus/my-menu`, `GET /api/v1/warehouses?warehouse_id=` | `AC-38` |
+| *Ekstensi Operasional (Tahap 17 & Tahap 21–30)* | `ModularPrint`, `UserGuide` | Pengaturan Template Dokumen Cetak Modular (`/admin/document-templates`), upload logo & *Live Preview*, mesin cetak dinamis (`ModularDocumentPrintSheet.tsx`), dialog cetak stiker terisolasi (`StickerPrintDialog.tsx`), dan Modal Panduan Pengguna Interaktif (`UserGuideModal.tsx`) | `GET/PUT /api/v1/document-templates/*`, `POST /api/v1/document-templates/upload-logo` | `tests/test_document_templates.py`, `document-templates.test.tsx`, `user-guide.test.tsx` |
 | `FR-TNT-001..006` *(Fase 2 — M9)* | `TNT-F01..F06` | Input `tenant_slug` pada login tenant, panel `Platform Admin` (daftar/provisioning/status/kuota tenant), serta layar profil & penggunaan kuota bagi `Super Admin` tenant | `/api/v1/auth/login` (`tenant_slug`), `/api/v1/platform/*`, `/api/v1/tenant/profile` | `AC-23`, `AC-24`, `AC-25`, `AC-27`, `AC-28`, `AC-29` |
 | `FR-CFG-001..004` *(Fase 2 — M9)* | `CFG-F01..F04` | Layar pengaturan tenant dan override pengaturan per gudang beserta indikator sumber pewarisan nilai | `/api/v1/settings`, `/api/v1/warehouses/{id}/settings` | `AC-26` |
 
 ## 7. Status implementasi & batasan saat ini
 
 - **Lokasi & repositori:** Frontend aktif dikembangkan di folder `warehouse_app/` (berdampingan dengan `api_warehouse_app/` dalam satu workspace monorepo).
-- **Fondasi teknologi yang telah diputuskan:** React 19, TypeScript, Vite, Tailwind CSS v4, shadcn/ui, TanStack Query v5, Zustand v5, Axios dengan interceptor auto-refresh token JWT, dan penyimpanan refresh token di `localStorage` dengan sinkronisasi multi-tab.
+- **Fondasi teknologi yang telah terimplementasi:** React 19, TypeScript, Vite, Tailwind CSS v4, shadcn/ui, TanStack Query v5, Zustand v5 (`useAuthStore`, `useWarehouseScopeStore`, `useUserGuideStore`), Axios dengan `withCredentials: true` dan interceptor auto-refresh `401` + sinkronisasi multi-tab `BroadcastChannel`.
 - **Bahasa & tanggal:** Antarmuka utama berbahasa Indonesia, format tanggal menggunakan standar lokal `Intl.DateTimeFormat("id-ID")` dan pustaka `date-fns`.
-- **Halaman & alur yang telah tersedia:** Landing page publik (`/`, menampilkan proposisi nilai kendali stok per lokasi, pemindai barcode barang & rak multi-SKU, cetak label stiker termal `50x30 mm`, serta cetak dokumen fisik Surat Jalan & GRN), Login (`/login`), Dashboard (`/dashboard`), Profil & ganti password (`/profile`), Administrasi Pengguna/Role/Menu (`/admin/*`), Master Data Kategori/UoM/Pemasok/Barang/Gudang/Lokasi (`/master/*`), Saldo Stok Terpadu & Ledger (`/stock`, `/stock/*`, alias `/stock/balances`), Purchase Order (`/purchase-orders/*`), Goods Receipt (`/goods-receipts/*`, `/goods-receipts/new`), Stock Transfer (`/stock-transfers/*`), Stock Opname (`/stock-opnames/*`), dan Audit Log (`/audit-logs`, `/admin/audit-logs`).
-- **Import massal di frontend:** Import massal item (`MST-F06`, mendukung kolom opsional `barcode`) telah diintegrasikan (`StockImportDialog.tsx`), sedangkan import massal supplier (`MST-F07`) menggunakan kontrak backend yang sama dan siap dipasang pada dialog pemasok.
-- **Fitur Retail & Toko Cabang (Fase 1):** Fitur cetak fisik Surat Jalan (`TRF-F06`), Bukti Penerimaan Barang GRN (`RCV-F05`), pemindaian Barcode/QR (`MST-F08`, `MST-F09`, `INV-F07`, `INV-F08`), cetak label stiker barcode SVG (`MST-F10`), barcode & QR Code lokasi rak serta inspeksi multi-SKU (`LOC-F03`, `LOC-F04`) telah diimplementasikan pada rilis Fase 1.
+- **Halaman & alur yang telah tersedia:** Landing page publik (`/`, komponen modular `components/landing/`), Login (`/login`), Dashboard (`/dashboard`), Profil & ganti password (`/profile`), Administrasi Pengguna/Role/Menu (`/admin/users`, `/admin/roles`, `/admin/menus`), Pengaturan Template Dokumen Cetak Modular (`/admin/document-templates`), Master Data Kategori/UoM/Pemasok/Barang/Gudang/Lokasi (`/master/*`), Saldo Stok Terpadu & Ledger (`/stock`, `/stock/*`, alias `/stock/balances`), Purchase Order (`/purchase-orders/*`), Goods Receipt (`/goods-receipts/*`, `/goods-receipts/new`), Stock Transfer (`/stock-transfers/*`), Stock Opname (`/stock-opnames/*`), Audit Log (`/audit-logs`, `/admin/audit-logs`), serta Modal Panduan Pengguna Interaktif (`UserGuideModal`).
+- **Import massal di frontend:** Import massal item (`MST-F06`, mendukung kolom opsional `barcode`) dan import massal supplier (`MST-F07`) tersedia melalui komponen `MasterExcelImportDialog`.
+- **Fitur Retail, Toko Cabang & Pencetakan Modular (Tahap 1–30):** Cetak fisik Surat Jalan, Bukti Penerimaan Barang (GRN), dan PO berbasis template modular (`ModularDocumentPrintSheet.tsx` + `document_templates` DB), pemindaian Barcode/QR, konfigurator & pencetakan stiker label terisolasi `50x30 mm` (`StickerPrintDialog` & `BarcodePrintConfigurator`), barcode/QR Code lokasi rak serta inspeksi multi-SKU, dan selektor cakupan gudang global di topbar telah diimplementasikan dan terverifikasi (`101/101` Vitest lulus).
 - **Responsivitas Lintas Perangkat (Mobile, Tablet, Desktop, & Print):** Seluruh halaman operasional, tabel data (`overflow-x-auto` dengan `min-w` proporsional), dialog modal (`max-h-[90vh] overflow-y-auto` dengan pelepasan otomatis pada `@media print`), pemindai kamera/barcode, serta pratinjau lembar cetak GRN & Surat Jalan (`print:grid-cols-3`) telah dioptimalkan untuk ukuran layar ponsel (`360px–480px`), tablet (`768px–1024px`), hingga desktop (`1280px+`).
 - **Batasan di luar MVP (Fase 2 & Fase 3):**
   - Modul Multi-Tenant SaaS (UI pemilihan tenant/slug login tenant dan panel Platform Admin) akan dikembangkan pada Fase 2 (M9).

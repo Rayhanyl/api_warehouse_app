@@ -12,7 +12,7 @@
 ## 1. Prinsip Desain & Konvensi Skema
 
 1. **Akses PostgreSQL Langsung & Migrasi SQL Murni (PRD 7.5):**
-   * Aplikasi tidak menggunakan ORM (SQLAlchemy/Alembic). Seluruh perubahan skema dikelola melalui berkas SQL bernomor urut pada folder `db/migrations/` (`001_...sql` s.d. `011_...sql`) yang dijalankan oleh *runner* `db/migrate.py` dan dicatat pada tabel `schema_migrations`.
+   * Aplikasi tidak menggunakan ORM (SQLAlchemy/Alembic). Seluruh perubahan skema dikelola melalui berkas SQL bernomor urut pada folder `db/migrations/` (`001_...sql` s.d. `015_...sql`) yang dijalankan oleh *runner* `db/migrate.py` dan dicatat pada tabel `schema_migrations`.
    * Database memisahkan **role pemilik skema** (`wms_owner`, digunakan saat migrasi) dan **role aplikasi** (`wms_app`, digunakan oleh layanan FastAPI sehari-hari).
 
 2. **Konvensi Penamaan *Constraint* & Indeks Eksplisit (PRD 7.5):**
@@ -54,6 +54,9 @@ Sesuai arsitektur pada `FOLDER_STRUCTURE.md`, definisi DDL dibagi ke dalam berka
 | `db/migrations/010_harden_constraints_and_indexes.sql` | Indeks unik fungsional case-insensitive (`LOWER`), constraint CHECK anti-blank, CHECK metadata status dokumen, dan pencabutan hak `DELETE` pada tabel `menus` dari `wms_app`. |
 | `db/migrations/011_optimize_audit_logs_index.sql` | Indeks komposit `(created_at DESC, id DESC)` pada `audit_logs` dan `stock_movements` untuk paginasi & filter waktu performa tinggi. |
 | `db/migrations/012_add_barcode_to_items.sql` | Penambahan kolom `barcode` pada tabel `items` dan indeks unik fungsional case-insensitive `uq_items_barcode_lower`. |
+| `db/migrations/013_consolidate_stock_monitoring_menu.sql` | Konsolidasi menu root `inventory` menjadi `Monitoring Saldo Stok` (`/stock`) dan penonaktifan submenu lama (`stock_by_location`, `stock_by_warehouse`, `stock_summary`, `stock_ledger`). |
+| `db/migrations/014_enhance_audit_logs.sql` | Penambahan kolom `status` (`SUCCESS`/`FAILED` + constraint `ck_audit_logs_status`), `user_agent`, `request_id`, dan `details` (`JSONB`) beserta indeks `ix_audit_logs_status` & `ix_audit_logs_request_id`. |
+| `db/migrations/015_create_document_templates_table.sql` | Pembuatan tabel `document_templates`, seed bawaan 3 jenis dokumen (`GOODS_RECEIPT`, `STOCK_TRANSFER`, `PURCHASE_ORDER`), menu `/admin/document-templates`, dan grant hak akses `wms_app`. |
 
 ---
 
@@ -1242,6 +1245,18 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_items_barcode_lower
     ON items (LOWER(barcode))
     WHERE barcode IS NOT NULL;
 ```
+
+### 5.13. `013_consolidate_stock_monitoring_menu.sql` — Konsolidasi Menu Persediaan Terpadu
+
+Menyatukan menu sidebar modul stok menjadi satu pintu `Monitoring Saldo Stok` (`/stock`, ikon `boxes`) dan menonaktifkan 4 submenu stok lama (`stock_by_location`, `stock_by_warehouse`, `stock_summary`, `stock_ledger`) sesuai UX tab terpadu di frontend.
+
+### 5.14. `014_enhance_audit_logs.sql` — Penyempurnaan Atribut Konteks & Status `audit_logs`
+
+Menambahkan kolom `status VARCHAR(20) NOT NULL DEFAULT 'SUCCESS'` (dengan check constraint `ck_audit_logs_status CHECK (status IN ('SUCCESS', 'FAILED'))`), `user_agent VARCHAR(512)`, `request_id VARCHAR(128)`, dan `details JSONB` beserta indeks `ix_audit_logs_status` dan `ix_audit_logs_request_id` tanpa mengubah trigger *append-only* pada `audit_logs`.
+
+### 5.15. `015_create_document_templates_table.sql` — Tabel Template Dokumen Cetak Modular
+
+Membuat tabel `document_templates` (konfigurasi judul dokumen, identitas/kontak/logo perusahaan, posisi & ukuran logo, ukuran & orientasi kertas, `margin_mm`, flag visibilitas, `section_order` JSONB, `table_columns` JSONB, dan `signature_layout` JSONB) beserta check constraint nilai valid, data awal 3 dokumen (`GOODS_RECEIPT`, `STOCK_TRANSFER`, `PURCHASE_ORDER`), submenu `admin_document_templates` (`/admin/document-templates`), dan `GRANT SELECT, INSERT, UPDATE` untuk role `wms_app`.
 
 ---
 

@@ -14,29 +14,38 @@ api_warehouse_app/
 │   ├── PRD_BACKEND.md              # spesifikasi implementasi backend & arsitektur service
 │   ├── PRD_FRONTEND.md             # spesifikasi implementasi frontend (warehouse_app/)
 │   ├── DATABASE_DESIGN.md          # desain entitas, relasi, dan aturan integritas database
-│   ├── SCHEMA_DATABASE.MD          # DDL, tipe kolom, constraint, dan indeks
+│   ├── SCHEMA_DATABASE.MD          # DDL, tipe kolom, constraint, dan indeks (001–015)
 │   ├── API_CONTRACT.md             # kontrak umum REST API (/api/v1), error katalog, dan pagination
 │   ├── FOLDER_STRUCTURE.MD         # dokumen ini (pohon folder & pola kode backend + frontend)
 │   ├── DEPLOYMENT_GUIDE_CICD.md    # panduan deployment production, workflow Git PR, dan pipeline CI/CD GitHub Actions
+│   ├── environment-setup-guide.md  # panduan multi-environment lokal vs server dev & guard DB production
+│   ├── frontend-local-development-guide.MD # panduan menjalankan frontend secara lokal
+│   ├── security-server-and-app.md  # standar hardening server & aplikasi (SSH, firewall, cookie HttpOnly, backup)
+│   ├── telegram-monitoring-guide.md # panduan notifikasi error 5xx & pantauan container Telegram Bot
+│   ├── DOCUMENTATION_AUDIT.md      # catatan audit baseline & asumsi
 │   └── SSOT_MAPPING.md             # pemetaan Single Source of Truth antar dokumen
 ├── app/
 │   ├── main.py                     # bikin FastAPI(), lifespan (buka/tutup pool), daftarkan middleware, router & exception handler
 │   │
 │   ├── core/                       # fondasi teknis, tidak tahu soal bisnis gudang
-│   │   ├── config.py               # Settings (pydantic-settings) dari .env
+│   │   ├── config.py               # Settings (pydantic-settings) dari .env + guard production
 │   │   ├── database.py             # ConnectionPool, dependency get_conn
-│   │   ├── security.py             # hash/verify password (argon2), buat/decode JWT, hash refresh token
-│   │   ├── permissions.py          # konstanta kode permission + require_permission()
+│   │   ├── env_files.py            # pemilih & validasi berkas env berlapis (.env, .env.local, ENV_FILE)
 │   │   ├── exceptions.py           # DomainError + turunannya (InsufficientStock, OverReceipt, dst.)
-│   │   ├── logging.py              # log terstruktur; membaca request id dari contextvar
-│   │   └── middleware.py           # middleware request id (X-Request-ID); CORS dipasang di main.py bila perlu
+│   │   ├── logging.py              # log terstruktur; membaca request id & audit_context dari contextvar
+│   │   ├── middleware.py           # middleware request id (X-Request-ID) & audit metadata; CORS dipasang di main.py
+│   │   ├── permissions.py          # konstanta kode permission + require_permission()
+│   │   ├── sanitizer.py            # penyaring rahasia/kredensial terpusat untuk log, audit, & alert Telegram
+│   │   ├── security.py             # hash/verify password (argon2), buat/decode JWT, hash refresh token
+│   │   ├── telegram_alert.py       # integrasi alert error 5xx non-blocking ke Telegram Bot API + cooldown
+│   │   └── validation.py           # helper validasi & sanitasi string/email/kode terpusat
 │   │
 │   ├── schemas/                    # Pydantic: bentuk request/response (bukan bentuk tabel)
 │   │   ├── common.py               # Page[T], ErrorResponse, tipe Decimal -> string
 │   │   ├── auth.py
 │   │   ├── user.py
 │   │   ├── menu.py                 # menu navigasi & pohon menu (my-menu)
-│   │   ├── master.py               # category, uom, item, supplier
+│   │   ├── master.py               # category, uom, item (+ barcode), supplier
 │   │   ├── warehouse.py            # warehouse, storage_location
 │   │   ├── stock.py                # saldo stok, in-transit, ledger
 │   │   ├── purchase_order.py
@@ -44,24 +53,26 @@ api_warehouse_app/
 │   │   ├── stock_transfer.py
 │   │   ├── stock_opname.py
 │   │   ├── audit_log.py
-│   │   └── dashboard.py            # DashboardSummaryOut, metrik stok, pending actions, recent activities
+│   │   ├── dashboard.py            # DashboardSummaryOut, metrik stok, pending actions, recent activities
+│   │   └── document_template.py    # konfigurasi template layout cetak modular & upload logo
 │   │
 │   ├── api/                        # lapisan HTTP, setipis mungkin
 │   │   ├── deps.py                 # get_current_user (verifikasi JWT + cek is_active/role dari DB)
 │   │   └── routes/
 │   │       ├── health.py
-│   │       ├── auth.py             # login, refresh, logout, me, change-password
+│   │       ├── auth.py             # login, refresh, logout (HttpOnly cookie + body), me, change-password
 │   │       ├── users.py            # user, role/permission, penugasan gudang
 │   │       ├── menus.py            # pohon menu frontend (my-menu) & CRUD menu
-│   │       ├── master.py           # category, uom, item, supplier
-│   │       ├── warehouses.py       # warehouse + storage_location
+│   │       ├── master.py           # category, uom, item, supplier (+ import/template Excel)
+│   │       ├── warehouses.py       # warehouse + storage_location (+ filter warehouse_id & purpose)
 │   │       ├── stock.py            # saldo stok & ledger (read-only)
 │   │       ├── purchase_orders.py
 │   │       ├── goods_receipts.py
 │   │       ├── stock_transfers.py
 │   │       ├── stock_opnames.py
-│   │       ├── audit_logs.py
-│   │       └── dashboard.py        # GET /api/v1/dashboard/summary (ringkasan stok, pending actions, recent activities)
+│   │       ├── audit_logs.py       # daftar audit log + filter status, category, include_technical
+│   │       ├── dashboard.py        # GET /api/v1/dashboard/summary (?warehouse_id=)
+│   │       └── document_templates.py # CRUD template dokumen cetak & upload/penyajian logo
 │   │
 │   ├── services/                   # use case + aturan bisnis; pemilik batas transaksi
 │   │   ├── auth_service.py
@@ -76,8 +87,9 @@ api_warehouse_app/
 │   │   ├── gr_service.py
 │   │   ├── transfer_service.py
 │   │   ├── opname_service.py
-│   │   ├── audit_service.py        # record(): catat old_values/new_values
+│   │   ├── audit_service.py        # record(), record_http_failure(): diff, sanitasi, & status FAILED
 │   │   ├── dashboard_service.py    # agregasi metrik dashboard berdasar penugasan gudang pengguna
+│   │   ├── document_template_service.py # validasi layout cetak & penyimpanan logo magic-bytes
 │   │   └── numbering_service.py    # nomor dokumen PO-202610-0001 dst.
 │   │
 │   ├── repositories/               # SATU-SATUNYA tempat string SQL berada
@@ -94,6 +106,7 @@ api_warehouse_app/
 │   │   ├── opname_repo.py          # termasuk query freeze lokasi
 │   │   ├── audit_repo.py
 │   │   ├── dashboard_repo.py       # query agregasi metrik stok, pending tasks, dan recent activities
+│   │   ├── document_template_repo.py # tabel document_templates
 │   │   └── sequence_repo.py        # document_sequences
 │   │
 │   └── utils/
@@ -115,30 +128,39 @@ api_warehouse_app/
 │   │   ├── 009_create_menu_tables.sql      # tabel menus + seed menu awal modul WMS
 │   │   ├── 010_harden_constraints_and_indexes.sql # constraint unik & indeks performa Fase 1
 │   │   ├── 011_optimize_audit_logs_index.sql # indeks komposit audit_logs Fase 1
-│   │   └── 012_add_barcode_to_items.sql    # kolom barcode pada items + indeks unik uq_items_barcode_lower (AC-33)
+│   │   ├── 012_add_barcode_to_items.sql    # kolom barcode pada items + indeks unik uq_items_barcode_lower (AC-33)
+│   │   ├── 013_consolidate_stock_monitoring_menu.sql # konsolidasi menu stok terpadu /stock
+│   │   ├── 014_enhance_audit_logs.sql      # kolom status, user_agent, request_id, & details JSONB pada audit_logs
+│   │   └── 015_create_document_templates_table.sql # tabel document_templates, seed default 3 dokumen, & menu template
 │   ├── seeds/
 │   │   └── dev_seed.sql                    # data contoh untuk pengembangan lokal
 │   └── migrate.py                          # runner: jalankan .sql berurutan, catat di schema_migrations (AC-18)
 │
 ├── scripts/
-│   └── create_superadmin.py        # bootstrap user Super Admin pertama (belum ada user untuk login)
+│   ├── create_superadmin.py        # bootstrap user Super Admin pertama (belum ada user untuk login)
+│   └── seed_users.py               # membuat akun contoh untuk semua 5 peran RBAC
 │
 ├── tests/
 │   ├── conftest.py                 # DB test, migrasi, reset data antar test, fixture user per role
 │   ├── factories.py                # helper insert data (gudang, lokasi, item, PO, saldo)
-│   ├── test_auth.py                # AC-11
+│   ├── test_auth.py                # AC-11 (incl. cookie HttpOnly refresh & logout)
 │   ├── test_menus.py               # AC-14
-│   ├── test_rbac_scoping.py        # AC-05, AC-12, AC-16, AC-19, AC-20, AC-22
+│   ├── test_rbac_scoping.py        # AC-05, AC-12, AC-16, AC-19, AC-20, AC-22 (+ audit enrichment)
 │   ├── test_goods_receipt.py       # AC-01, AC-07, AC-13, AC-15, AC-21
 │   ├── test_stock_transfer.py      # AC-02, AC-03, AC-06, AC-09, AC-21
 │   ├── test_stock_opname.py        # AC-04, AC-10, AC-21
 │   ├── test_immutability.py        # AC-08
 │   ├── test_request_id.py          # AC-17
-│   ├── test_ac15_to_ac22.py        # AC-15, AC-16, AC-17, AC-18, AC-19, AC-20, AC-21, AC-22
+│   ├── test_ac15_to_ac22.py        # AC-15 s.d. AC-22
 │   ├── test_ac30_item_bulk_import.py     # AC-30 (MST-F06, termasuk kolom barcode)
 │   ├── test_ac31_supplier_bulk_import.py # AC-31 (MST-F07)
 │   ├── test_ac33_item_barcode.py         # AC-33, AC-36 (MST-F08, WHS-F04, INV-F07, INV-F08)
-│   └── test_dashboard.py                 # AC-38 (DSH-F01, ringkasan stok, action items, & scoping)
+│   ├── test_dashboard.py                 # AC-38 (DSH-F01, ringkasan stok, action items, & scoping)
+│   ├── test_validation_tahap15.py        # pengujian helper validation.py & sanitizer input
+│   ├── test_document_templates.py        # pengujian CRUD template dokumen cetak & upload logo
+│   ├── test_config_environment.py        # pengujian multi-env resolver & production safety guards
+│   ├── test_telegram_alert.py            # pengujian pengiriman & cooldown alert Telegram
+│   └── test_docker_monitor.py            # pengujian monitor container & skrip observabilitas
 │
 ├── .env.example
 ├── .gitignore
@@ -323,7 +345,8 @@ TEST_DATABASE_URL=postgresql://wms_owner:...@localhost:5432/wms_test
 | **M5 PO & GR** | PO lengkap, GR, posting atomik. | AC-01, AC-07, AC-13 lulus. |
 | **M6 Transfer** | Alur `DRAFT → APPROVED → SHIPPED → RECEIVED`, selisih penerimaan. | AC-02, AC-03, AC-06, AC-09 lulus. |
 | **M7 Opname** | *Snapshot*, pembekuan lokasi, persetujuan/penolakan, penyesuaian. | AC-04, AC-10 lulus. |
-| **M8 Pengerasan & Fitur Retail/Cabang** | Tinjau seluruh AC, indeks komposit (`010` & `011`), migrasi barcode (`012`), pencarian lokasi/rak multi-SKU, dan kelengkapan data cetak dokumen fisik. | Seluruh AC-01 s.d. AC-22, AC-30 s.d. AC-33, AC-36 hijau (49 tes backend lulus); baca stok < 200 ms pada data uji. |
+| **M8 Pengerasan & Fitur Retail/Cabang** | Tinjau seluruh AC, indeks komposit (`010` & `011`), migrasi barcode (`012`), pencarian lokasi/rak multi-SKU, dan kelengkapan data cetak dokumen fisik. | Seluruh AC-01 s.d. AC-22, AC-30 s.d. AC-38 hijau; baca stok < 200 ms pada data uji. |
+| **Tahap 12–30 (Hardening, Template Cetak, & Polish UI)** | Audit enrichment (`014`), konsolidasi menu stok (`013`), template cetak & logo (`015`), validasi terpusat (`validation.py`), multi-env & guard DB (`env_files.py`), cookie `HttpOnly`, isolasi gudang global, `user-guide` & modularisasi frontend. | **84 tes backend** (`pytest`) + **101 tes frontend** (`vitest`) lulus penuh. |
 
 ---
 
@@ -335,35 +358,40 @@ Frontend berada pada direktori `warehouse_app/` (sejajar dengan `api_warehouse_a
 warehouse_app/
 ├── src/
 │   ├── app/
+│   │   ├── App.tsx                 # root komposisi aplikasi, ErrorBoundary, & provider sesi
+│   │   ├── providers.tsx           # TanStack QueryClientProvider & Toaster Sonner
 │   │   ├── router.tsx              # definisi rute publik & terlindungi (React Router v7)
-│   │   ├── ProtectedRoute.tsx      # guard autentikasi, pemulihan sesi, & pemeriksaan permission
-│   │   └── App.test.tsx            # pengujian integrasi shell, sidebar, dashboard, profil, & landing page
+│   │   ├── App.test.tsx            # pengujian integrasi shell, sidebar, dashboard, profil, & landing page
+│   │   ├── responsive-mobile-tablet.test.tsx # verifikasi tata letak mobile/tablet
+│   │   └── warehouse-scope.test.tsx          # verifikasi isolasi cakupan gudang global
 │   ├── components/
-│   │   ├── layout/                 # AppShell.tsx, Sidebar.tsx, PageHeader.tsx
-│   │   └── ui/                     # komponen bersama:
-│   │       ├── BarcodeVisual.tsx   # generator SVG 1D (EAN-13, Code-128B), 2D (QrCodeVisual), & BarcodeStickerSheet (50x30 mm)
-│   │       ├── BarcodeScannerModal.tsx # modal pemindai kamera web & BarcodeScanBar
-│   │       └── StockLookupModal.tsx    # modal pindai cepat barang & inspeksi isi rak multi-SKU (Dual-Mode)
-│   ├── content/landing/            # konten JSON tervalidasi untuk halaman muka (hero, pain-points, workflow, proof-points)
+│   │   ├── landing/                # seksi modular halaman muka publik (LandingHeader, Hero, Workflow, PainAndSecurity, CtaFooter)
+│   │   ├── layout/                 # AppShell.tsx, AppTopbar.tsx, Sidebar.tsx, PageHeader.tsx, CommandPaletteModal.tsx, routeContext.ts
+│   │   ├── print/                  # ModularDocumentPrintSheet.tsx (renderer dinamis berbasis konfigurasi template)
+│   │   ├── shared/                 # DataPagination, DataStateBanner, ResponsiveDataView, RouteTabNav, StatusBadge, StickerPrintDialog, shared-components.test.tsx
+│   │   └── ui/                     # komponen shadcn/ui + BarcodeVisual, BarcodePrintConfigurator, BarcodeScannerModal, StockLookupModal (+ stock-lookup/)
+│   ├── content/landing/            # konten JSON tervalidasi Zod untuk halaman muka (hero, pain-points, workflow, proof-points, security, cta, footer)
 │   ├── features/
-│   │   ├── auth/                   # store Zustand, penyimpanan token multi-tab, & auth.test.tsx
-│   │   ├── dashboard/              # api.ts (useDashboardSummary) & komponen widget ringkasan metrik
-│   │   ├── admin/                  # pengelolaan pengguna, role/permission, penugasan gudang, & menu
-│   │   ├── master-data/            # categories/, uoms/, suplliers/, stocks/ (+StockImportDialog), warehouses/, storage-locations/
-│   │   ├── stock/                  # StockPage.tsx, StockMovementsPage.tsx, & stock-lookup.test.tsx
-│   │   ├── purchase-orders/        # PurchaseOrdersPage.tsx
+│   │   ├── administration/         # pengelolaan users, roles & permission matrix, menus, & penugasan gudang (AdministrationPage)
+│   │   ├── audit-logs/             # AuditLogsPage.tsx, filter kategori/status, diff JSON, & audit-logs.test.tsx
+│   │   ├── auth/                   # store Zustand, tabSync, tokenStorage, LoginPage, ProfilePage, ProtectedRoute, & auth.test.tsx
+│   │   ├── dashboard/              # api.ts (useDashboardSummary), KPI grid, WarehouseScopeBar, & dashboard.test.tsx
+│   │   ├── document-templates/     # konfigurasi layout cetak modular, upload logo, Live Preview, & document-templates.test.tsx
 │   │   ├── goods-receipts/         # GoodsReceiptsPage.tsx, GoodsReceiptPrintSheet.tsx, barcode-scanner.test.tsx, print-documents.test.tsx
+│   │   ├── master-data/            # categories/, stocks/ (+ StockBarcodeField & Excel import), storage-locations/, suppliers/, uoms/, warehouses/
+│   │   ├── navigation/             # api.ts my-menu & pemetaan allowlist icon canonical
+│   │   ├── purchase-orders/        # PurchaseOrdersPage.tsx, PurchaseOrderPrintSheet.tsx
+│   │   ├── stock/                  # StockPage.tsx (5 tab terpadu), filter, & stock-lookup.test.tsx
+│   │   ├── stock-opnames/          # StockOpnamesPage.tsx, OpnameCountLinesView, & komponen dialog
 │   │   ├── stock-transfers/        # StockTransfersPage.tsx, StockTransferPrintSheet.tsx
-│   │   ├── stock-opnames/          # StockOpnamesPage.tsx
-│   │   └── audit/                  # AuditLogsPage.tsx
-│   ├── hooks/
-│   │   └── useBarcodeScanner.ts    # listener global untuk hardware barcode scanner gun (USB/Bluetooth HID)
-│   ├── lib/
-│   │   ├── api-client.ts           # instance Axios (/api/v1), injeksi Bearer token, & interceptor auto-refresh 401
-│   │   └── barcode.ts              # generator kode barcode internal EAN-13 (GS1 prefix 200..299) & Code-128
-│   ├── pages/                      # LandingPage.tsx, LoginPage.tsx, DashboardPage.tsx, ProfilePage.tsx
+│   │   └── user-guide/             # UserGuideModal.tsx, kamus field, walkthrough, simulasi barcode, & user-guide.test.tsx
+│   ├── hooks/                      # useBarcodeScanner.ts, useIsMobile.ts, usePermission.ts, useWarehouseScope.ts
+│   ├── lib/                        # api-client.ts, decimal.ts, errors.ts, query-client.ts, storage.ts, utils.ts, validation.ts (+ test)
+│   ├── mocks/                      # handler MSW
+│   ├── pages/                      # LandingPage.tsx, DashboardPage.tsx
+│   ├── stores/                     # warehouseScopeStore.ts (+ warehouseScopeStore.test.ts)
 │   └── styles/
-│       └── globals.css             # konfigurasi tema Tailwind v4 + aturan cetak @media print (A4 & stiker termal 50x30 mm)
+│       └── globals.css             # konfigurasi tema Tailwind v4 + aturan cetak @media print (A4/Letter/F4 & stiker termal 50x30 mm)
 ├── package.json
 ├── tsconfig.json
 └── vite.config.ts
