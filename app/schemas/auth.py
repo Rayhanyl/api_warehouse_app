@@ -46,6 +46,13 @@ class TokenOut(BaseModel):
     access_expires_at: datetime
 
 
+class WarehouseRefOut(BaseModel):
+    id: int
+    code: str
+    name: str
+    is_active: bool = True
+
+
 class MeOut(BaseModel):
     id: int
     username: str
@@ -56,6 +63,8 @@ class MeOut(BaseModel):
     is_active: bool
     permissions: list[str]
     warehouse_ids: list[int]
+    has_all_warehouse_access: bool = False
+    warehouses: list[WarehouseRefOut] = Field(default_factory=list)
     last_login_at: datetime | None = None
     created_at: datetime
     updated_at: datetime

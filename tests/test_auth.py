@@ -177,3 +177,46 @@ def test_ac11_cookie_httponly_refresh_rotation_and_cleanup(
     unauth_refresh = client.post("/api/v1/auth/refresh")
     assert unauth_refresh.status_code == 401
     assert unauth_refresh.json()["error"]["code"] == "AUTH_TOKEN_INVALID"
+
+
+def test_auth_me_returns_warehouse_scope_metadata(
+    client: TestClient,
+    db_conn: Connection[dict[str, Any]],
+    superadmin_user: dict[str, Any],
+    staff_user: dict[str, Any],
+    auditor_user: dict[str, Any],
+) -> None:
+    """Tahap 25: `/auth/me` memuat `has_all_warehouse_access` dan detail `warehouses`."""
+    from app.repositories import permission_repo
+    from tests import factories
+
+    wh_a = factories.create_warehouse(db_conn, code="ME-WHA", name="Gudang Me A")
+    wh_b = factories.create_warehouse(db_conn, code="ME-WHB", name="Gudang Me B")
+    permission_repo.update_user_warehouses(
+        db_conn, user_id=staff_user["id"], warehouse_ids=[wh_a["id"]], actor_id=superadmin_user["id"]
+    )
+
+    sa_res = client.get("/api/v1/auth/me", headers=superadmin_user["auth_headers"])
+    assert sa_res.status_code == 200, sa_res.text
+    sa_body = sa_res.json()
+    assert sa_body["has_all_warehouse_access"] is True
+    sa_wh_codes = {wh["code"] for wh in sa_body["warehouses"]}
+    assert "ME-WHA" in sa_wh_codes
+    assert "ME-WHB" in sa_wh_codes
+
+    aud_res = client.get("/api/v1/auth/me", headers=auditor_user["auth_headers"])
+    assert aud_res.status_code == 200, aud_res.text
+    aud_body = aud_res.json()
+    assert aud_body["has_all_warehouse_access"] is True
+    assert "ME-WHA" in {wh["code"] for wh in aud_body["warehouses"]}
+
+    staff_res = client.get("/api/v1/auth/me", headers=staff_user["auth_headers"])
+    assert staff_res.status_code == 200, staff_res.text
+    staff_body = staff_res.json()
+    assert staff_body["has_all_warehouse_access"] is False
+    assert staff_body["warehouse_ids"] == [wh_a["id"]]
+    assert len(staff_body["warehouses"]) == 1
+    assert staff_body["warehouses"][0]["id"] == wh_a["id"]
+    assert staff_body["warehouses"][0]["code"] == "ME-WHA"
+    assert staff_body["warehouses"][0]["name"] == "Gudang Me A"
+    assert staff_body["warehouses"][0]["is_active"] is True

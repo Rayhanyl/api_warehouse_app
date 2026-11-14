@@ -5,11 +5,13 @@ from typing import Any
 from psycopg import Connection
 
 from app.core.exceptions import WarehouseNotAssigned
-from app.core.permissions import ROLE_AUDITOR, ROLE_SUPER_ADMIN
+from app.core.permissions import ROLE_SUPER_ADMIN, UNSCOPED_READ_ROLES
 from app.repositories import permission_repo
 
-# Peran yang membaca lintas gudang tanpa batasan user_warehouses (PRD 3.2 poin 2).
-UNSCOPED_READ_ROLES: frozenset[str] = frozenset({ROLE_SUPER_ADMIN, ROLE_AUDITOR})
+
+def can_access_all_warehouses(actor: dict[str, Any]) -> bool:
+    """Mengembalikan True bila peran aktor memiliki cakupan baca lintas seluruh gudang."""
+    return actor.get("role_name") in UNSCOPED_READ_ROLES
 
 
 def ensure_warehouse_access(

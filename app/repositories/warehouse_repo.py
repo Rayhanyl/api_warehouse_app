@@ -17,6 +17,7 @@ def list_warehouses(
     search: str | None = None,
     order_by_sql: str = "w.id ASC",
     scoped_warehouse_ids: list[int] | None = None,
+    warehouse_id: int | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """Mengambil daftar gudang dengan filter, pencarian, dan pagination.
 
@@ -31,6 +32,10 @@ def list_warehouses(
     if scoped_warehouse_ids is not None:
         conditions.append("w.id = ANY(%s)")
         params.append(scoped_warehouse_ids)
+
+    if warehouse_id is not None:
+        conditions.append("w.id = %s")
+        params.append(warehouse_id)
 
     if is_active is not None:
         conditions.append("w.is_active = %s")

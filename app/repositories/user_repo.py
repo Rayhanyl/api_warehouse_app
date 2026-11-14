@@ -116,10 +116,13 @@ def lock_user_by_id(
     ).fetchone()
 
 
+UNSCOPED_READ_ROLES: frozenset[str] = frozenset({"Super Admin", "Auditor"})
+
+
 def get_user_auth_context(
     conn: Connection[dict[str, Any]], user_id: int
 ) -> dict[str, Any] | None:
-    """Mengambil profil lengkap pengguna, role, daftar permission, dan warehouse_ids dari DB pada setiap request (FR-01)."""
+    """Mengambil profil lengkap pengguna, role, daftar permission, dan detail gudang dari DB per request (FR-01)."""
     user = get_user_by_id(conn, user_id)
     if not user:
         return None
@@ -145,8 +148,32 @@ def get_user_auth_context(
         (user_id,),
     ).fetchall()
 
+    has_all_warehouse_access = str(user.get("role_name", "")) in UNSCOPED_READ_ROLES
+    if has_all_warehouse_access:
+        wh_detail_rows = conn.execute(
+            """
+            SELECT id, code, name, is_active
+            FROM warehouses
+            WHERE is_active = TRUE
+            ORDER BY id
+            """
+        ).fetchall()
+    else:
+        wh_detail_rows = conn.execute(
+            """
+            SELECT w.id, w.code, w.name, w.is_active
+            FROM user_warehouses uw
+            JOIN warehouses w ON w.id = uw.warehouse_id
+            WHERE uw.user_id = %s
+            ORDER BY w.id
+            """,
+            (user_id,),
+        ).fetchall()
+
     user["permissions"] = [r["code"] for r in perm_rows]
     user["warehouse_ids"] = [int(r["warehouse_id"]) for r in wh_rows]
+    user["has_all_warehouse_access"] = has_all_warehouse_access
+    user["warehouses"] = [dict(r) for r in wh_detail_rows]
     return user
 
 

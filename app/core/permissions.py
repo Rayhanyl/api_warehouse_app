@@ -67,6 +67,9 @@ ROLE_PURCHASING_STAFF = "Purchasing Staff"
 ROLE_WAREHOUSE_STAFF = "Warehouse Staff"
 ROLE_AUDITOR = "Auditor"
 
+# Peran yang memiliki akses baca lintas semua gudang (PRD 3.2 poin 2).
+UNSCOPED_READ_ROLES: frozenset[str] = frozenset({ROLE_SUPER_ADMIN, ROLE_AUDITOR})
+
 
 def require_permission(permission_code: str) -> Callable[..., dict[str, Any]]:
     """Dependency level route untuk memastikan pengguna aktif memiliki kode permission tertentu."""

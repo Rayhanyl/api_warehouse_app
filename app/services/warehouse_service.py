@@ -82,6 +82,7 @@ def list_warehouses(
     actor: dict[str, Any],
     limit: int = 50,
     offset: int = 0,
+    warehouse_id: int | None = None,
     is_active: bool | None = None,
     search: str | None = None,
     sort_by: str | None = None,
@@ -91,6 +92,8 @@ def list_warehouses(
     scoped_ids, effective_is_active, _ = _resolve_reference_scope(
         conn, actor, purpose=purpose, is_active=is_active
     )
+    if warehouse_id is not None and purpose is None:
+        access_service.ensure_warehouse_read_access(conn, actor, warehouse_id)
     norm_limit, norm_offset = normalize_pagination(limit, offset)
     order_by_sql = build_order_by(
         sort_by=sort_by,
@@ -107,6 +110,7 @@ def list_warehouses(
         search=search,
         order_by_sql=order_by_sql,
         scoped_warehouse_ids=scoped_ids,
+        warehouse_id=warehouse_id,
     )
     return {
         "items": items,
