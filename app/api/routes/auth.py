@@ -8,7 +8,11 @@ from psycopg import Connection
 from app.api.deps import get_client_ip, get_current_user
 from app.core.config import settings
 from app.core.database import get_conn
-from app.core.exceptions import AuthTokenInvalid
+from app.core.exceptions import (
+    AuthInvalidCredentials,
+    AuthTokenInvalid,
+    AuthTooManyAttempts,
+)
 from app.schemas.auth import (
     ChangePasswordRequest,
     LoginRequest,
@@ -54,12 +58,16 @@ def login(
     response: Response,
     conn: Connection[dict[str, Any]] = Depends(get_conn),
 ) -> TokenOut:
-    result = auth_service.login(
-        conn,
-        username=payload.username,
-        password=payload.password,
-        ip_address=get_client_ip(request),
-    )
+    try:
+        result = auth_service.login(
+            conn,
+            username=payload.username,
+            password=payload.password,
+            ip_address=get_client_ip(request),
+        )
+    except (AuthInvalidCredentials, AuthTooManyAttempts):
+        request.state.audit_failure_recorded = True
+        raise
     _set_refresh_cookie(response, result["refresh_token"])
     return TokenOut(**result)
 
@@ -82,11 +90,15 @@ def refresh_token(
     if not token_str:
         raise AuthTokenInvalid("Refresh token tidak disediakan.")
 
-    result = auth_service.refresh_session(
-        conn,
-        refresh_token=token_str,
-        ip_address=get_client_ip(request),
-    )
+    try:
+        result = auth_service.refresh_session(
+            conn,
+            refresh_token=token_str,
+            ip_address=get_client_ip(request),
+        )
+    except AuthTokenInvalid:
+        request.state.audit_failure_recorded = True
+        raise
     _set_refresh_cookie(response, result["refresh_token"])
     return TokenOut(**result)
 
@@ -106,12 +118,16 @@ def logout(
         token_str = request.cookies["refresh_token"].strip()
 
     if token_str:
-        auth_service.logout(
-            conn,
-            refresh_token=token_str,
-            actor=current_user,
-            ip_address=get_client_ip(request),
-        )
+        try:
+            auth_service.logout(
+                conn,
+                refresh_token=token_str,
+                actor=current_user,
+                ip_address=get_client_ip(request),
+            )
+        except AuthTokenInvalid:
+            request.state.audit_failure_recorded = True
+            raise
 
     _clear_refresh_cookie(response)
     return MessageOut(message="Logout berhasil; refresh token telah dicabut.")
@@ -131,13 +147,17 @@ def change_password(
     current_user: dict[str, Any] = Depends(get_current_user),
     conn: Connection[dict[str, Any]] = Depends(get_conn),
 ) -> MessageOut:
-    auth_service.change_password(
-        conn,
-        actor=current_user,
-        current_password=payload.current_password,
-        new_password=payload.new_password,
-        ip_address=get_client_ip(request),
-    )
+    try:
+        auth_service.change_password(
+            conn,
+            actor=current_user,
+            current_password=payload.current_password,
+            new_password=payload.new_password,
+            ip_address=get_client_ip(request),
+        )
+    except AuthInvalidCredentials:
+        request.state.audit_failure_recorded = True
+        raise
     return MessageOut(
         message="Kata sandi berhasil diperbarui dan seluruh sesi lama telah dicabut."
     )

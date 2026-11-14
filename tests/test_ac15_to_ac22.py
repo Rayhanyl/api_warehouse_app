@@ -460,3 +460,147 @@ def test_ac22_audit_log_completeness_secret_sanitization_and_filter(
     )
     assert auditor_res.status_code == 200
     assert auditor_res.json()["total"] >= 1
+
+
+def test_tahap14_comprehensive_audit_enrichment_failures_and_sanitization(
+    client: TestClient,
+    db_conn: Connection[dict[str, Any]],
+    superadmin_user: dict[str, Any],
+    staff_user: dict[str, Any],
+    auditor_user: dict[str, Any],
+    monkeypatch: Any,
+) -> None:
+    """Tahap 14: Verifikasi IP/User-Agent/Request-ID, status FAILED, details, & sanitasi kredensial."""
+    from app.core.config import settings
+
+    # 1. Request ID, User-Agent, dan resolusi IP via X-Forwarded-For saat berasal dari trusted proxy
+    monkeypatch.setattr(settings, "trusted_proxy_ips", ["testclient"])
+    wh_res = client.post(
+        "/api/v1/warehouses",
+        headers={
+            **superadmin_user["auth_headers"],
+            "X-Request-ID": "req-t14-wh-001",
+            "User-Agent": "JejakStokTest/1.0 Bearer supersecret-ua-token",
+            "X-Forwarded-For": "203.0.113.45, 10.0.0.1",
+        },
+        json={
+            "code": "WH-T14",
+            "name": "Gudang Audit Tahap 14",
+            "address": "Jl. Audit No. 14",
+        },
+    )
+    assert wh_res.status_code == 201
+    wh_id = wh_res.json()["id"]
+
+    wh_log = db_conn.execute(
+        """
+        SELECT * FROM audit_logs
+        WHERE entity_type = 'warehouses' AND entity_id = %s AND action = 'WAREHOUSE_CREATED'
+        ORDER BY id DESC LIMIT 1
+        """,
+        (str(wh_id),),
+    ).fetchone()
+    assert wh_log is not None
+    assert wh_log["status"] == "SUCCESS"
+    assert wh_log["ip_address"] == "203.0.113.45"
+    assert wh_log["request_id"] == "req-t14-wh-001"
+    assert wh_log["user_agent"] is not None
+    assert "supersecret-ua-token" not in wh_log["user_agent"]
+    assert wh_log["new_values"]["address"] == "Jl. Audit No. 14"
+
+    # 2. Kegagalan ganti password -> status FAILED tanpa kebocoran password di details
+    pwd_fail_res = client.post(
+        "/api/v1/auth/change-password",
+        headers={
+            **staff_user["auth_headers"],
+            "X-Request-ID": "req-t14-pwd-fail",
+        },
+        json={
+            "current_password": "WrongOldPassword!99",
+            "new_password": "NewSecretPassword!99",
+        },
+    )
+    assert pwd_fail_res.status_code == 401
+    pwd_fail_log = db_conn.execute(
+        """
+        SELECT * FROM audit_logs
+        WHERE action = 'USER_PASSWORD_CHANGE_FAILED' AND request_id = 'req-t14-pwd-fail'
+        """,
+    ).fetchone()
+    assert pwd_fail_log is not None
+    assert pwd_fail_log["status"] == "FAILED"
+    assert pwd_fail_log["user_id"] == staff_user["id"]
+    details_str = str(pwd_fail_log["details"])
+    assert "WrongOldPassword!99" not in details_str
+    assert "NewSecretPassword!99" not in details_str
+    assert pwd_fail_log["details"].get("reason") == "INVALID_CURRENT_PASSWORD"
+
+    # 3. Kegagalan otorisasi (403 PERMISSION_DENIED) -> terekam out-of-band sebagai FAILED
+    perm_res = client.post(
+        "/api/v1/warehouses",
+        headers={
+            **staff_user["auth_headers"],
+            "X-Request-ID": "req-t14-403",
+        },
+        json={"code": "WH-DENIED", "name": "Ditolak"},
+    )
+    assert perm_res.status_code == 403
+    perm_log = db_conn.execute(
+        "SELECT * FROM audit_logs WHERE request_id = 'req-t14-403'",
+    ).fetchone()
+    assert perm_log is not None
+    assert perm_log["action"] == "PERMISSION_DENIED"
+    assert perm_log["status"] == "FAILED"
+    assert perm_log["user_id"] == staff_user["id"]
+    assert perm_log["details"]["error_code"] == "PERMISSION_DENIED"
+    assert perm_log["details"]["http_status"] == 403
+
+    # 4. Kegagalan validasi HTTP (422 VALIDATION_ERROR) pada endpoint sensitif tidak membocorkan password
+    val_res = client.post(
+        "/api/v1/users",
+        headers={
+            **superadmin_user["auth_headers"],
+            "X-Request-ID": "req-t14-422",
+        },
+        json={
+            "username": "a",
+            "full_name": "Invalid User",
+            "email": "invalid-email",
+            "password": "TopSecretValidationPwd#123",
+            "role_id": "bukan-angka",
+        },
+    )
+    assert val_res.status_code == 422
+    val_log = db_conn.execute(
+        "SELECT * FROM audit_logs WHERE request_id = 'req-t14-422'",
+    ).fetchone()
+    assert val_log is not None
+    assert val_log["action"] == "VALIDATION_ERROR"
+    assert val_log["status"] == "FAILED"
+    assert "TopSecretValidationPwd#123" not in str(val_log["details"])
+
+    # 5. Query API GET /api/v1/audit-logs filter status=FAILED, search IP & request_id, dan validasi status invalid
+    failed_list = client.get(
+        "/api/v1/audit-logs?status=FAILED&search=req-t14-403",
+        headers=auditor_user["auth_headers"],
+    )
+    assert failed_list.status_code == 200
+    items = failed_list.json()["items"]
+    assert len(items) == 1
+    assert items[0]["action"] == "PERMISSION_DENIED"
+    assert items[0]["status"] == "FAILED"
+    assert items[0]["request_id"] == "req-t14-403"
+
+    ip_search = client.get(
+        "/api/v1/audit-logs?search=203.0.113.45",
+        headers=auditor_user["auth_headers"],
+    )
+    assert ip_search.status_code == 200
+    assert any(item["request_id"] == "req-t14-wh-001" for item in ip_search.json()["items"])
+
+    bad_status = client.get(
+        "/api/v1/audit-logs?status=UNKNOWN",
+        headers=auditor_user["auth_headers"],
+    )
+    assert bad_status.status_code == 422
+

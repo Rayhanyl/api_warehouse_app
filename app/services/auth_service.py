@@ -45,6 +45,8 @@ def login(
                 entity_type="users",
                 entity_id=None,
                 new_values={"username": clean_username, "reason": "UNKNOWN_USERNAME"},
+                status="FAILED",
+                details={"reason": "UNKNOWN_USERNAME"},
                 ip_address=ip_address,
             )
         raise AuthInvalidCredentials("Username atau kata sandi salah.")
@@ -70,6 +72,8 @@ def login(
                     "reason": "ACCOUNT_LOCKED",
                     "locked_until": locked_until,
                 },
+                status="FAILED",
+                details={"reason": "ACCOUNT_LOCKED", "locked_until": locked_until},
                 ip_address=ip_address,
             )
             error_to_raise = AuthTooManyAttempts(
@@ -84,6 +88,8 @@ def login(
                 entity_type="users",
                 entity_id=user_id,
                 new_values={"username": username, "reason": "USER_INACTIVE"},
+                status="FAILED",
+                details={"reason": "USER_INACTIVE"},
                 ip_address=ip_address,
             )
             error_to_raise = AuthInvalidCredentials("Username atau kata sandi salah.")
@@ -114,6 +120,12 @@ def login(
                 new_values={
                     "username": username,
                     "reason": "INVALID_CREDENTIALS",
+                    "failed_login_count": new_count,
+                    "locked_until": new_locked_until,
+                },
+                status="FAILED",
+                details={
+                    "reason": "ACCOUNT_LOCKED" if new_locked_until else "INVALID_CREDENTIALS",
                     "failed_login_count": new_count,
                     "locked_until": new_locked_until,
                 },
@@ -175,6 +187,16 @@ def refresh_session(
     with conn.transaction():
         token_row = token_repo.lock_refresh_token_by_hash(conn, incoming_hash)
         if not token_row:
+            audit_service.record(
+                conn,
+                user_id=None,
+                action="AUTH_TOKEN_REFRESH_FAILED",
+                entity_type="refresh_tokens",
+                entity_id=None,
+                status="FAILED",
+                details={"reason": "TOKEN_NOT_FOUND"},
+                ip_address=ip_address,
+            )
             error_to_raise = AuthTokenInvalid("Refresh token tidak valid.")
         else:
             user_id = int(token_row["user_id"])
@@ -195,6 +217,8 @@ def refresh_session(
                         "reused_token_id": token_id,
                         "revoked_active_sessions": revoked_count,
                     },
+                    status="FAILED",
+                    details={"reason": "TOKEN_REUSE_DETECTED", "revoked_active_sessions": revoked_count},
                     ip_address=ip_address,
                 )
                 error_to_raise = AuthTokenInvalid(
@@ -211,6 +235,8 @@ def refresh_session(
                     entity_type="refresh_tokens",
                     entity_id=token_id,
                     new_values={"reason": "TOKEN_EXPIRED"},
+                    status="FAILED",
+                    details={"reason": "TOKEN_EXPIRED"},
                     ip_address=ip_address,
                 )
                 error_to_raise = AuthTokenInvalid("Refresh token sudah kedaluwarsa.")
@@ -225,6 +251,8 @@ def refresh_session(
                         entity_type="refresh_tokens",
                         entity_id=token_id,
                         new_values={"reason": "USER_INACTIVE"},
+                        status="FAILED",
+                        details={"reason": "USER_INACTIVE"},
                         ip_address=ip_address,
                     )
                     error_to_raise = AuthTokenInvalid("Akun pengguna sudah tidak aktif.")
@@ -284,23 +312,39 @@ def logout(
     with conn.transaction():
         token_row = token_repo.lock_refresh_token_by_hash(conn, incoming_hash)
         if not token_row or int(token_row["user_id"]) != actor_id:
-            raise AuthTokenInvalid("Refresh token tidak valid untuk pengguna ini.")
+            audit_service.record(
+                conn,
+                user_id=actor_id,
+                action="AUTH_LOGOUT_FAILED",
+                entity_type="refresh_tokens",
+                entity_id=None,
+                status="FAILED",
+                details={"reason": "INVALID_REFRESH_TOKEN"},
+                ip_address=ip_address,
+            )
+            error_to_raise: Exception | None = AuthTokenInvalid(
+                "Refresh token tidak valid untuk pengguna ini."
+            )
+        else:
+            error_to_raise = None
+            token_id = int(token_row["id"])
+            if token_row["revoked_at"] is None:
+                token_repo.update_revoke_and_replace_token(
+                    conn, token_id, revoked_at=now, replaced_by_id=None
+                )
 
-        token_id = int(token_row["id"])
-        if token_row["revoked_at"] is None:
-            token_repo.update_revoke_and_replace_token(
-                conn, token_id, revoked_at=now, replaced_by_id=None
+            audit_service.record(
+                conn,
+                user_id=actor_id,
+                action="AUTH_LOGOUT",
+                entity_type="refresh_tokens",
+                entity_id=token_id,
+                new_values={"revoked_token_id": token_id},
+                ip_address=ip_address,
             )
 
-        audit_service.record(
-            conn,
-            user_id=actor_id,
-            action="AUTH_LOGOUT",
-            entity_type="refresh_tokens",
-            entity_id=token_id,
-            new_values={"revoked_token_id": token_id},
-            ip_address=ip_address,
-        )
+    if error_to_raise is not None:
+        raise error_to_raise
 
 
 def change_password(
@@ -319,25 +363,39 @@ def change_password(
 
     actor_id = int(actor["id"])
     now = datetime.now(timezone.utc)
+    error_to_raise: Exception | None = None
 
     with conn.transaction():
         locked_user = user_repo.lock_user_by_id(conn, actor_id)
         if not locked_user or not verify_password(
             current_password, locked_user["password_hash"]
         ):
-            raise AuthInvalidCredentials("Kata sandi saat ini tidak sesuai.")
+            audit_service.record(
+                conn,
+                user_id=actor_id,
+                action="USER_PASSWORD_CHANGE_FAILED",
+                entity_type="users",
+                entity_id=actor_id,
+                status="FAILED",
+                details={"reason": "INVALID_CURRENT_PASSWORD"},
+                ip_address=ip_address,
+            )
+            error_to_raise = AuthInvalidCredentials("Kata sandi saat ini tidak sesuai.")
+        else:
+            new_hash = hash_password(new_password)
+            user_repo.update_user_password(conn, actor_id, password_hash=new_hash)
+            revoked_count = token_repo.update_revoke_all_user_tokens(
+                conn, actor_id, revoked_at=now
+            )
+            audit_service.record(
+                conn,
+                user_id=actor_id,
+                action="USER_PASSWORD_CHANGED",
+                entity_type="users",
+                entity_id=actor_id,
+                new_values={"revoked_refresh_tokens": revoked_count},
+                ip_address=ip_address,
+            )
 
-        new_hash = hash_password(new_password)
-        user_repo.update_user_password(conn, actor_id, password_hash=new_hash)
-        revoked_count = token_repo.update_revoke_all_user_tokens(
-            conn, actor_id, revoked_at=now
-        )
-        audit_service.record(
-            conn,
-            user_id=actor_id,
-            action="USER_PASSWORD_CHANGED",
-            entity_type="users",
-            entity_id=actor_id,
-            new_values={"revoked_refresh_tokens": revoked_count},
-            ip_address=ip_address,
-        )
+    if error_to_raise is not None:
+        raise error_to_raise
