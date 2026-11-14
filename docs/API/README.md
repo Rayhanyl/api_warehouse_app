@@ -98,6 +98,7 @@ Sesuai pentahapan di [`docs/CORE/FOLDER_STRUCTURE.MD`](../CORE/FOLDER_STRUCTURE.
 | **Goods Receipt** (`goods_receipts.py`) | [goods-receipts.md](goods-receipts.md) | ✅ **Aktif** (6 endpoint) | Penerimaan PO sebagai draft, revisi, posting stok/ledger dan pemenuhan PO, pembatalan, scan barcode penerimaan, serta cetak Bukti Penerimaan Barang / GRN (FR-05, AC-32, AC-33). |
 | **Transfer Stok** (`stock_transfers.py`) | [stock-transfers.md](stock-transfers.md) | ✅ **Aktif** (8 endpoint) | Draft, persetujuan, pengiriman, penerimaan final dengan pencatatan selisih, pembatalan, scan barcode transfer, serta cetak Surat Jalan fisik (FR-06, AC-32, AC-33). |
 | **Stock Opname** (`stock_opnames.py`) | [stock-opnames.md](stock-opnames.md) | ✅ **Aktif** (12 path/method) | Sesi opname per gudang/lokasi, snapshot dan pembekuan, input hitung fisik berbasis scan barcode produk/temuan, persetujuan/penolakan, serta penyesuaian stok (FR-07, AC-33). |
+| **Template Dokumen Cetak** (`document_templates.py`) | `/api/v1/document-templates` | ✅ **Aktif** (5 endpoint) | Pengaturan template dokumen cetak modular berbasis database (`GOODS_RECEIPT`, `STOCK_TRANSFER`, `PURCHASE_ORDER`), unggah & penyajian logo perusahaan, urutan bagian, kolom tabel, serta blok tanda tangan (Tahap 17). |
 
 > **Catatan:** Modul operasional M5–M7 (Goods Receipt, Transfer Stok, dan Stock Opname) sudah aktif.
 

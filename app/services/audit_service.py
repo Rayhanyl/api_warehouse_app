@@ -44,6 +44,7 @@ _RESOURCE_ENTITY_MAP: dict[str, str] = {
     "stock-opnames": "stock_opnames",
     "stock": "stock_balances",
     "audit-logs": "audit_logs",
+    "document-templates": "document_templates",
 }
 
 

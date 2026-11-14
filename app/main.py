@@ -15,6 +15,7 @@ from app.api.routes import (
     audit_logs,
     auth,
     dashboard,
+    document_templates,
     goods_receipts,
     health,
     master,
@@ -203,6 +204,7 @@ def create_app() -> FastAPI:
     application.include_router(stock_opnames.router, prefix=settings.api_v1_prefix)
     application.include_router(audit_logs.router, prefix=settings.api_v1_prefix)
     application.include_router(dashboard.router, prefix=settings.api_v1_prefix)
+    application.include_router(document_templates.router, prefix=settings.api_v1_prefix)
 
     return application
 

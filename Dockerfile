@@ -22,8 +22,9 @@ COPY app ./app
 COPY db ./db
 COPY scripts ./scripts
 
-# Buat user non-root untuk keamanan runtime
+# Buat user non-root dan direktori upload runtime untuk keamanan
 RUN useradd --create-home --shell /bin/bash wmsuser \
+    && mkdir -p /app/uploads/document_logos \
     && chown -R wmsuser:wmsuser /app
 
 USER wmsuser
