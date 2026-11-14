@@ -13,22 +13,29 @@ from pathlib import Path
 import psycopg
 from psycopg.rows import dict_row
 
+from app.core.env_files import resolve_env_files
+
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
 
 
 def _load_dotenv_if_present() -> None:
-    """Membaca berkas .env secara sederhana bila variabel lingkungan belum diset."""
-    env_path = Path(__file__).resolve().parent.parent / ".env"
-    if not env_path.is_file():
-        return
-    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
+    """Membaca berkas env aktif secara sederhana bila variabel lingkungan belum diset.
+
+    Pemilihan berkas sama dengan `Settings` (`ENV_FILE`, atau `.env` + `.env.local`).
+    Berkas diproses dari prioritas tertinggi agar `setdefault` mempertahankan urutan
+    timpa-menimpa; variabel OS yang sudah ada tidak pernah ditimpa.
+    """
+    for env_path in reversed(resolve_env_files()):
+        if not env_path.is_file():
             continue
-        key, _, value = line.partition("=")
-        # Hapus komentar inline bila ada
-        val_clean = value.split("#", 1)[0].strip().strip('"').strip("'")
-        os.environ.setdefault(key.strip(), val_clean)
+        for raw_line in env_path.read_text(encoding="utf-8-sig").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            # Hapus komentar inline bila ada
+            val_clean = value.split("#", 1)[0].strip().strip('"').strip("'")
+            os.environ.setdefault(key.strip(), val_clean)
 
 
 def get_migration_db_url(override_url: str | None = None) -> str:

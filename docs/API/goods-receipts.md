@@ -60,6 +60,14 @@ Saat `POST /api/v1/goods-receipts/{gr_id}/post` dipanggil, seluruh langkah dijal
   * Antarmuka input GR (`GoodsReceiptForm`) menyediakan bilah pemindaian barcode (`BarcodeScanBar`) yang kompatibel dengan kamera perangkat (`BarcodeDetector`) dan pemindai fisik *USB/Bluetooth HID barcode gun*.
   * Memindai barcode atau SKU barang yang tercantum pada PO secara instan mencocokkan baris PO, menambahkan kuantitas terima (`+1` hingga batas sisa pesanan PO), dan otomatis mengalokasikan lokasi penyimpanan aktif default jika belum dipilih.
 
+### 2.5 Rute Dedikasi Pembuatan GR (`/goods-receipts/new`) & Pemilihan Referensi PO
+
+* **Rute Cepat Pembuatan GR (`/goods-receipts/new` & `/purchasing/goods-receipts/new`):**
+  * Disediakan halaman dedikasi `GoodsReceiptCreatePage` pada frontend yang secara otomatis membuka dialog form penerimaan barang (`GoodsReceiptFormDialog`) dalam mode pembuatan baru. Rute ini diintegrasikan langsung dengan tautan kartu "Tugas Tertunda: PO Siap Diterima" pada Dashboard.
+* **Dropdown Referensi PO Multi-Status (`ISSUED` & `PARTIALLY_RECEIVED`):**
+  * Hook `useGoodsReceiptReferences` memanggil `GET /api/v1/purchase-orders?status=ISSUED,PARTIALLY_RECEIVED&limit=100`.
+  * Sistem menghitung sisa barang belum diterima (`remaining_qty = ordered_qty - received_qty`) dan hanya menampilkan PO yang masih memiliki kuantitas tersisa (`remaining_qty > 0`), sehingga operator dapat langsung memproses penerimaan barang baik untuk PO baru maupun PO yang baru terkirim sebagian.
+
 ---
 
 ## 3. Autentikasi dan Otorisasi

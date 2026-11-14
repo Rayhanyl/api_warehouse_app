@@ -153,6 +153,30 @@ Pada saat Fase 2 (M9) diimplementasikan, kontrak API diperluas dengan ketentuan 
    - `TENANT_NOT_FOUND` (HTTP 404): `tenant_slug` atau `tenant_id` tidak ditemukan.
    - `QUOTA_EXCEEDED` (HTTP 409): Penambahan/pengaktifan gudang, pengguna aktif, atau barang aktif melampaui batas kuota paket (`plans`) tenant.
 
+### Kontrak Navigasi Dinamis & Monitoring Saldo Stok Terpadu (UX Opsi B)
+
+1. **Penyelarasan Menu Navigasi Persediaan (`GET /api/v1/menus/my-menu`):**
+   - Pohon navigasi sistem mengembalikan item tunggal tingkat atas untuk modul persediaan dengan atribut:
+     - `code`: `"stock_monitoring"`
+     - `name`: `"Monitoring Saldo Stok"`
+     - `path`: `"/stock"`
+     - `icon`: `"boxes"` (atau `"layers"`)
+     - `parent_id`: `null`
+     - `sort_order`: `30`
+     - `permission_code`: `"stock:read"`
+     - `children`: `[]` (tanpa submenu bertingkat)
+   - Seluruh rincian dimensi saldo fisik dan kartu stok disajikan terpadu pada satu halaman frontend melalui *tab segmented navigation* (`/stock/by-location`, `/stock/by-warehouse`, `/stock/summary`, `/stock/in-transit`, `/stock/ledger`).
+2. **Integritas Read-Only Modul Stok:**
+   - Seluruh endpoint persediaan (`/api/v1/stock/*`) hanya melayani method `GET`.
+   - Tidak ada endpoint `POST`, `PUT`, `PATCH`, atau `DELETE` yang memanipulasi saldo stok atau buku besar secara langsung; seluruh mutasi kuantitas stok wajib melalui gateway transaksi internal `apply_movement` yang dipicu oleh posting Goods Receipt, pengiriman/penerimaan Transfer Stok, atau persetujuan Stock Opname.
+
+### Kontrak Filter Multi-Status Dokumen Transaksi (`GET /api/v1/purchase-orders`)
+
+- Endpoint `GET /api/v1/purchase-orders` mendukung parameter query `status` dengan format status tunggal (misal: `status=ISSUED`) maupun multi-status yang dipisahkan tanda koma (misal: `status=ISSUED,PARTIALLY_RECEIVED`).
+- Backend memvalidasi setiap token status terhadap whitelist resmi dokumen (`DRAFT`, `ISSUED`, `PARTIALLY_RECEIVED`, `RECEIVED`, `CLOSED`, `CANCELLED`). Token yang tidak valid menghasilkan HTTP `422 VALIDATION_ERROR`.
+- Pada lapisan repository PostgreSQL, kondisi dieksekusi dengan ekspresi aman `po.status = ANY(%s)` menggunakan parameter array string PostgreSQL.
+- Fitur ini memungkinkan form pembuatan Goods Receipt (`useGoodsReceiptReferences`) memuat seluruh PO yang siap diterima (baik berstatus `ISSUED` maupun `PARTIALLY_RECEIVED` yang masih memiliki sisa kuantitas), sehingga selaras 100% dengan rekapitulasi tugas tertunda pada Dashboard.
+
 ## Ownership
 
 CORE hanya menetapkan prinsip dan katalog kontrak. Route dan schema aktual

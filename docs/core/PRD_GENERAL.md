@@ -564,6 +564,19 @@ harus sama dengan before plus change; negative stock ditolak dengan
 `INSUFFICIENT_STOCK`; movement non-adjustment di lokasi beku ditolak
 `LOCATION_FROZEN`; pembacaan view saldo (`balances`, `by-warehouse`, `summary`) dan `stock_movements` (`ledger`) bagi `Warehouse Staff`, `Warehouse Manager`, dan `Purchasing Staff` dibatasi pada gudang yang ditugaskan (`user_warehouses`).
 
+**Pemisahan Konsep Master Barang vs Saldo Stok Fisik:**
+Sistem membedakan secara tegas antara katalog identitas barang dan kuantitas fisik persediaan:
+1. **Master Data Barang (`items` - §6.4):** Merupakan master katalog statis yang mendefinisikan SKU, barcode pabrikan/internal, nama barang, kategori, dan UoM dasar. Halaman master barang sama sekali tidak mencatat saldo fisik barang di lantai gudang.
+2. **Saldo Stok & Buku Besar (`inventory_balances` & `stock_movements` - §6.6):** Merupakan data operasional dinamis yang mencatat posisi kuantitas fisik barang aktual per lokasi rak dan per gudang. Modul ini bersifat **Hanya-Baca (*Read-Only*)** bagi pengguna; tidak ada form atau tombol untuk mengedit angka saldo stok secara langsung. Saldo stok hanya dapat bertambah atau berkurang melalui eksekusi dokumen transaksi resmi (posting Goods Receipt, pengiriman/penerimaan Transfer Stok, atau persetujuan selisih fisik Stock Opname) melalui satu-satunya gerbang transaksi persediaan (`inventory_service.apply_movement`).
+
+**5 Dimensi Visualisasi Persediaan & Arsitektur Tab Navigasi (Opsi B):**
+Untuk menjaga antarmuka tetap bersih dan efisien bagi operator gudang, menu navigasi sidebar disederhanakan menjadi **satu menu utama** bernama **"Monitoring Saldo Stok"** (`/stock`), yang membuka antarmuka terpadu berbasis tab horizontal di sisi atas halaman:
+1. *Saldo per Lokasi (`/stock/by-location` - Default):* Menampilkan posisi saldo on-hand dan in-transit paling detail hingga level rak penyimpanan fisik (`storage_locations`). Dilengkapi tombol pintasan **"Cek Rak"** untuk inspeksi multi-SKU.
+2. *Saldo per Gudang (`/stock/by-warehouse`):* Menampilkan akumulasi total unit barang per fasilitas gudang (`warehouses`).
+3. *Ringkasan Global (`/stock/summary`):* Menampilkan konsolidasi persediaan perusahaan secara agregat lintas seluruh gudang (*enterprise-wide stock*).
+4. *Stok Dalam Perjalanan (`/stock/in-transit`):* Menampilkan barang yang sedang dalam proses pengiriman antar-gudang (status `SHIPPED` dan belum `RECEIVED`).
+5. *Buku Besar Pergerakan Stok (`/stock/ledger`):* Menampilkan audit trail pergerakan kartu stok secara kronologis. Tab ini otomatis disembunyikan bagi pengguna yang tidak memiliki hak akses `ledger:read` (hanya terlihat oleh *Super Admin*, *Warehouse Manager*, *Warehouse Staff*, dan *Auditor*).
+
 **INV-F07 — Integrasi Pemindai Barcode / QR Code:** Mendukung alur kerja pemindaian cepat kode barang (SKU atau Barcode) dan kode lokasi rak (`storage_locations.code`) pada antarmuka operasional (Penerimaan Barang, Transfer Kirim/Terima, dan Hitung Fisik Stock Opname). Sistem mendukung: (1) Hardware Barcode Gun (USB/Bluetooth HID input) dengan buffer ketukan cepat otomatis, dan (2) Web Camera Barcode/QR Scanner modal yang dapat diakses langsung melalui peramban pada tablet/smartphone staf toko cabang. Pemindaian otomatis mencocokkan item dokumen dan menambah kuantitas hitung/terima.
 
 **INV-F08 — Pindai Cek Barang & Posisi Rak Gudang (Quick Stock & Location Finder):** Menyediakan fungsionalitas pemindaian langsung barcode barang fisik saat staf/operator berada di gudang atau lantai toko. Pemindaian (melalui tombol cepat Topbar, shortcut keyboard, atau pemindai hardware) memanggil modal pencarian yang menampilkan profil lengkap barang (SKU, nama, barcode, kategori, satuan UoM, total stok) dan tabel sebaran posisi stok fisik aktual (`location_code`, `location_name`, `warehouse_name`, `qty_on_hand`, `qty_in_transit`) di seluruh rak/bin gudang secara real-time.
