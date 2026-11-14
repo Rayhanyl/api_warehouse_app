@@ -19,6 +19,7 @@ from app.repositories import audit_repo
 from app.utils.pagination import normalize_pagination
 
 VALID_AUDIT_STATUSES: frozenset[str] = frozenset({"SUCCESS", "FAILED"})
+VALID_AUDIT_CATEGORIES: frozenset[str] = frozenset({"business", "security", "failed"})
 
 IGNORED_METADATA_KEYS: frozenset[str] = frozenset(
     {
@@ -76,6 +77,16 @@ def _sanitize_payload(data: dict[str, Any] | None) -> dict[str, Any] | None:
             continue
         cleaned[key_str] = _sanitize_value(value)
     return cleaned
+
+
+def _normalize_category(category: str | None) -> str:
+    norm = (category or "").strip().lower()
+    if norm not in VALID_AUDIT_CATEGORIES:
+        raise ValidationDomainError(
+            "Kategori audit log tidak valid. Gunakan 'business', 'security', atau 'failed'.",
+            details={"category": category},
+        )
+    return norm
 
 
 def _normalize_status(status: str | None) -> str:
@@ -332,6 +343,8 @@ def list_audit_logs(
     entity_type: str | None = None,
     entity_id: str | None = None,
     status: str | None = None,
+    category: str | None = None,
+    include_technical: bool = False,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     search: str | None = None,
@@ -342,6 +355,10 @@ def list_audit_logs(
     norm_status: str | None = None
     if status is not None and status.strip():
         norm_status = _normalize_status(status)
+
+    norm_category: str | None = None
+    if category is not None and category.strip():
+        norm_category = _normalize_category(category)
 
     if date_from is not None and date_to is not None and date_from > date_to:
         raise ValidationDomainError(
@@ -361,6 +378,8 @@ def list_audit_logs(
         entity_type=entity_type,
         entity_id=entity_id,
         status=norm_status,
+        category=norm_category,
+        include_technical=include_technical,
         date_from=date_from,
         date_to=date_to,
         search=search,

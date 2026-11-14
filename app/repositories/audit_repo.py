@@ -134,6 +134,9 @@ def insert_audit_logs_batch(
         )
 
 
+ROUTINE_TECHNICAL_ACTIONS: tuple[str, ...] = ("AUTH_TOKEN_REFRESHED",)
+
+
 def list_audit_logs(
     conn: Connection[dict[str, Any]],
     *,
@@ -144,13 +147,15 @@ def list_audit_logs(
     entity_type: str | None = None,
     entity_id: str | None = None,
     status: str | None = None,
+    category: str | None = None,
+    include_technical: bool = False,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     search: str | None = None,
     sort_by: str | None = None,
     sort_dir: str | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
-    """Membaca daftar audit_logs dengan filter dan pagination."""
+    """Membaca daftar audit_logs dengan filter kategori, noise exclusion, dan pagination."""
     conditions: list[str] = []
     params: list[Any] = []
 
@@ -169,6 +174,34 @@ def list_audit_logs(
     if status is not None:
         conditions.append("a.status = %s")
         params.append(status)
+
+    if category == "business":
+        conditions.append(
+            "a.status = 'SUCCESS' AND a.action NOT LIKE %s ESCAPE '\\' AND a.action NOT LIKE %s ESCAPE '\\'"
+        )
+        params.extend(["AUTH\\_%", "USER\\_PASSWORD\\_%"])
+    elif category == "security":
+        conditions.append(
+            "(a.action LIKE %s ESCAPE '\\' OR a.action LIKE %s ESCAPE '\\' OR a.action = ANY(%s))"
+        )
+        params.extend(
+            [
+                "AUTH\\_%",
+                "USER\\_PASSWORD\\_%",
+                [
+                    "PERMISSION_DENIED",
+                    "WAREHOUSE_NOT_ASSIGNED",
+                    "ROLE_PERMISSIONS_UPDATED",
+                    "USER_WAREHOUSES_UPDATED",
+                ],
+            ]
+        )
+    elif category == "failed":
+        conditions.append("a.status = 'FAILED'")
+
+    if not include_technical and action not in ROUTINE_TECHNICAL_ACTIONS:
+        conditions.append("NOT (a.action = ANY(%s))")
+        params.append(list(ROUTINE_TECHNICAL_ACTIONS))
     if date_from is not None:
         conditions.append("a.created_at >= %s")
         params.append(date_from)

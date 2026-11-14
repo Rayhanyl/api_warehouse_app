@@ -220,3 +220,44 @@ def test_auth_me_returns_warehouse_scope_metadata(
     assert staff_body["warehouses"][0]["code"] == "ME-WHA"
     assert staff_body["warehouses"][0]["name"] == "Gudang Me A"
     assert staff_body["warehouses"][0]["is_active"] is True
+
+
+def test_normal_refresh_does_not_spam_audit_logs(
+    client: TestClient,
+    db_conn: Connection[dict[str, Any]],
+    staff_user: dict[str, Any],
+) -> None:
+    """Tahap 26: Rotasi refresh token normal tidak menulis AUTH_TOKEN_REFRESHED ke audit_logs,
+    namun kejadian keamanan (login, logout, gagal refresh, reuse) tetap dicatat.
+    """
+    login_res = client.post(
+        "/api/v1/auth/login",
+        json={"username": staff_user["username"], "password": staff_user["plain_password"]},
+    )
+    assert login_res.status_code == 200
+    r1 = login_res.json()["refresh_token"]
+
+    refresh_res = client.post("/api/v1/auth/refresh", json={"refresh_token": r1})
+    assert refresh_res.status_code == 200
+
+    refresh_logs = db_conn.execute(
+        "SELECT id FROM audit_logs WHERE action = 'AUTH_TOKEN_REFRESHED' AND user_id = %s",
+        (staff_user["id"],),
+    ).fetchall()
+    assert refresh_logs == []
+
+    login_logs = db_conn.execute(
+        "SELECT id FROM audit_logs WHERE action = 'AUTH_LOGIN_SUCCESS' AND user_id = %s",
+        (staff_user["id"],),
+    ).fetchall()
+    assert len(login_logs) == 1
+
+    bad_refresh = client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": "not-a-valid-refresh-token-value"},
+    )
+    assert bad_refresh.status_code == 401
+    failed_refresh_logs = db_conn.execute(
+        "SELECT id FROM audit_logs WHERE action = 'AUTH_TOKEN_REFRESH_FAILED'"
+    ).fetchall()
+    assert len(failed_refresh_logs) >= 1

@@ -604,3 +604,102 @@ def test_tahap14_comprehensive_audit_enrichment_failures_and_sanitization(
     )
     assert bad_status.status_code == 422
 
+
+def test_audit_log_excludes_technical_noise_and_filters_categories(
+    client: TestClient,
+    db_conn: Connection[dict[str, Any]],
+    superadmin_user: dict[str, Any],
+    auditor_user: dict[str, Any],
+) -> None:
+    """Tahap 26:
+    - Noise historis `AUTH_TOKEN_REFRESHED` dikecualikan secara default, namun dapat ditampilkan dengan `include_technical=true`.
+    - Filter `category=business`, `category=security`, dan `category=failed` menyaring log sesuai jenisnya.
+    """
+    from app.services import audit_service
+
+    with db_conn.transaction():
+        audit_service.record(
+            db_conn,
+            user_id=superadmin_user["id"],
+            action="AUTH_TOKEN_REFRESHED",
+            entity_type="refresh_tokens",
+            entity_id=999,
+            details={"seed": "tahap-26-noise"},
+        )
+        audit_service.record(
+            db_conn,
+            user_id=superadmin_user["id"],
+            action="ITEM_CREATED",
+            entity_type="items",
+            entity_id=501,
+            new_values={"sku": "SKU-T26"},
+        )
+        audit_service.record(
+            db_conn,
+            user_id=superadmin_user["id"],
+            action="AUTH_LOGIN_SUCCESS",
+            entity_type="users",
+            entity_id=superadmin_user["id"],
+        )
+        audit_service.record(
+            db_conn,
+            user_id=superadmin_user["id"],
+            action="PERMISSION_DENIED",
+            entity_type="warehouses",
+            entity_id=1,
+            status="FAILED",
+        )
+
+    default_res = client.get(
+        "/api/v1/audit-logs?limit=100",
+        headers=auditor_user["auth_headers"],
+    )
+    assert default_res.status_code == 200, default_res.text
+    default_actions = [item["action"] for item in default_res.json()["items"]]
+    assert "AUTH_TOKEN_REFRESHED" not in default_actions
+    assert "ITEM_CREATED" in default_actions
+    assert "AUTH_LOGIN_SUCCESS" in default_actions
+    assert "PERMISSION_DENIED" in default_actions
+
+    tech_res = client.get(
+        "/api/v1/audit-logs?limit=100&include_technical=true",
+        headers=auditor_user["auth_headers"],
+    )
+    assert tech_res.status_code == 200
+    assert any(item["action"] == "AUTH_TOKEN_REFRESHED" for item in tech_res.json()["items"])
+
+    biz_res = client.get(
+        "/api/v1/audit-logs?limit=100&category=business",
+        headers=auditor_user["auth_headers"],
+    )
+    assert biz_res.status_code == 200
+    biz_actions = [item["action"] for item in biz_res.json()["items"]]
+    assert "ITEM_CREATED" in biz_actions
+    assert all(not act.startswith("AUTH_") for act in biz_actions)
+    assert all(item["status"] == "SUCCESS" for item in biz_res.json()["items"])
+
+    sec_res = client.get(
+        "/api/v1/audit-logs?limit=100&category=security",
+        headers=auditor_user["auth_headers"],
+    )
+    assert sec_res.status_code == 200
+    sec_actions = [item["action"] for item in sec_res.json()["items"]]
+    assert "AUTH_LOGIN_SUCCESS" in sec_actions
+    assert "PERMISSION_DENIED" in sec_actions
+    assert "ITEM_CREATED" not in sec_actions
+    assert "AUTH_TOKEN_REFRESHED" not in sec_actions
+
+    failed_res = client.get(
+        "/api/v1/audit-logs?limit=100&category=failed",
+        headers=auditor_user["auth_headers"],
+    )
+    assert failed_res.status_code == 200
+    assert all(item["status"] == "FAILED" for item in failed_res.json()["items"])
+    assert any(item["action"] == "PERMISSION_DENIED" for item in failed_res.json()["items"])
+
+    bad_cat = client.get(
+        "/api/v1/audit-logs?category=UNKNOWN",
+        headers=auditor_user["auth_headers"],
+    )
+    assert bad_cat.status_code == 422
+

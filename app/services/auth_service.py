@@ -273,16 +273,8 @@ def refresh_session(
                         revoked_at=now,
                         replaced_by_id=int(new_token_row["id"]),
                     )
-                    audit_service.record(
-                        conn,
-                        user_id=user_id,
-                        action="AUTH_TOKEN_REFRESHED",
-                        entity_type="refresh_tokens",
-                        entity_id=new_token_row["id"],
-                        old_values={"previous_token_id": token_id},
-                        new_values={"new_token_id": new_token_row["id"]},
-                        ip_address=ip_address,
-                    )
+                    # Rotasi refresh token rutin tidak dicatat ke audit_logs agar tidak
+                    # membanjiri jejak aktivitas; insiden keamanan (reuse/gagal) tetap dicatat.
                     result_tokens = {
                         "access_token": access_token,
                         "refresh_token": new_raw_refresh,
