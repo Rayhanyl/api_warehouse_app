@@ -12,6 +12,7 @@ padanya dan tidak boleh menambah business requirement.
 | Dokumen | Status | Tanggung jawab |
 | --- | --- | --- |
 | [PRD_GENERAL.md](PRD_GENERAL.md) | Approved / master product requirements | Tujuan, scope, role, FR, NFR, workflow, AC |
+| [PRD_ERP.md](PRD_ERP.md) | Draft / Analisis & Roadmap ERP (Pasca-WMS & M9) | Cetak biru siklus bisnis ERP terpadu, skema diskon PO, & analisis 13 skenario operasional PO *(belum untuk implementasi sebelum WMS tuntas)* |
 | [PRD_BACKEND.md](PRD_BACKEND.md) | Approved / layer specification | API, service, validation, security, transaction, error |
 | [PRD_FRONTEND.md](PRD_FRONTEND.md) | Approved / spesifikasi antarmuka (`warehouse_app`) | Halaman, UX, state, permission UI, integrasi API |
 | [DATABASE_DESIGN.md](DATABASE_DESIGN.md) | Approved / design map | Entitas, relasi, integritas, migration ownership |

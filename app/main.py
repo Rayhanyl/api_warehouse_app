@@ -51,6 +51,13 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         )
         raise
     logger.info("Connection pool database siap digunakan.")
+    _db_ok, pending_migrations = database.check_schema_health()
+    if pending_migrations:
+        logger.warning(
+            "Terdapat %d migrasi SQL yang belum dijalankan pada database (%s). Jalankan 'python -m db.migrate' sebelum menggunakan endpoint terkait.",
+            len(pending_migrations),
+            ", ".join(pending_migrations),
+        )
     try:
         yield
     finally:

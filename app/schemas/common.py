@@ -64,6 +64,8 @@ class HealthResponse(BaseModel):
     service: str
     version: str
     database: str
+    schema_status: str = "ok"
+    pending_migrations: list[str] = Field(default_factory=list)
 
 
 class Page(BaseModel, Generic[T]):

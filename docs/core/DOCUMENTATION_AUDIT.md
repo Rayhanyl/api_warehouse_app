@@ -19,7 +19,7 @@
 | --- | --- | --- | --- |
 | AS-001 | Dikonfirmasi pemilik proyek (`CONF-001` Resolved): Fase 1 (M0–M8) adalah baseline Single-Tenant yang telah selesai, dan Fase 2 (M9) adalah transisi Multi-Tenant SaaS (`TNT`, `CFG`, `tenant_id` + RLS) sebelum modul `ISS`/`RPT`. | Telah dispesifikasikan secara resmi di `PRD_GENERAL.md` v2.3, `DATABASE_DESIGN.md`, `PRD_BACKEND.md`, `PRD_FRONTEND.md`, dan `API_CONTRACT.md`. | Menjadi acuan resmi tahap M9 berikutnya. |
 | AS-002 | Frontend admin dikembangkan berdampingan dalam satu workspace (`warehouse_app/`). | Struktur monorepo memiliki backend di `api_warehouse_app/` dan frontend React di `warehouse_app/`. | Kontrak frontend dapat divalidasi langsung terhadap implementasi aktual. |
-| AS-003 | Klaim hasil test di QA adalah snapshot run pada saat pengujian dijalankan. | Catatan historis awal `2026-11-03` mencatat 47 test backend di `wms_test`; snapshot verifikasi terkini (Tahap 30) berada di `docs/QA/QA.MD` dengan **84 tes backend (`pytest`)** dan **101 tes frontend (`vitest`)** lulus. Setiap perubahan kode baru tetap harus diverifikasi ulang dengan run terbaru. | Tidak boleh mengklaim perubahan baru lulus tanpa menjalankan test ulang. |
+| AS-003 | Klaim hasil test di QA adalah snapshot run pada saat pengujian dijalankan. | Catatan historis awal `2026-11-03` mencatat 47 test backend di `wms_test`; snapshot verifikasi terkini (Tahap 31–33) berada di `docs/QA/QA.MD` dengan **84 tes backend (`pytest`)** dan **102 tes frontend (`vitest`)** lulus. Setiap perubahan kode baru tetap harus diverifikasi ulang dengan run terbaru. | Tidak boleh mengklaim perubahan baru lulus tanpa menjalankan test ulang. |
 
 ## Belum terverifikasi
 

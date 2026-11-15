@@ -140,10 +140,30 @@ def _validate_and_normalize_gr_lines(
     for po_line_id, total_current_gr in requested_per_po_line.items():
         po_line = po_lines_by_id[po_line_id]
         already_received = Decimal(po_line["qty_received"]).quantize(FOUR_PLACES)
+        already_closed = Decimal(po_line.get("qty_closed", Decimal("0.0000"))).quantize(
+            FOUR_PLACES
+        )
         qty_ordered = Decimal(po_line["qty_ordered"]).quantize(FOUR_PLACES)
-        remaining = (qty_ordered - already_received).quantize(FOUR_PLACES)
+        remaining = (qty_ordered - already_received - already_closed).quantize(
+            FOUR_PLACES
+        )
 
-        if total_current_gr + already_received > qty_ordered:
+        if str(po_line.get("line_status", "OPEN")) == "CLOSED" or remaining <= Decimal("0.0000"):
+            raise OverReceipt(
+                f"Baris PO untuk barang #{po_line['item_id']} sudah ditutup atau terpenuhi penuh (sisa {remaining:.4f}).",
+                details={
+                    "po_id": po_id,
+                    "po_line_id": po_line_id,
+                    "item_id": po_line["item_id"],
+                    "qty_ordered": f"{qty_ordered:.4f}",
+                    "qty_already_received": f"{already_received:.4f}",
+                    "qty_closed": f"{already_closed:.4f}",
+                    "qty_remaining": f"{remaining:.4f}",
+                    "qty_requested": f"{total_current_gr:.4f}",
+                },
+            )
+
+        if total_current_gr > remaining:
             raise OverReceipt(
                 f"Kuantitas penerimaan ({total_current_gr:.4f}) melebihi sisa pesanan PO ({remaining:.4f}).",
                 details={
@@ -152,6 +172,7 @@ def _validate_and_normalize_gr_lines(
                     "item_id": po_line["item_id"],
                     "qty_ordered": f"{qty_ordered:.4f}",
                     "qty_already_received": f"{already_received:.4f}",
+                    "qty_closed": f"{already_closed:.4f}",
                     "qty_remaining": f"{remaining:.4f}",
                     "qty_requested": f"{total_current_gr:.4f}",
                 },

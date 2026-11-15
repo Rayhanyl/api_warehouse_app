@@ -134,7 +134,7 @@ Catatan M8 di `docs/API/README.md` memuat benchmark lokal yang pernah dilakukan.
 
 Aplikasi frontend dikembangkan pada folder `warehouse_app/` berbasis React 19, TypeScript, Vite, dan pengujian unit/integrasi menggunakan **Vitest + React Testing Library + MSW**.
 
-Rangkaian pengujian frontend yang aktif mencakup **22 test file (101 tes lulus)** beserta verifikasi `npm run lint` (0 error/0 warning), `npm run typecheck` (`tsc -b`), dan `npm run build` (`vite build`):
+Rangkaian pengujian frontend yang aktif mencakup **22 test file (102 tes lulus)** beserta verifikasi `npm run lint` (0 error/0 warning), `npm run typecheck` (`tsc -b`), dan `npm run build` (`vite build`):
 - `app/App.test.tsx` (routing, inisialisasi shell, sidebar, dashboard, profil, & landing page).
 - `app/responsive-mobile-tablet.test.tsx` (tata letak & responsivitas mobile/tablet/desktop).
 - `app/warehouse-scope.test.tsx` (isolasi cakupan gudang global di topbar & sinkronisasi halaman operasional).

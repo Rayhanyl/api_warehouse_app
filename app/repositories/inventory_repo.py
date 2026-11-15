@@ -337,6 +337,7 @@ def list_stock_by_warehouse(
     warehouse_id: int | None = None,
     item_id: int | None = None,
     category_id: int | None = None,
+    critical_only: bool | None = None,
     search: str | None = None,
     order_by_sql: str = "cb.warehouse_id ASC, cb.item_id ASC",
 ) -> tuple[list[dict[str, Any]], int]:
@@ -362,6 +363,9 @@ def list_stock_by_warehouse(
     if category_id is not None:
         conditions.append("i.category_id = %s")
         params.append(category_id)
+
+    if critical_only:
+        conditions.append("(i.is_active = TRUE AND cb.qty_on_hand <= i.min_stock)")
 
     if search:
         kw = f"%{search.strip()}%"
@@ -435,6 +439,8 @@ def list_stock_by_warehouse(
             c.name AS category_name,
             i.uom_id,
             u.code AS uom_code,
+            i.min_stock,
+            (i.is_active = TRUE AND cb.qty_on_hand <= i.min_stock) AS is_critical,
             cb.qty_on_hand,
             cb.qty_in_transit
         FROM cb
@@ -460,6 +466,7 @@ def list_stock_summary(
     warehouse_id: int | None = None,
     item_id: int | None = None,
     category_id: int | None = None,
+    critical_only: bool | None = None,
     search: str | None = None,
     order_by_sql: str = "cb.item_id ASC",
 ) -> tuple[list[dict[str, Any]], int]:
@@ -498,6 +505,9 @@ def list_stock_summary(
         outer_conditions.append("i.category_id = %s")
         outer_params.append(category_id)
 
+    if critical_only:
+        outer_conditions.append("(i.is_active = TRUE AND cb.qty_on_hand <= i.min_stock)")
+
     if search:
         kw = f"%{search.strip()}%"
         outer_conditions.append("(i.sku ILIKE %s OR COALESCE(i.barcode, '') ILIKE %s OR i.name ILIKE %s)")
@@ -524,12 +534,7 @@ def list_stock_summary(
             GROUP BY stl.item_id
         ),
         cb AS (
-            SELECT
-                COALESCE(b.item_id, it.item_id) AS item_id,
-                COALESCE(b.qty_on_hand, 0.0000)::NUMERIC(18, 4) AS qty_on_hand,
-                COALESCE(it.qty_in_transit, 0.0000)::NUMERIC(18, 4) AS qty_in_transit
-            FROM item_balance b
-            FULL OUTER JOIN item_in_transit it ON b.item_id = it.item_id
+            {"SELECT i.id AS item_id, COALESCE(b.qty_on_hand, 0.0000)::NUMERIC(18, 4) AS qty_on_hand, COALESCE(it.qty_in_transit, 0.0000)::NUMERIC(18, 4) AS qty_in_transit FROM items i LEFT JOIN item_balance b ON b.item_id = i.id LEFT JOIN item_in_transit it ON it.item_id = i.id" if (critical_only and warehouse_id is None and scoped_warehouse_ids is None) else "SELECT COALESCE(b.item_id, it.item_id) AS item_id, COALESCE(b.qty_on_hand, 0.0000)::NUMERIC(18, 4) AS qty_on_hand, COALESCE(it.qty_in_transit, 0.0000)::NUMERIC(18, 4) AS qty_in_transit FROM item_balance b FULL OUTER JOIN item_in_transit it ON b.item_id = it.item_id"}
         )
     """
 
@@ -561,6 +566,8 @@ def list_stock_summary(
             c.name AS category_name,
             i.uom_id,
             u.code AS uom_code,
+            i.min_stock,
+            (i.is_active = TRUE AND cb.qty_on_hand <= i.min_stock) AS is_critical,
             cb.qty_on_hand,
             cb.qty_in_transit
         FROM cb

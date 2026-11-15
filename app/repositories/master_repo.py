@@ -376,8 +376,15 @@ def list_suppliers(
             s.name,
             s.contact_person,
             s.phone,
+            s.fax,
             s.email,
             s.address,
+            s.bank_name,
+            s.bank_account_number,
+            s.bank_account_holder,
+            s.npwp,
+            s.payment_terms,
+            s.notes,
             s.is_active,
             s.created_by,
             s.created_at,
@@ -398,7 +405,8 @@ def get_supplier_by_id(
     return conn.execute(
         """
         SELECT
-            id, code, name, contact_person, phone, email, address,
+            id, code, name, contact_person, phone, fax, email, address,
+            bank_name, bank_account_number, bank_account_holder, npwp, payment_terms, notes,
             is_active, created_by, created_at, updated_at
         FROM suppliers
         WHERE id = %s
@@ -413,7 +421,8 @@ def lock_supplier_by_id(
     return conn.execute(
         """
         SELECT
-            id, code, name, contact_person, phone, email, address,
+            id, code, name, contact_person, phone, fax, email, address,
+            bank_name, bank_account_number, bank_account_holder, npwp, payment_terms, notes,
             is_active, created_by, created_at, updated_at
         FROM suppliers
         WHERE id = %s
@@ -520,22 +529,48 @@ def insert_supplier(
     name: str,
     contact_person: str | None,
     phone: str | None,
+    fax: str | None = None,
     email: str | None,
     address: str | None,
+    bank_name: str | None = None,
+    bank_account_number: str | None = None,
+    bank_account_holder: str | None = None,
+    npwp: str | None = None,
+    payment_terms: str | None = None,
+    notes: str | None = None,
     is_active: bool,
     created_by: int | None,
 ) -> dict[str, Any]:
     row = conn.execute(
         """
         INSERT INTO suppliers (
-            code, name, contact_person, phone, email, address, is_active, created_by
+            code, name, contact_person, phone, fax, email, address,
+            bank_name, bank_account_number, bank_account_holder, npwp, payment_terms, notes,
+            is_active, created_by
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING
-            id, code, name, contact_person, phone, email, address,
+            id, code, name, contact_person, phone, fax, email, address,
+            bank_name, bank_account_number, bank_account_holder, npwp, payment_terms, notes,
             is_active, created_by, created_at, updated_at
         """,
-        (code, name, contact_person, phone, email, address, is_active, created_by),
+        (
+            code,
+            name,
+            contact_person,
+            phone,
+            fax,
+            email,
+            address,
+            bank_name,
+            bank_account_number,
+            bank_account_holder,
+            npwp,
+            payment_terms,
+            notes,
+            is_active,
+            created_by,
+        ),
     ).fetchone()
     assert row is not None
     return row
@@ -549,8 +584,15 @@ def update_supplier(
     name: str,
     contact_person: str | None,
     phone: str | None,
+    fax: str | None = None,
     email: str | None,
     address: str | None,
+    bank_name: str | None = None,
+    bank_account_number: str | None = None,
+    bank_account_holder: str | None = None,
+    npwp: str | None = None,
+    payment_terms: str | None = None,
+    notes: str | None = None,
     is_active: bool,
 ) -> dict[str, Any]:
     row = conn.execute(
@@ -561,16 +603,40 @@ def update_supplier(
             name = %s,
             contact_person = %s,
             phone = %s,
+            fax = %s,
             email = %s,
             address = %s,
+            bank_name = %s,
+            bank_account_number = %s,
+            bank_account_holder = %s,
+            npwp = %s,
+            payment_terms = %s,
+            notes = %s,
             is_active = %s,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = %s
         RETURNING
-            id, code, name, contact_person, phone, email, address,
+            id, code, name, contact_person, phone, fax, email, address,
+            bank_name, bank_account_number, bank_account_holder, npwp, payment_terms, notes,
             is_active, created_by, created_at, updated_at
         """,
-        (code, name, contact_person, phone, email, address, is_active, supplier_id),
+        (
+            code,
+            name,
+            contact_person,
+            phone,
+            fax,
+            email,
+            address,
+            bank_name,
+            bank_account_number,
+            bank_account_holder,
+            npwp,
+            payment_terms,
+            notes,
+            is_active,
+            supplier_id,
+        ),
     ).fetchone()
     assert row is not None
     return row
@@ -669,6 +735,7 @@ def list_items(
             u.code AS uom_code,
             u.name AS uom_name,
             u.allow_decimal,
+            i.min_stock,
             i.is_active,
             i.created_by,
             i.created_at,
@@ -702,6 +769,7 @@ def get_item_by_id(
             u.code AS uom_code,
             u.name AS uom_name,
             u.allow_decimal,
+            i.min_stock,
             i.is_active,
             i.created_by,
             i.created_at,
@@ -721,7 +789,7 @@ def lock_item_by_id(
     row = conn.execute(
         """
         SELECT
-            id, sku, barcode, name, description, category_id, uom_id,
+            id, sku, barcode, name, description, category_id, uom_id, min_stock,
             is_active, created_by, created_at, updated_at
         FROM items
         WHERE id = %s
@@ -928,18 +996,19 @@ def insert_item(
     description: str | None,
     category_id: int,
     uom_id: int,
+    min_stock: Any = 0,
     is_active: bool,
     created_by: int | None,
 ) -> dict[str, Any]:
     row = conn.execute(
         """
         INSERT INTO items (
-            sku, barcode, name, description, category_id, uom_id, is_active, created_by
+            sku, barcode, name, description, category_id, uom_id, min_stock, is_active, created_by
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id
         """,
-        (sku, barcode, name, description, category_id, uom_id, is_active, created_by),
+        (sku, barcode, name, description, category_id, uom_id, min_stock, is_active, created_by),
     ).fetchone()
     assert row is not None
     detail = get_item_by_id(conn, int(row["id"]))
@@ -957,6 +1026,7 @@ def update_item(
     description: str | None,
     category_id: int,
     uom_id: int,
+    min_stock: Any = 0,
     is_active: bool,
 ) -> dict[str, Any]:
     conn.execute(
@@ -969,11 +1039,12 @@ def update_item(
             description = %s,
             category_id = %s,
             uom_id = %s,
+            min_stock = %s,
             is_active = %s,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = %s
         """,
-        (sku, barcode, name, description, category_id, uom_id, is_active, item_id),
+        (sku, barcode, name, description, category_id, uom_id, min_stock, is_active, item_id),
     )
     detail = get_item_by_id(conn, item_id)
     assert detail is not None

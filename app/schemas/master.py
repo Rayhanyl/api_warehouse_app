@@ -1,9 +1,12 @@
 """Schema Pydantic untuk Master Data: Kategori, UoM, Barang (Item), dan Pemasok (Supplier) (FR-02)."""
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+from app.schemas.common import DecimalStr
 
 from app.core.validation import (
     pydantic_optional_non_blank_str,
@@ -131,8 +134,15 @@ class SupplierCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=150)
     contact_person: str | None = Field(default=None, max_length=120)
     phone: str | None = Field(default=None, max_length=30)
+    fax: str | None = Field(default=None, max_length=50)
     email: str | None = Field(default=None, max_length=255)
     address: str | None = Field(default=None, max_length=1000)
+    bank_name: str | None = Field(default=None, max_length=120)
+    bank_account_number: str | None = Field(default=None, max_length=60)
+    bank_account_holder: str | None = Field(default=None, max_length=150)
+    npwp: str | None = Field(default=None, max_length=40)
+    payment_terms: str | None = Field(default=None, max_length=120)
+    notes: str | None = Field(default=None, max_length=500)
     is_active: bool = True
 
     @field_validator("code")
@@ -145,7 +155,17 @@ class SupplierCreate(BaseModel):
     def _val_name(cls, v: Any) -> str:
         return pydantic_required_str(v, label="Nama pemasok")
 
-    @field_validator("contact_person", "address")
+    @field_validator(
+        "contact_person",
+        "fax",
+        "address",
+        "bank_name",
+        "bank_account_number",
+        "bank_account_holder",
+        "npwp",
+        "payment_terms",
+        "notes",
+    )
     @classmethod
     def _val_optional_text(cls, v: Any) -> str | None:
         return pydantic_optional_str(v)
@@ -167,8 +187,15 @@ class SupplierUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=150)
     contact_person: str | None = Field(default=None, max_length=120)
     phone: str | None = Field(default=None, max_length=30)
+    fax: str | None = Field(default=None, max_length=50)
     email: str | None = Field(default=None, max_length=255)
     address: str | None = Field(default=None, max_length=1000)
+    bank_name: str | None = Field(default=None, max_length=120)
+    bank_account_number: str | None = Field(default=None, max_length=60)
+    bank_account_holder: str | None = Field(default=None, max_length=150)
+    npwp: str | None = Field(default=None, max_length=40)
+    payment_terms: str | None = Field(default=None, max_length=120)
+    notes: str | None = Field(default=None, max_length=500)
     is_active: bool | None = None
 
     @field_validator("code")
@@ -183,7 +210,17 @@ class SupplierUpdate(BaseModel):
     def _val_name(cls, v: Any) -> str | None:
         return pydantic_optional_non_blank_str(v, label="Nama pemasok")
 
-    @field_validator("contact_person", "address")
+    @field_validator(
+        "contact_person",
+        "fax",
+        "address",
+        "bank_name",
+        "bank_account_number",
+        "bank_account_holder",
+        "npwp",
+        "payment_terms",
+        "notes",
+    )
     @classmethod
     def _val_optional_text(cls, v: Any) -> str | None:
         return pydantic_optional_str(v)
@@ -212,8 +249,15 @@ class SupplierOut(BaseModel):
     name: str
     contact_person: str | None = None
     phone: str | None = None
+    fax: str | None = None
     email: str | None = None
     address: str | None = None
+    bank_name: str | None = None
+    bank_account_number: str | None = None
+    bank_account_holder: str | None = None
+    npwp: str | None = None
+    payment_terms: str | None = None
+    notes: str | None = None
     is_active: bool
     created_by: int | None = None
     created_at: datetime
@@ -230,6 +274,7 @@ class ItemCreate(BaseModel):
     description: str | None = Field(default=None, max_length=1000)
     category_id: int = Field(..., gt=0)
     uom_id: int = Field(..., gt=0)
+    min_stock: Decimal = Field(default=Decimal("0"), ge=0)
     is_active: bool = True
 
     @field_validator("sku")
@@ -260,6 +305,7 @@ class ItemUpdate(BaseModel):
     description: str | None = Field(default=None, max_length=1000)
     category_id: int | None = Field(default=None, gt=0)
     uom_id: int | None = Field(default=None, gt=0)
+    min_stock: Decimal | None = Field(default=None, ge=0)
     is_active: bool | None = None
 
     @field_validator("sku")
@@ -303,6 +349,7 @@ class ItemOut(BaseModel):
     uom_code: str
     uom_name: str
     allow_decimal: bool
+    min_stock: DecimalStr = Decimal("0.0000")
     is_active: bool
     created_by: int | None = None
     created_at: datetime

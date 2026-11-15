@@ -29,6 +29,7 @@ PO_SORT_COLUMNS: dict[str, str] = {
     "id": "po.id",
     "po_number": "po.po_number",
     "order_date": "po.order_date",
+    "expected_delivery_date": "po.expected_delivery_date",
     "status": "po.status",
     "created_at": "po.created_at",
 }
@@ -134,8 +135,20 @@ def _validate_and_normalize_po_lines(
     return normalized_lines
 
 
+def _validate_delivery_date(order_date: date, expected_delivery_date: date | None) -> None:
+    if expected_delivery_date is not None and expected_delivery_date < order_date:
+        raise ValidationDomainError(
+            "Estimasi tanggal pengiriman tidak boleh lebih awal dari tanggal pesanan.",
+            details={
+                "order_date": order_date.isoformat(),
+                "expected_delivery_date": expected_delivery_date.isoformat(),
+            },
+        )
+
+
 def _serialize_po_snapshot(po_detail: dict[str, Any]) -> dict[str, Any]:
     """Menyusun representasi ringkas PO untuk old_values/new_values di audit_logs."""
+    exp_date = po_detail.get("expected_delivery_date")
     return {
         "id": po_detail["id"],
         "po_number": po_detail["po_number"],
@@ -145,6 +158,10 @@ def _serialize_po_snapshot(po_detail: dict[str, Any]) -> dict[str, Any]:
         "order_date": po_detail["order_date"].isoformat()
         if isinstance(po_detail["order_date"], date)
         else str(po_detail["order_date"]),
+        "expected_delivery_date": exp_date.isoformat()
+        if isinstance(exp_date, date)
+        else exp_date,
+        "revised_from_po_id": po_detail.get("revised_from_po_id"),
         "notes": po_detail["notes"],
         "closed_reason": po_detail.get("closed_reason"),
         "lines": [
@@ -154,6 +171,8 @@ def _serialize_po_snapshot(po_detail: dict[str, Any]) -> dict[str, Any]:
                 "item_sku": ln["item_sku"],
                 "qty_ordered": f"{Decimal(ln['qty_ordered']):.4f}",
                 "qty_received": f"{Decimal(ln['qty_received']):.4f}",
+                "qty_closed": f"{Decimal(ln.get('qty_closed', 0)):.4f}",
+                "line_status": ln.get("line_status", "OPEN"),
                 "notes": ln.get("notes"),
             }
             for ln in po_detail.get("lines", [])
@@ -172,6 +191,7 @@ def list_purchase_orders(
     status: str | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
+    overdue_only: bool = False,
     search: str | None = None,
     sort_by: str | None = None,
     sort_dir: str | None = None,
@@ -228,6 +248,7 @@ def list_purchase_orders(
         status=clean_status,
         date_from=date_from,
         date_to=date_to,
+        overdue_only=overdue_only,
         search=search,
         order_by_sql=order_by_sql,
     )
@@ -262,11 +283,13 @@ def create_purchase_order(
     supplier_id: int,
     warehouse_id: int,
     order_date: date,
+    expected_delivery_date: date | None = None,
     notes: str | None = None,
     lines: list[dict[str, Any]] | None = None,
     ip_address: str | None = None,
 ) -> dict[str, Any]:
     clean_notes = notes.strip() if notes is not None and notes.strip() else None
+    _validate_delivery_date(order_date, expected_delivery_date)
 
     with conn.transaction():
         # PRD 3.2 poin 1: po:create bertanda (g) terhadap warehouse_id PO
@@ -285,6 +308,7 @@ def create_purchase_order(
             supplier_id=supplier_id,
             warehouse_id=warehouse_id,
             order_date=order_date,
+            expected_delivery_date=expected_delivery_date,
             notes=clean_notes,
             created_by=int(actor["id"]),
         )
@@ -322,6 +346,8 @@ def update_purchase_order(
     supplier_id: int | None = None,
     warehouse_id: int | None = None,
     order_date: date | None = None,
+    expected_delivery_date: date | None = None,
+    expected_delivery_date_provided: bool = False,
     notes: str | None = None,
     lines: list[dict[str, Any]] | None = None,
     ip_address: str | None = None,
@@ -363,6 +389,12 @@ def update_purchase_order(
         new_order_date = (
             order_date if order_date is not None else locked["order_date"]
         )
+        new_expected_delivery_date = (
+            expected_delivery_date
+            if expected_delivery_date_provided
+            else locked.get("expected_delivery_date")
+        )
+        _validate_delivery_date(new_order_date, new_expected_delivery_date)
         new_notes = (
             (notes.strip() if notes.strip() else None)
             if notes is not None
@@ -375,6 +407,7 @@ def update_purchase_order(
             supplier_id=new_supplier_id,
             warehouse_id=new_warehouse_id,
             order_date=new_order_date,
+            expected_delivery_date=new_expected_delivery_date,
             notes=new_notes,
         )
 
@@ -630,6 +663,233 @@ def close_purchase_order(
         return updated
 
 
+def revise_issued_po_as_draft(
+    conn: Connection[dict[str, Any]],
+    *,
+    actor: dict[str, Any],
+    po_id: int,
+    ip_address: str | None = None,
+) -> dict[str, Any]:
+    """Membatalkan PO berstatus ISSUED (belum ada GR) dan menyalin isinya ke PO DRAFT baru (Tahap 36)."""
+    actor_perms: set[str] = set(actor.get("permissions", []))
+    if PO_CREATE not in actor_perms or PO_CANCEL not in actor_perms:
+        raise PermissionDenied(
+            f"Diperlukan izin '{PO_CREATE}' dan '{PO_CANCEL}' untuk membatalkan serta menyalin PO ISSUED ke draft baru.",
+            details={"required_permissions": [PO_CREATE, PO_CANCEL]},
+        )
+
+    with conn.transaction():
+        locked = po_repo.lock_po_by_id(conn, po_id)
+        if not locked:
+            raise NotFoundError(
+                "Purchase Order tidak ditemukan.",
+                details={"po_id": po_id},
+            )
+        warehouse_id = int(locked["warehouse_id"])
+        access_service.ensure_warehouse_access(conn, actor, warehouse_id)
+
+        if str(locked["status"]) != POStatus.ISSUED.value:
+            raise InvalidStateTransition(
+                f"Hanya Purchase Order berstatus ISSUED yang dapat dibatalkan dan disalin ke draft (status saat ini: {locked['status']}).",
+                details={"po_id": po_id, "current_status": locked["status"]},
+            )
+
+        from app.services import gr_service
+
+        gr_summary = gr_service.gr_status_summary(conn, po_id)
+        if gr_summary["draft_count"] > 0 or gr_summary["posted_count"] > 0:
+            raise InvalidStateTransition(
+                "Purchase Order sudah memiliki Goods Receipt sehingga tidak dapat disalin ulang ke draft. Gunakan fitur Short-Close untuk menyesuaikan sisa pesanan.",
+                details={"po_id": po_id, "gr_summary": gr_summary},
+            )
+
+        _validate_supplier_and_warehouse(
+            conn,
+            supplier_id=int(locked["supplier_id"]),
+            warehouse_id=warehouse_id,
+        )
+        old_lines = po_repo.lock_po_lines(conn, po_id)
+
+        po_repo.update_po_cancelled(conn, po_id)
+        audit_service.record(
+            conn,
+            user_id=int(actor["id"]),
+            action="PO_CANCELLED",
+            entity_type="purchase_orders",
+            entity_id=po_id,
+            old_values={"status": POStatus.ISSUED.value},
+            new_values={"status": POStatus.CANCELLED.value, "revised_to_new_draft": True},
+            ip_address=ip_address,
+        )
+
+        ref_date = locked["order_date"] if isinstance(locked["order_date"], date) else date.today()
+        new_po_number = numbering_service.generate_document_number(
+            conn, DocType.PO, reference_date=ref_date
+        )
+        new_header = po_repo.insert_po_header(
+            conn,
+            po_number=new_po_number,
+            supplier_id=int(locked["supplier_id"]),
+            warehouse_id=warehouse_id,
+            order_date=ref_date,
+            expected_delivery_date=locked.get("expected_delivery_date"),
+            revised_from_po_id=po_id,
+            notes=locked.get("notes"),
+            created_by=int(actor["id"]),
+        )
+        new_po_id = int(new_header["id"])
+
+        cloned_lines = [
+            {
+                "item_id": int(ln["item_id"]),
+                "qty_ordered": Decimal(ln["qty_ordered"]),
+                "notes": ln.get("notes"),
+            }
+            for ln in old_lines
+        ]
+        if cloned_lines:
+            po_repo.replace_po_lines(
+                conn,
+                po_id=new_po_id,
+                lines=cloned_lines,
+                actor_id=int(actor["id"]),
+            )
+
+        created_draft = po_repo.get_po_by_id(conn, new_po_id)
+        assert created_draft is not None
+        audit_service.record(
+            conn,
+            user_id=int(actor["id"]),
+            action="PO_REVISED_FROM_ISSUED",
+            entity_type="purchase_orders",
+            entity_id=new_po_id,
+            old_values={"revised_from_po_id": po_id, "revised_from_po_number": locked["po_number"]},
+            new_values=_serialize_po_snapshot(created_draft),
+            ip_address=ip_address,
+        )
+        return created_draft
+
+
+def close_purchase_order_line(
+    conn: Connection[dict[str, Any]],
+    *,
+    actor: dict[str, Any],
+    po_id: int,
+    po_line_id: int,
+    closed_reason: str,
+    ip_address: str | None = None,
+) -> dict[str, Any]:
+    """Menutup sisa kuantitas satu baris PO (Line-level Short-Close, Tahap 36)."""
+    clean_reason = closed_reason.strip() if closed_reason else ""
+    if not clean_reason:
+        raise ValidationDomainError(
+            "Alasan penutupan baris PO (closed_reason) wajib diisi.",
+            details={"field": "closed_reason"},
+        )
+
+    with conn.transaction():
+        locked = po_repo.lock_po_by_id(conn, po_id)
+        if not locked:
+            raise NotFoundError(
+                "Purchase Order tidak ditemukan.",
+                details={"po_id": po_id},
+            )
+        access_service.ensure_warehouse_access(conn, actor, int(locked["warehouse_id"]))
+
+        current_status = str(locked["status"])
+        if current_status not in (
+            POStatus.ISSUED.value,
+            POStatus.PARTIALLY_RECEIVED.value,
+        ):
+            raise InvalidStateTransition(
+                f"Baris PO berstatus '{current_status}' tidak dapat ditutup sebagian (PO harus ISSUED atau PARTIALLY_RECEIVED).",
+                details={"po_id": po_id, "current_status": current_status},
+            )
+
+        from app.services import gr_service
+
+        gr_summary = gr_service.gr_status_summary(conn, po_id)
+        if gr_summary["draft_count"] > 0:
+            raise InvalidStateTransition(
+                "Baris PO tidak dapat ditutup karena masih ada Goods Receipt berstatus DRAFT untuk PO ini.",
+                details={"po_id": po_id, "gr_summary": gr_summary},
+            )
+
+        lines = po_repo.lock_po_lines(conn, po_id)
+        target_line = next((ln for ln in lines if int(ln["id"]) == po_line_id), None)
+        if not target_line:
+            raise NotFoundError(
+                "Baris Purchase Order tidak ditemukan.",
+                details={"po_id": po_id, "po_line_id": po_line_id},
+            )
+
+        qty_ordered = Decimal(target_line["qty_ordered"]).quantize(FOUR_PLACES)
+        qty_received = Decimal(target_line["qty_received"]).quantize(FOUR_PLACES)
+        qty_closed_existing = Decimal(target_line.get("qty_closed", 0)).quantize(FOUR_PLACES)
+        remaining = (qty_ordered - qty_received - qty_closed_existing).quantize(FOUR_PLACES)
+
+        if str(target_line.get("line_status")) in ("RECEIVED", "CLOSED") or remaining <= Decimal("0.0000"):
+            raise InvalidStateTransition(
+                "Baris PO ini sudah diterima seluruhnya atau sudah ditutup sebelumnya.",
+                details={"po_id": po_id, "po_line_id": po_line_id, "remaining": str(remaining)},
+            )
+
+        new_qty_closed = (qty_ordered - qty_received).quantize(FOUR_PLACES)
+        po_repo.close_po_line(
+            conn,
+            po_line_id=po_line_id,
+            qty_closed=new_qty_closed,
+            closed_reason=clean_reason,
+            closed_by=int(actor["id"]),
+        )
+
+        refreshed_lines = po_repo.list_po_lines(conn, po_id)
+        all_settled = all(
+            (Decimal(ln["qty_received"]) + Decimal(ln["qty_closed"])).quantize(FOUR_PLACES)
+            >= Decimal(ln["qty_ordered"]).quantize(FOUR_PLACES)
+            for ln in refreshed_lines
+        )
+        if all_settled:
+            has_any_closed = any(
+                Decimal(ln["qty_closed"]).quantize(FOUR_PLACES) > Decimal("0.0000")
+                for ln in refreshed_lines
+            )
+            if has_any_closed:
+                po_repo.update_po_closed(
+                    conn,
+                    po_id,
+                    closed_reason=f"Seluruh baris PO selesai/ditutup (Short-Close). Terakhir: {clean_reason}",
+                    closed_by=int(actor["id"]),
+                )
+            else:
+                po_repo.update_po_status(conn, po_id, status=POStatus.RECEIVED.value)
+
+        updated = po_repo.get_po_by_id(conn, po_id)
+        assert updated is not None
+        audit_service.record(
+            conn,
+            user_id=int(actor["id"]),
+            action="PO_LINE_CLOSED",
+            entity_type="purchase_orders",
+            entity_id=po_id,
+            old_values={
+                "po_line_id": po_line_id,
+                "status": current_status,
+                "line_status": target_line.get("line_status"),
+                "qty_closed": f"{qty_closed_existing:.4f}",
+            },
+            new_values={
+                "po_line_id": po_line_id,
+                "status": updated["status"],
+                "line_status": "CLOSED",
+                "qty_closed": f"{new_qty_closed:.4f}",
+                "line_closed_reason": clean_reason,
+            },
+            ip_address=ip_address,
+        )
+        return updated
+
+
 def apply_receipt(
     conn: Connection[dict[str, Any]],
     *,
@@ -641,7 +901,7 @@ def apply_receipt(
     actor_id: int,
     ip_address: str | None = None,
 ) -> str:
-    """Contract PUR (`apply_receipt`): memperbarui `qty_received` baris PO dan status fulfillment PO (`PARTIALLY_RECEIVED` / `RECEIVED`) dalam transaksi posting GR (PRD 4.3, 6.7)."""
+    """Contract PUR (`apply_receipt`): memperbarui `qty_received` baris PO dan status fulfillment PO (`PARTIALLY_RECEIVED` / `RECEIVED` / `CLOSED`) dalam transaksi posting GR (PRD 4.3, 6.7)."""
     for po_line_id in sorted(added_per_po_line.keys()):
         po_repo.add_po_line_received_qty(
             conn,
@@ -650,18 +910,33 @@ def apply_receipt(
         )
 
     updated_po_lines = po_repo.list_po_lines(conn, po_id)
-    all_fulfilled = all(
+    all_received_full = all(
         Decimal(ln["qty_received"]).quantize(FOUR_PLACES)
-        == Decimal(ln["qty_ordered"]).quantize(FOUR_PLACES)
+        >= Decimal(ln["qty_ordered"]).quantize(FOUR_PLACES)
         for ln in updated_po_lines
     )
-    new_po_status = (
-        POStatus.RECEIVED.value
-        if all_fulfilled
-        else POStatus.PARTIALLY_RECEIVED.value
+    all_settled = all(
+        (Decimal(ln["qty_received"]) + Decimal(ln["qty_closed"])).quantize(FOUR_PLACES)
+        >= Decimal(ln["qty_ordered"]).quantize(FOUR_PLACES)
+        for ln in updated_po_lines
     )
-    if new_po_status != old_po_status:
-        po_repo.update_po_status(conn, po_id, status=new_po_status)
+    if all_received_full:
+        new_po_status = POStatus.RECEIVED.value
+        if new_po_status != old_po_status:
+            po_repo.update_po_status(conn, po_id, status=new_po_status)
+    elif all_settled:
+        new_po_status = POStatus.CLOSED.value
+        if new_po_status != old_po_status:
+            po_repo.update_po_closed(
+                conn,
+                po_id,
+                closed_reason="Seluruh baris PO selesai diterima atau ditutup sebagian (Short-Close).",
+                closed_by=actor_id,
+            )
+    else:
+        new_po_status = POStatus.PARTIALLY_RECEIVED.value
+        if new_po_status != old_po_status:
+            po_repo.update_po_status(conn, po_id, status=new_po_status)
 
     audit_service.record(
         conn,

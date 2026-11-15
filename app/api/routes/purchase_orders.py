@@ -51,6 +51,7 @@ def list_purchase_orders(
     status_filter: OptStrQuery = Query(default=None, alias="status"),
     date_from: OptDateQuery = Query(default=None),
     date_to: OptDateQuery = Query(default=None),
+    overdue_only: bool = Query(default=False),
     search: OptStrQuery = Query(default=None),
     sort_by: OptStrQuery = Query(default=None),
     sort_dir: OptStrQuery = Query(default=None),
@@ -67,6 +68,7 @@ def list_purchase_orders(
         status=status_filter,
         date_from=date_from,
         date_to=date_to,
+        overdue_only=overdue_only,
         search=search,
         sort_by=sort_by,
         sort_dir=sort_dir,
@@ -91,6 +93,7 @@ def create_purchase_order(
         supplier_id=payload.supplier_id,
         warehouse_id=payload.warehouse_id,
         order_date=payload.order_date,
+        expected_delivery_date=payload.expected_delivery_date,
         notes=payload.notes,
         lines=[ln.model_dump() for ln in payload.lines],
         ip_address=get_client_ip(request),
@@ -123,6 +126,8 @@ def update_purchase_order(
         supplier_id=payload.supplier_id,
         warehouse_id=payload.warehouse_id,
         order_date=payload.order_date,
+        expected_delivery_date=payload.expected_delivery_date,
+        expected_delivery_date_provided="expected_delivery_date" in payload.model_fields_set,
         notes=payload.notes,
         lines=[ln.model_dump() for ln in payload.lines]
         if payload.lines is not None
@@ -176,6 +181,46 @@ def close_purchase_order(
         conn,
         actor=actor,
         po_id=po_id,
+        closed_reason=payload.closed_reason,
+        ip_address=get_client_ip(request),
+    )
+    return PurchaseOrderOut(**updated)
+
+
+@router.post(
+    "/{po_id}/revise-draft",
+    response_model=PurchaseOrderOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def revise_purchase_order_as_draft(
+    po_id: int,
+    request: Request,
+    actor: dict[str, Any] = Depends(require_permission(PO_CREATE)),
+    conn: Connection[dict[str, Any]] = Depends(get_conn),
+) -> PurchaseOrderOut:
+    revised = po_service.revise_issued_po_as_draft(
+        conn,
+        actor=actor,
+        po_id=po_id,
+        ip_address=get_client_ip(request),
+    )
+    return PurchaseOrderOut(**revised)
+
+
+@router.post("/{po_id}/lines/{po_line_id}/close", response_model=PurchaseOrderOut)
+def close_purchase_order_line(
+    po_id: int,
+    po_line_id: int,
+    payload: PurchaseOrderCloseRequest,
+    request: Request,
+    actor: dict[str, Any] = Depends(require_permission(PO_CLOSE)),
+    conn: Connection[dict[str, Any]] = Depends(get_conn),
+) -> PurchaseOrderOut:
+    updated = po_service.close_purchase_order_line(
+        conn,
+        actor=actor,
+        po_id=po_id,
+        po_line_id=po_line_id,
         closed_reason=payload.closed_reason,
         ip_address=get_client_ip(request),
     )

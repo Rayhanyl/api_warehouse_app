@@ -1,6 +1,7 @@
 """Service logika bisnis untuk Master Data: Kategori, UoM, Pemasok, dan Barang (FR-02, PRD 6.3, 6.8)."""
 
 from collections import Counter
+from decimal import Decimal
 from io import BytesIO
 from typing import Any
 from zipfile import BadZipFile
@@ -1106,8 +1107,15 @@ def create_supplier(
     name: str,
     contact_person: str | None = None,
     phone: str | None = None,
+    fax: str | None = None,
     email: str | None = None,
     address: str | None = None,
+    bank_name: str | None = None,
+    bank_account_number: str | None = None,
+    bank_account_holder: str | None = None,
+    npwp: str | None = None,
+    payment_terms: str | None = None,
+    notes: str | None = None,
     is_active: bool = True,
     ip_address: str | None = None,
 ) -> dict[str, Any]:
@@ -1134,12 +1142,17 @@ def create_supplier(
             conn,
             code=clean_code,
             name=clean_name,
-            contact_person=contact_person.strip()
-            if contact_person and contact_person.strip()
-            else None,
+            contact_person=clean_optional_str(contact_person),
             phone=clean_phone,
+            fax=clean_optional_str(fax),
             email=clean_email,
-            address=address.strip() if address and address.strip() else None,
+            address=clean_optional_str(address),
+            bank_name=clean_optional_str(bank_name),
+            bank_account_number=clean_optional_str(bank_account_number),
+            bank_account_holder=clean_optional_str(bank_account_holder),
+            npwp=clean_optional_str(npwp),
+            payment_terms=clean_optional_str(payment_terms),
+            notes=clean_optional_str(notes),
             is_active=is_active,
             created_by=int(actor["id"]),
         )
@@ -1156,8 +1169,15 @@ def create_supplier(
                 "name": created["name"],
                 "contact_person": created["contact_person"],
                 "phone": created["phone"],
+                "fax": created.get("fax"),
                 "email": created["email"],
                 "address": created["address"],
+                "bank_name": created.get("bank_name"),
+                "bank_account_number": created.get("bank_account_number"),
+                "bank_account_holder": created.get("bank_account_holder"),
+                "npwp": created.get("npwp"),
+                "payment_terms": created.get("payment_terms"),
+                "notes": created.get("notes"),
                 "is_active": created["is_active"],
             },
             ip_address=ip_address,
@@ -1289,9 +1309,27 @@ def update_supplier(
     code: str | None = None,
     name: str | None = None,
     contact_person: str | None = None,
+    contact_person_provided: bool = False,
     phone: str | None = None,
+    phone_provided: bool = False,
+    fax: str | None = None,
+    fax_provided: bool = False,
     email: str | None = None,
+    email_provided: bool = False,
     address: str | None = None,
+    address_provided: bool = False,
+    bank_name: str | None = None,
+    bank_name_provided: bool = False,
+    bank_account_number: str | None = None,
+    bank_account_number_provided: bool = False,
+    bank_account_holder: str | None = None,
+    bank_account_holder_provided: bool = False,
+    npwp: str | None = None,
+    npwp_provided: bool = False,
+    payment_terms: str | None = None,
+    payment_terms_provided: bool = False,
+    notes: str | None = None,
+    notes_provided: bool = False,
     is_active: bool | None = None,
     ip_address: str | None = None,
 ) -> dict[str, Any]:
@@ -1324,27 +1362,63 @@ def update_supplier(
 
         new_contact = (
             clean_optional_str(contact_person)
-            if contact_person is not None
+            if contact_person_provided or contact_person is not None
             else existing["contact_person"]
         )
         new_phone = (
             validate_optional_phone(phone, label="Nomor telepon pemasok")
-            if phone is not None
+            if phone_provided or phone is not None
             else existing["phone"]
+        )
+        new_fax = (
+            clean_optional_str(fax)
+            if fax_provided or fax is not None
+            else existing.get("fax")
         )
         new_address = (
             clean_optional_str(address)
-            if address is not None
+            if address_provided or address is not None
             else existing["address"]
         )
 
         new_email = existing["email"]
-        if email is not None:
+        if email_provided or email is not None:
             new_email = (
                 validate_email_format(email)
                 if clean_optional_str(email) is not None
                 else None
             )
+
+        new_bank_name = (
+            clean_optional_str(bank_name)
+            if bank_name_provided or bank_name is not None
+            else existing.get("bank_name")
+        )
+        new_bank_acc_no = (
+            clean_optional_str(bank_account_number)
+            if bank_account_number_provided or bank_account_number is not None
+            else existing.get("bank_account_number")
+        )
+        new_bank_acc_holder = (
+            clean_optional_str(bank_account_holder)
+            if bank_account_holder_provided or bank_account_holder is not None
+            else existing.get("bank_account_holder")
+        )
+        new_npwp = (
+            clean_optional_str(npwp)
+            if npwp_provided or npwp is not None
+            else existing.get("npwp")
+        )
+        new_payment_terms = (
+            clean_optional_str(payment_terms)
+            if payment_terms_provided or payment_terms is not None
+            else existing.get("payment_terms")
+        )
+        new_notes = (
+            clean_optional_str(notes)
+            if notes_provided or notes is not None
+            else existing.get("notes")
+        )
 
         new_active = (
             bool(is_active) if is_active is not None else bool(existing["is_active"])
@@ -1365,8 +1439,15 @@ def update_supplier(
             name=new_name,
             contact_person=new_contact,
             phone=new_phone,
+            fax=new_fax,
             email=new_email,
             address=new_address,
+            bank_name=new_bank_name,
+            bank_account_number=new_bank_acc_no,
+            bank_account_holder=new_bank_acc_holder,
+            npwp=new_npwp,
+            payment_terms=new_payment_terms,
+            notes=new_notes,
             is_active=new_active,
         )
         action = (
@@ -1385,8 +1466,15 @@ def update_supplier(
                 "name": existing["name"],
                 "contact_person": existing["contact_person"],
                 "phone": existing["phone"],
+                "fax": existing.get("fax"),
                 "email": existing["email"],
                 "address": existing["address"],
+                "bank_name": existing.get("bank_name"),
+                "bank_account_number": existing.get("bank_account_number"),
+                "bank_account_holder": existing.get("bank_account_holder"),
+                "npwp": existing.get("npwp"),
+                "payment_terms": existing.get("payment_terms"),
+                "notes": existing.get("notes"),
                 "is_active": existing["is_active"],
             },
             new_values={
@@ -1394,8 +1482,15 @@ def update_supplier(
                 "name": updated["name"],
                 "contact_person": updated["contact_person"],
                 "phone": updated["phone"],
+                "fax": updated.get("fax"),
                 "email": updated["email"],
                 "address": updated["address"],
+                "bank_name": updated.get("bank_name"),
+                "bank_account_number": updated.get("bank_account_number"),
+                "bank_account_holder": updated.get("bank_account_holder"),
+                "npwp": updated.get("npwp"),
+                "payment_terms": updated.get("payment_terms"),
+                "notes": updated.get("notes"),
                 "is_active": updated["is_active"],
             },
             ip_address=ip_address,
@@ -1466,9 +1561,15 @@ def create_item(
     description: str | None = None,
     category_id: int,
     uom_id: int,
+    min_stock: Decimal = Decimal("0"),
     is_active: bool = True,
     ip_address: str | None = None,
 ) -> dict[str, Any]:
+    if min_stock < Decimal("0"):
+        raise ValidationDomainError(
+            "Batas stok minimum tidak boleh bernilai negatif.",
+            details={"field": "min_stock"},
+        )
     clean_sku = validate_code_format(
         sku, field_name="sku", label="SKU barang", max_length=64
     )
@@ -1525,6 +1626,7 @@ def create_item(
             description=description.strip() if description is not None else None,
             category_id=category_id,
             uom_id=uom_id,
+            min_stock=min_stock,
             is_active=is_active,
             created_by=int(actor["id"]),
         )
@@ -1543,6 +1645,7 @@ def create_item(
                 "description": created["description"],
                 "category_id": created["category_id"],
                 "uom_id": created["uom_id"],
+                "min_stock": str(created.get("min_stock", "0")),
                 "is_active": created["is_active"],
             },
             ip_address=ip_address,
@@ -1800,9 +1903,15 @@ def update_item(
     description: str | None = None,
     category_id: int | None = None,
     uom_id: int | None = None,
+    min_stock: Decimal | None = None,
     is_active: bool | None = None,
     ip_address: str | None = None,
 ) -> dict[str, Any]:
+    if min_stock is not None and min_stock < Decimal("0"):
+        raise ValidationDomainError(
+            "Batas stok minimum tidak boleh bernilai negatif.",
+            details={"field": "min_stock"},
+        )
     with conn.transaction():
         existing = master_repo.lock_item_by_id(conn, item_id)
         if not existing:
@@ -1894,6 +2003,11 @@ def update_item(
                 )
             new_uom_id = int(uom_id)
 
+        new_min_stock = (
+            min_stock
+            if min_stock is not None
+            else Decimal(str(existing.get("min_stock") or "0"))
+        )
         new_active = (
             bool(is_active) if is_active is not None else bool(existing["is_active"])
         )
@@ -1915,6 +2029,7 @@ def update_item(
             description=new_desc,
             category_id=new_category_id,
             uom_id=new_uom_id,
+            min_stock=new_min_stock,
             is_active=new_active,
         )
         action = (
@@ -1935,6 +2050,7 @@ def update_item(
                 "description": existing["description"],
                 "category_id": existing["category_id"],
                 "uom_id": existing["uom_id"],
+                "min_stock": str(existing.get("min_stock", "0")),
                 "is_active": existing["is_active"],
             },
             new_values={
@@ -1944,6 +2060,7 @@ def update_item(
                 "description": updated["description"],
                 "category_id": updated["category_id"],
                 "uom_id": updated["uom_id"],
+                "min_stock": str(updated.get("min_stock", "0")),
                 "is_active": updated["is_active"],
             },
             ip_address=ip_address,

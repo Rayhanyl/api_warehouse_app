@@ -1,4 +1,4 @@
-"""Schema Pydantic untuk Purchase Order (PO) dan PO Lines (FR-04, PRD 5.1, 6.9)."""
+"""Schema Pydantic untuk Purchase Order (PO) dan PO Lines (FR-04, PRD 5.1, 6.9, Tahap 36)."""
 
 from datetime import date, datetime
 from decimal import Decimal
@@ -42,6 +42,12 @@ class POLineOut(BaseModel):
     allow_decimal: bool
     qty_ordered: DecimalStr
     qty_received: DecimalStr
+    qty_closed: DecimalStr = Decimal("0.0000")
+    qty_remaining: DecimalStr = Decimal("0.0000")
+    line_status: str = "OPEN"
+    line_closed_reason: str | None = None
+    line_closed_at: datetime | None = None
+    line_closed_by: int | None = None
     notes: str | None = None
     created_by: int
     created_at: datetime
@@ -52,14 +58,27 @@ class PurchaseOrderCreate(BaseModel):
     supplier_id: int = Field(..., gt=0)
     warehouse_id: int = Field(..., gt=0)
     order_date: date
+    expected_delivery_date: date | None = None
     notes: str | None = Field(default=None, max_length=1000)
     lines: list[POLineInput] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_delivery_date(self) -> "PurchaseOrderCreate":
+        if (
+            self.expected_delivery_date is not None
+            and self.expected_delivery_date < self.order_date
+        ):
+            raise ValueError(
+                "Estimasi tanggal pengiriman tidak boleh lebih awal dari tanggal pesanan."
+            )
+        return self
 
 
 class PurchaseOrderUpdate(BaseModel):
     supplier_id: int | None = Field(default=None, gt=0)
     warehouse_id: int | None = Field(default=None, gt=0)
     order_date: date | None = None
+    expected_delivery_date: date | None = None
     notes: str | None = Field(default=None, max_length=1000)
     lines: list[POLineInput] | None = None
 
@@ -67,6 +86,14 @@ class PurchaseOrderUpdate(BaseModel):
     def _ensure_non_empty_patch(self) -> "PurchaseOrderUpdate":
         if not self.model_fields_set:
             raise ValueError("Minimal satu field harus dikirim untuk pembaruan data.")
+        if (
+            self.order_date is not None
+            and self.expected_delivery_date is not None
+            and self.expected_delivery_date < self.order_date
+        ):
+            raise ValueError(
+                "Estimasi tanggal pengiriman tidak boleh lebih awal dari tanggal pesanan."
+            )
         return self
 
 
@@ -90,6 +117,11 @@ class PurchaseOrderSummaryOut(BaseModel):
     warehouse_name: str
     status: str
     order_date: date
+    expected_delivery_date: date | None = None
+    is_overdue: bool = False
+    days_overdue: int = 0
+    revised_from_po_id: int | None = None
+    revised_from_po_number: str | None = None
     notes: str | None = None
     line_count: int = 0
     issued_at: datetime | None = None
@@ -103,5 +135,13 @@ class PurchaseOrderSummaryOut(BaseModel):
 
 
 class PurchaseOrderOut(PurchaseOrderSummaryOut):
+    supplier_phone: str | None = None
+    supplier_fax: str | None = None
+    supplier_email: str | None = None
+    supplier_address: str | None = None
+    supplier_npwp: str | None = None
+    supplier_bank_name: str | None = None
+    supplier_bank_account_number: str | None = None
+    supplier_bank_account_holder: str | None = None
+    supplier_payment_terms: str | None = None
     lines: list[POLineOut] = Field(default_factory=list)
-
