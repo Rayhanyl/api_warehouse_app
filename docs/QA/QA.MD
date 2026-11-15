@@ -7,9 +7,9 @@ Dokumen ini menggabungkan rencana dan spesifikasi QA WMS dalam satu tempat. Caku
 | Produk | Warehouse Management System (WMS) REST API & Frontend (`warehouse_app`) |
 | Acuan utama | [`docs/core/PRD_GENERAL.md`](../core/PRD_GENERAL.md) (Master Product Requirements) |
 | Acuan struktur | [`docs/core/FOLDER_STRUCTURE.MD`](../core/FOLDER_STRUCTURE.MD) |
-| Backend saat ini | Python, FastAPI, PostgreSQL, `pytest` dan `httpx` (**84 tes lulus**) |
+| Backend saat ini | Python, FastAPI, PostgreSQL, `pytest` dan `httpx` (**98 tes lulus**) |
 | Database pengujian | PostgreSQL `wms_test` |
-| Frontend saat ini | React 19, TypeScript, Vite, Vitest + Testing Library + MSW (**22 test file / 101 tes lulus**) |
+| Frontend saat ini | React 19, TypeScript, Vite, Vitest + Testing Library + MSW (**26 test file / 119 tes lulus**) |
 
 ## 1. Tujuan dan cara menggunakan
 
@@ -47,6 +47,10 @@ Prioritaskan kebenaran transaksi stok, hak akses, dan integritas ledger. Test ot
 | Request ID | `tests/test_request_id.py` |
 | Regresi AC-15 s.d. AC-22, Import Excel, & Barcode | `tests/test_ac15_to_ac22.py`, `tests/test_ac30_item_bulk_import.py`, `tests/test_ac31_supplier_bulk_import.py`, `tests/test_ac33_item_barcode.py` |
 | Konfigurasi multi-env & Telegram monitoring/alert | `tests/test_config_environment.py`, `tests/test_telegram_alert.py`, `tests/test_docker_monitor.py` |
+| Health check & Template Dokumen (Tahap 35) | `tests/test_tahap35_health_and_templates.py` |
+| Edit PO Draft, Revisi PO, & Short-Close Per Baris (Tahap 36) | `tests/test_tahap36_po_enhancements.py` |
+| Stok Kritis Dashboard `min_stock` & Profil Supplier (Tahap 37) | `tests/test_tahap37_critical_stock_and_supplier.py` |
+| Multi-Level Approval PO/Opname, Settings Threshold, & SoD (Tahap 34 & 38) | `tests/test_tahap34_38_approval_and_sod.py` |
 
 ### 2.2. Acceptance criteria
 
@@ -122,7 +126,7 @@ Catatan M8 di `docs/API/README.md` memuat benchmark lokal yang pernah dilakukan.
 
 - Seluruh AC yang terdampak perubahan lulus; sebelum rilis, suite `AC-01` s.d. `AC-22`, `AC-30`, `AC-31`, `AC-33`, `AC-34`, `AC-35`, `AC-36`, `AC-37`, dan `AC-38` lulus.
 - AC-14 menguji menu pada PostgreSQL nyata; permission menu hanya menyaring navigasi dan tidak menggantikan otorisasi endpoint backend.
-- Status run backend: **84 tes lulus di `wms_test`** (18 berkas `tests/test_*.py`), mencakup seluruh skenario `AC-01` s.d. `AC-22`, `AC-30` (import massal item termasuk kolom barcode), `AC-31` (import massal supplier), `AC-33` (master data barcode unik & serialisasi transaksi), `AC-34` (pencarian stok lokasi via barcode/SKU), `AC-36` (pencarian stok per lokasi rak & gudang), `AC-38` (API dashboard summary dengan warehouse scoping & auth guard), template dokumen cetak & upload logo (`test_document_templates.py`), validasi terpusat Tahap 15 (`test_validation_tahap15.py`), multi-env safety guards (`test_config_environment.py`), serta alert/monitoring Telegram (`test_telegram_alert.py`, `test_docker_monitor.py`).
+- Status run backend: **98 tes lulus di `wms_test`** (22 berkas `tests/test_*.py`), mencakup seluruh skenario `AC-01` s.d. `AC-22`, `AC-30` (import massal item termasuk kolom barcode), `AC-31` (import massal supplier), `AC-33` (master data barcode unik & serialisasi transaksi), `AC-34` (pencarian stok lokasi via barcode/SKU), `AC-36` (pencarian stok per lokasi rak & gudang), `AC-38` (API dashboard summary dengan warehouse scoping & auth guard), template dokumen cetak & upload logo (`test_document_templates.py`, `test_tahap35_health_and_templates.py`), validasi terpusat Tahap 15 (`test_validation_tahap15.py`), multi-env safety guards (`test_config_environment.py`), alert/monitoring Telegram (`test_telegram_alert.py`, `test_docker_monitor.py`), peningkatan PO & short-close baris (`test_tahap36_po_enhancements.py`), stok kritis `min_stock` & profil bank/fax supplier (`test_tahap37_critical_stock_and_supplier.py`), serta *Multi-Level Approval* PO/Opname, pengaturan ambang nominal, pemecahan `gr:create`/`gr:post`, dan *Segregation of Duties* (`test_tahap34_38_approval_and_sod.py`).
 - Tidak ada temuan terbuka yang mengancam integritas saldo/ledger, autentikasi, atau pembatasan akses.
 - Pemeriksaan saldo, ledger, audit, dan rollback konsisten dengan PRD.
 - Kinerja dilaporkan dengan lingkungan, ukuran data, metode, dan hasil p95; klaim target hanya dibuat bila hasilnya memang terukur.
@@ -134,7 +138,7 @@ Catatan M8 di `docs/API/README.md` memuat benchmark lokal yang pernah dilakukan.
 
 Aplikasi frontend dikembangkan pada folder `warehouse_app/` berbasis React 19, TypeScript, Vite, dan pengujian unit/integrasi menggunakan **Vitest + React Testing Library + MSW**.
 
-Rangkaian pengujian frontend yang aktif mencakup **22 test file (102 tes lulus)** beserta verifikasi `npm run lint` (0 error/0 warning), `npm run typecheck` (`tsc -b`), dan `npm run build` (`vite build`):
+Rangkaian pengujian frontend yang aktif mencakup **26 test file (119 tes lulus)** beserta verifikasi `npm run lint` (0 error/0 warning), `npm run typecheck` (`tsc -b`), dan `npm run build` (`vite build`):
 - `app/App.test.tsx` (routing, inisialisasi shell, sidebar, dashboard, profil, & landing page).
 - `app/responsive-mobile-tablet.test.tsx` (tata letak & responsivitas mobile/tablet/desktop).
 - `app/warehouse-scope.test.tsx` (isolasi cakupan gudang global di topbar & sinkronisasi halaman operasional).
@@ -153,8 +157,11 @@ Rangkaian pengujian frontend yang aktif mencakup **22 test file (102 tes lulus)*
 - `features/goods-receipts/print-documents.test.tsx` (AC-32: verifikasi cetak Bukti Penerimaan Barang / GRN dan Surat Jalan Transfer Stok).
 - `features/goods-receipts/barcode-scanner.test.tsx` (AC-33: verifikasi pemindai barcode kamera, input HID gun, form GR, form Transfer, dan Stock Opname).
 - `features/stock/stock-lookup.test.tsx` (AC-34/AC-36/AC-37: auto-generate barcode internal EAN-13 pada form barang & modal lookup barang/inspeksi rak multi-SKU).
+- `features/stock/tahap37.test.tsx` (Tahap 37: filter stok kritis dashboard berbasis `min_stock` & kolom bank/fax/NPWP supplier).
+- `features/purchase-orders/purchase-orders.test.tsx` (Tahap 36: edit PO draft, cancel & clone PO terbit, `expected_delivery_date`, & short-close per baris PO).
+- `features/purchase-orders/tahap34_38.test.tsx` (Tahap 34 & 38: `/admin/settings` threshold approval, harga opsional & Total Estimasi PO, blokir cetak pre-issued, timeline approval L1/L2, pemecahan `gr:create`/`gr:post`, guard SoD pada PO/GR/Transfer/Opname, serta override Super Admin).
 - `features/user-guide/user-guide.test.tsx` (modal Pusat Panduan Pengguna Interaktif, kamus field, walkthrough, & simulasi barcode).
-- `lib/validation.test.ts` & `stores/warehouseScopeStore.test.ts` (unit test helper validasi frontend & store cakupan gudang Zustand).
+- `lib/query-invalidation.test.ts`, `lib/validation.test.ts`, & `stores/warehouseScopeStore.test.ts` (unit test invalidasi cache query lintas-modul, helper validasi frontend, & store cakupan gudang Zustand).
 
 ### 3.2. Skenario alur pengguna yang diverifikasi
 
@@ -205,5 +212,5 @@ Untuk setiap temuan, catat:
 - `docs/core/PRD_GENERAL.md` — FR, aturan bisnis, `AC-01` s.d. `AC-22`, `AC-30` s.d. `AC-38`, dan target kinerja.
 - `docs/core/FOLDER_STRUCTURE.MD` — struktur aplikasi dan urutan tahap implementasi.
 - `docs/API/README.md` — indeks dokumentasi endpoint dan catatan penyelesaian implementasi.
-- `tests/` — implementasi 18 suite uji otomatis backend.
-- `warehouse_app/src/` — implementasi 22 file uji otomatis frontend (`*.test.ts*`).
+- `tests/` — implementasi 22 suite uji otomatis backend.
+- `warehouse_app/src/` — implementasi 26 file uji otomatis frontend (`*.test.ts*`).

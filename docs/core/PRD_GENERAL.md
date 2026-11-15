@@ -112,43 +112,53 @@ dan jejak audit yang dapat diperiksa.
 | Role | Fokus |
 | --- | --- |
 | Super Admin | User, role/permission, assignment, warehouse configuration, audit (lintas gudang) |
-| Warehouse Manager | Location, transfer approval, opname approval, PO close, monitoring pada warehouse assigned |
-| Purchasing Staff | Master procurement serta pengelolaan dan pemantauan PO/GR/stok pada warehouse assigned |
-| Warehouse Staff | GR, transfer physical execution, opname count, dan pembacaan operasional pada warehouse assigned |
+| Warehouse Manager | Location, transfer approval, opname approval L1/L2, PO approval L1 & close, GR create/post, monitoring pada warehouse assigned |
+| Warehouse Supervisor | Supervisor operasional gudang: location, GR create/post, transfer create/approve/ship/receive, opname manage/count/approve L1 pada warehouse assigned |
+| Purchasing Staff | Master procurement serta pengelolaan/pengajuan PO dan pemantauan PO/GR/stok pada warehouse assigned |
+| Procurement Manager | Manajer pengadaan: master procurement, pembuatan/pengajuan/penerbitan/pembatalan/penutupan PO, serta persetujuan PO Level 1 & Level 2 (`po:approve_l1`, `po:approve_l2`) |
+| Warehouse Staff | Pembuatan draft GR (`gr:create`), transfer physical execution, opname count, dan pembacaan operasional pada warehouse assigned (tanpa hak `gr:post` / approval) |
 | Auditor | Read-only master, stock, documents, ledger, opname, audit (lintas gudang) |
 
 ### 3.1 Matriks permission per role (MVP)
 
 Tanda `✓` berarti diizinkan secara global; tanda `✓ (g)` berarti diizinkan hanya pada
 gudang yang ditugaskan kepada pengguna (`user_warehouses`). Super Admin memiliki
-seluruh 24 permission tanpa batasan penugasan gudang.
+seluruh **29 permission** tanpa batasan penugasan gudang. Peran dan izin dapat
+disesuaikan via `/users/roles/{role_id}/permissions` sementara migrasi `018` memigrasi
+izin awal (`gr:manage` → `gr:create`/`gr:post`, `opname:approve` → `opname:approve_l1`/`l2`)
+dan menambahkan peran `Warehouse Supervisor` serta `Procurement Manager`.
 
-| Kode Permission | Deskripsi | Super Admin | Warehouse Manager | Purchasing Staff | Warehouse Staff | Auditor |
-| --- | --- | :---: | :---: | :---: | :---: | :---: |
-| `user:manage` | Kelola pengguna, role/permission, penugasan gudang, dan katalog menu | ✓ | – | – | – | – |
-| `warehouse:manage` | Kelola gudang & konfigurasi `allow_negative_stock` | ✓ | – | – | – | – |
-| `location:manage` | Kelola lokasi penyimpanan | ✓ | ✓ `(g)` | – | – | – |
-| `master:manage` | Kelola kategori, UoM, barang, pemasok | ✓ | – | ✓ | – | – |
-| `master:read` | Baca master data, gudang, dan lokasi | ✓ | ✓ `(g)` | ✓ `(g)` | ✓ `(g)` | ✓ |
-| `po:create` | Buat/ubah PO `DRAFT`, batalkan PO `DRAFT` | ✓ | – | ✓ `(g)` | – | – |
-| `po:issue` | Terbitkan PO (`DRAFT -> ISSUED`) | ✓ | – | ✓ `(g)` | – | – |
-| `po:cancel` | Batalkan PO `ISSUED` | ✓ | – | ✓ `(g)` | – | – |
-| `po:close` | Tutup PO (`ISSUED`/`PARTIALLY_RECEIVED -> CLOSED`) | ✓ | ✓ `(g)` | ✓ `(g)` | – | – |
-| `po:read` | Baca PO | ✓ | ✓ `(g)` | ✓ `(g)` | ✓ `(g)` | ✓ |
-| `gr:manage` | Buat, ubah, posting, batalkan GR | ✓ | – | – | ✓ `(g)` | – |
-| `gr:read` | Baca GR | ✓ | ✓ `(g)` | ✓ `(g)` | ✓ `(g)` | ✓ |
-| `transfer:create` | Buat/ubah/batalkan Transfer `DRAFT` | ✓ | – | – | ✓ `(g)` | – |
-| `transfer:approve` | Setujui Transfer `DRAFT` atau batalkan Transfer `APPROVED` | ✓ | ✓ `(g)` | – | – | – |
-| `transfer:ship` | Kirim Transfer (`APPROVED -> SHIPPED`) | ✓ | – | – | ✓ `(g)` | – |
-| `transfer:receive` | Terima Transfer (`SHIPPED -> RECEIVED`) | ✓ | – | – | ✓ `(g)` | – |
-| `transfer:read` | Baca Transfer | ✓ | ✓ `(g)` | – | ✓ `(g)` | ✓ |
-| `opname:manage` | Buat, ubah draft, mulai (`start`), batalkan sesi Opname | ✓ | ✓ `(g)` | – | – | – |
-| `opname:count` | Input hitung fisik & ajukan persetujuan (`submit`) | ✓ | – | – | ✓ `(g)` | – |
-| `opname:approve` | Setujui (`approve`) atau tolak (`reject`) hasil Opname | ✓ | ✓ `(g)` | – | – | – |
-| `opname:read` | Baca sesi Opname | ✓ | ✓ `(g)` | – | ✓ `(g)` | ✓ |
-| `stock:read` | Baca saldo stok | ✓ | ✓ `(g)` | ✓ `(g)` | ✓ `(g)` | ✓ |
-| `ledger:read` | Baca Stock Movement Ledger | ✓ | ✓ `(g)` | – | ✓ `(g)` | ✓ |
-| `audit:read` | Baca Audit Log | ✓ | – | – | – | ✓ |
+| Kode Permission | Deskripsi | Super Admin | Warehouse Manager | Warehouse Supervisor | Purchasing Staff | Procurement Manager | Warehouse Staff | Auditor |
+| --- | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| `user:manage` | Kelola pengguna, role/permission, penugasan gudang, dan katalog menu | ✓ | – | – | – | – | – | – |
+| `settings:manage` | Kelola konfigurasi ambang approval & pengaturan sistem | ✓ | – | – | – | – | – | – |
+| `warehouse:manage` | Kelola gudang & konfigurasi `allow_negative_stock` | ✓ | – | – | – | – | – | – |
+| `location:manage` | Kelola lokasi penyimpanan | ✓ | ✓ `(g)` | ✓ `(g)` | – | – | – | – |
+| `master:manage` | Kelola kategori, UoM, barang, pemasok | ✓ | – | – | ✓ | ✓ | – | – |
+| `master:read` | Baca master data, gudang, dan lokasi | ✓ | ✓ `(g)` | ✓ `(g)` | ✓ `(g)` | ✓ `(g)` | ✓ `(g)` | ✓ |
+| `po:create` | Buat/ubah/ajukan PO `DRAFT`, batalkan PO `DRAFT` | ✓ | – | – | ✓ `(g)` | ✓ `(g)` | – | – |
+| `po:issue` | Terbitkan langsung PO `DRAFT` (bypass/kompatibilitas admin/manager) | ✓ | – | – | ✓ `(g)` | ✓ `(g)` | – | – |
+| `po:approve_l1` | Persetujuan Purchase Order Level 1 | ✓ | ✓ `(g)` | – | – | ✓ `(g)` | – | – |
+| `po:approve_l2` | Persetujuan Purchase Order Level 2 (di atas ambang nominal) | ✓ | – | – | – | ✓ `(g)` | – | – |
+| `po:cancel` | Batalkan PO `ISSUED` | ✓ | – | – | ✓ `(g)` | ✓ `(g)` | – | – |
+| `po:close` | Tutup PO (`ISSUED`/`PARTIALLY_RECEIVED -> CLOSED`) | ✓ | ✓ `(g)` | – | ✓ `(g)` | ✓ `(g)` | – | – |
+| `po:read` | Baca PO | ✓ | ✓ `(g)` | ✓ `(g)` | ✓ `(g)` | ✓ `(g)` | ✓ `(g)` | ✓ |
+| `gr:create` | Buat, ubah, batalkan draft Goods Receipt | ✓ | ✓ `(g)` | ✓ `(g)` | – | – | ✓ `(g)` | – |
+| `gr:post` | Posting Goods Receipt menjadi stok final (`DRAFT -> POSTED`) | ✓ | ✓ `(g)` | ✓ `(g)` | – | – | – | – |
+| `gr:read` | Baca GR | ✓ | ✓ `(g)` | ✓ `(g)` | ✓ `(g)` | ✓ `(g)` | ✓ `(g)` | ✓ |
+| `transfer:create` | Buat/ubah/batalkan Transfer `DRAFT` | ✓ | – | ✓ `(g)` | – | – | ✓ `(g)` | – |
+| `transfer:approve` | Setujui Transfer `DRAFT` atau batalkan Transfer `APPROVED` | ✓ | ✓ `(g)` | ✓ `(g)` | – | – | – | – |
+| `transfer:ship` | Kirim Transfer (`APPROVED -> SHIPPED`) | ✓ | – | ✓ `(g)` | – | – | ✓ `(g)` | – |
+| `transfer:receive` | Terima Transfer (`SHIPPED -> RECEIVED`) | ✓ | – | ✓ `(g)` | – | – | ✓ `(g)` | – |
+| `transfer:read` | Baca Transfer | ✓ | ✓ `(g)` | ✓ `(g)` | – | – | ✓ `(g)` | ✓ |
+| `opname:manage` | Buat, ubah draft, mulai (`start`), batalkan sesi Opname | ✓ | ✓ `(g)` | ✓ `(g)` | – | – | – | – |
+| `opname:count` | Input hitung fisik & ajukan persetujuan (`submit`) | ✓ | – | ✓ `(g)` | – | – | ✓ `(g)` | – |
+| `opname:approve_l1` | Persetujuan Stock Opname Level 1 (Supervisor) atau tolak ke `IN_PROGRESS` | ✓ | ✓ `(g)` | ✓ `(g)` | – | – | – | – |
+| `opname:approve_l2` | Persetujuan Stock Opname Level 2 / Final (Manager) atau tolak ke `IN_PROGRESS` | ✓ | ✓ `(g)` | – | – | – | – | – |
+| `opname:read` | Baca sesi Opname | ✓ | ✓ `(g)` | ✓ `(g)` | – | – | ✓ `(g)` | ✓ |
+| `stock:read` | Baca saldo stok | ✓ | ✓ `(g)` | ✓ `(g)` | ✓ `(g)` | ✓ `(g)` | ✓ `(g)` | ✓ |
+| `ledger:read` | Baca Stock Movement Ledger | ✓ | ✓ `(g)` | ✓ `(g)` | – | – | ✓ `(g)` | ✓ |
+| `audit:read` | Baca Audit Log | ✓ | – | – | – | – | – | ✓ |
 
 ### 3.2 Aturan warehouse scoping `(g)`
 
@@ -157,14 +167,15 @@ seluruh 24 permission tanpa batasan penugasan gudang.
    relevan; bila pengguna (selain `Super Admin`) tidak ditugaskan ke gudang tersebut,
    request ditolak dengan `403 WAREHOUSE_NOT_ASSIGNED`:
    - `location:manage`: `warehouse_id` tempat lokasi berada.
-   - `po:create`, `po:issue`, `po:cancel`, `po:close`: `warehouse_id` pada dokumen Purchase Order (`PO`).
-   - `gr:manage`: `warehouse_id` pada dokumen PO/GR.
+   - `po:create`, `po:issue`, `po:approve_l1`, `po:approve_l2`, `po:cancel`, `po:close`: `warehouse_id` pada dokumen Purchase Order (`PO`).
+   - `gr:create`, `gr:post`: `warehouse_id` pada dokumen PO/GR.
    - `transfer:create`, `transfer:approve`, `transfer:ship`: `source_warehouse_id`
      (gudang asal transfer).
    - `transfer:receive`: `destination_warehouse_id` (gudang tujuan transfer).
-   - `opname:manage`, `opname:count`, `opname:approve`: `warehouse_id` pada sesi
+   - `opname:manage`, `opname:count`, `opname:approve_l1`, `opname:approve_l2`: `warehouse_id` pada sesi
      Stock Opname.
-2. **Operasi baca bagi `Warehouse Staff`, `Warehouse Manager`, dan `Purchasing Staff` (`(g)`):** Seluruh data operasional yang muncul untuk ketiga peran ini wajib disesuaikan dengan gudang yang ditugaskan (`user_warehouses`) dan lokasi penyimpanan di dalam gudang tersebut:
+   - **Aturan Pemisahan Tugas (*Segregation of Duties* / SoD):** Pada aksi persetujuan/posting (`PO Approve L1/L2`, `GR Post`, `Transfer Approve`, `Opname Approve L1/L2`), aktor selain `Super Admin` dilarang menyetujui/memposting dokumen yang dibuat oleh dirinya sendiri (`created_by`, maupun `submitted_by`/`l1_approved_by`/penghitung opname sesuai dokumen terkait) — ditolak dengan HTTP `403 PERMISSION_DENIED` (`details.code = "SOD_VIOLATION"`). `Super Admin` diizinkan melakukan *override* darurat yang dicatat eksplisit dengan `"sod_override": true` di `audit_logs`.
+2. **Operasi baca bagi `Warehouse Staff`, `Warehouse Supervisor`, `Warehouse Manager`, `Purchasing Staff`, dan `Procurement Manager` (`(g)`):** Seluruh data operasional yang muncul untuk peran terlingkup gudang wajib disesuaikan dengan gudang yang ditugaskan (`user_warehouses`) dan lokasi penyimpanan di dalam gudang tersebut:
    - **Gudang & Lokasi (`master:read` pada `warehouses` dan `storage_locations`):** Secara default, pembacaan daftar maupun detail gudang dan lokasi penyimpanan hanya mengembalikan gudang yang ditugaskan pada `user_warehouses` beserta lokasi di dalamnya; akses detail atau filter ke `warehouse_id` di luar penugasan ditolak dengan `403 WAREHOUSE_NOT_ASSIGNED`. Khusus saat memilih gudang dan lokasi tujuan untuk pembuatan Stock Transfer antar-gudang, endpoint daftar gudang dan lokasi menyediakan parameter query referensi tujuan transfer yang mengembalikan gudang dan lokasi aktif lintas gudang.
    - **Katalog Master Global (`master:read` pada `categories`, `uoms`, `items`, `suppliers`):** Tidak terikat pada gudang tertentu sehingga dapat dibaca lintas gudang oleh seluruh pemegang `master:read`.
    - **Dokumen, Saldo Stok, dan Buku Besar (`po:read`, `gr:read`, `opname:read`, `stock:read`, `ledger:read`):** Ketiga peran hanya dapat membaca PO, GR, Opname, saldo stok (per lokasi, per gudang, maupun ringkasan agregat `summary`), serta buku besar (`stock_movements`) pada gudang yang ditugaskan (`user_warehouses`). Permintaan dengan filter atau ID dokumen/gudang di luar penugasan ditolak dengan `403 WAREHOUSE_NOT_ASSIGNED`.
@@ -1216,3 +1227,4 @@ perubahan lintas modul.
 | 2026-11-11 | 2.4-general | Penambahan kebutuhan operasional retail, toko cabang, dan B2B ke dalam Fase 1: `MST-F08` (barcode item unik dan lookup), `INV-F07` (integrasi barcode/QR scanner hardware & kamera), `RCV-F05` (cetak bukti penerimaan barang GRN fisik), `TRF-F06` (cetak surat jalan transfer fisik), serta penambahan `AC-32` dan `AC-33`. |
 | 2026-11-11 | 2.5-general | Penambahan `MST-F09` (Generator Barcode Internal Otomatis EAN-13/Code-128 untuk produk non-barcode pabrik) dan `INV-F08` (Pindai Barcode Cek Stok & Posisi Rak Gudang secara instan — `AC-34`). |
 | 2026-11-12 | 2.6-general | Penambahan `MST-F10` (`AC-35`: visualisasi barcode SVG & cetak stiker barang `50x30 mm`), `WHS-F04`/`LOC-F03` (`AC-36`: barcode lokasi rak/gudang & inspeksi multi-SKU rak), `WHS-F05`/`LOC-F04` (`AC-37`: QR Code 2D lokasi rak/gudang dengan toggle dual-format), kolom `barcode` pada import Excel item (`MST-F06`), serta tabel spesifikasi teknis arsitektur Backend & Frontend pada §4.4 dan pelengkapan RTM §11.2. |
+| 2026-11-15 | 2.7-general | Penyelesaian Tahap 34–38 WMS (`015`–`018`): perbaikan error 500 `document-templates` & auto-refresh query, edit PO Draft/revisi & short-close per baris (`po_lines`), parameter `min_stock` & profil bank/fax/NPWP supplier, persetujuan berjenjang 2-level PO (`WAITING_L1_APPROVAL`/`WAITING_L2_APPROVAL` + threshold `/api/v1/settings/approval` + `unit_price`/`approval_logs`) dan Stock Opname, ekspansi peran (`Warehouse Supervisor`, `Procurement Manager`), pemecahan `gr:create`/`gr:post`, serta penegakan *Segregation of Duties* (SoD) dengan audit *override* `Super Admin`. Lulus `98/98` pytest & `119/119` Vitest. |

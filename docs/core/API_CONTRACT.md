@@ -123,7 +123,7 @@ umum (`app/main.py`) mengikuti katalog tunggal berikut:
 | `AUTH_INVALID_CREDENTIALS` | 401 | `AuthInvalidCredentials` | Username atau kata sandi salah saat login atau ganti kata sandi |
 | `AUTH_TOKEN_INVALID` | 401 | `AuthTokenInvalid` | Access/refresh token tidak valid, kedaluwarsa, dicabut, reuse terdeteksi, atau akun nonaktif |
 | `AUTH_TOO_MANY_ATTEMPTS` | 429 | `AuthTooManyAttempts` | Akun sedang terkunci sementara karena >= 5 kali gagal login berturut-turut |
-| `PERMISSION_DENIED` | 403 | `PermissionDenied` | Peran pengguna tidak memiliki permission untuk endpoint atau aksi tersebut |
+| `PERMISSION_DENIED` | 403 | `PermissionDenied` | Peran pengguna tidak memiliki permission untuk endpoint/aksi tersebut, atau melanggar *Segregation of Duties* (`details.code = "SOD_VIOLATION"`) |
 | `WAREHOUSE_NOT_ASSIGNED` | 403 | `WarehouseNotAssigned` | Pengguna tidak ditugaskan ke gudang yang menjadi cakupan operasi `(g)` |
 | `NOT_FOUND` | 404 | `NotFoundError` | Entitas master, pengguna, menu, lokasi, atau dokumen transaksi tidak ditemukan |
 | `VALIDATION_ERROR` | 422 | `ValidationDomainError` / `RequestValidationError` | Kegagalan validasi skema request, parameter query/sort/pagination, kuantitas desimal pada UoM integer, atau aturan input domain |
@@ -134,7 +134,7 @@ umum (`app/main.py`) mengikuti katalog tunggal berikut:
 | `INSUFFICIENT_STOCK` | 409 | `InsufficientStock` | Saldo stok tidak mencukupi saat `allow_negative_stock = false` |
 | `OVER_RECEIPT` | 409 | `OverReceipt` | Kuantitas penerimaan GR melebihi sisa `qty_ordered - qty_received` pada baris PO |
 | `TRANSFER_QTY_EXCEEDS_SHIPPED` | 409 | `TransferQtyExceedsShipped` | Kuantitas `qty_received` pada penerimaan Transfer melebihi `qty` yang dikirim |
-| `LOCATION_FROZEN` | 409 | `LocationFrozen` | Lokasi sedang dibekukan oleh sesi Stock Opname aktif (`IN_PROGRESS` atau `WAITING_APPROVAL`) |
+| `LOCATION_FROZEN` | 409 | `LocationFrozen` | Lokasi sedang dibekukan oleh sesi Stock Opname aktif (`IN_PROGRESS`, `WAITING_L1_APPROVAL`, `WAITING_L2_APPROVAL`, atau `WAITING_APPROVAL`) |
 | `ENTITY_IN_USE` | 409 | `EntityInUse` | Entitas tidak dapat dinonaktifkan atau diubah atribut kuncinya (`sku`, `uom_id`, `allow_decimal`) karena sedang direferensikan saldo/transaksi/item/anak menu aktif |
 | `INTERNAL_ERROR` | 500 | Handler `Exception` umum | Kesalahan internal tak terduga (detail teknis tidak diekspos ke klien) |
 
@@ -173,9 +173,23 @@ Pada saat Fase 2 (M9) diimplementasikan, kontrak API diperluas dengan ketentuan 
 ### Kontrak Filter Multi-Status Dokumen Transaksi (`GET /api/v1/purchase-orders`)
 
 - Endpoint `GET /api/v1/purchase-orders` mendukung parameter query `status` dengan format status tunggal (misal: `status=ISSUED`) maupun multi-status yang dipisahkan tanda koma (misal: `status=ISSUED,PARTIALLY_RECEIVED`).
-- Backend memvalidasi setiap token status terhadap whitelist resmi dokumen (`DRAFT`, `ISSUED`, `PARTIALLY_RECEIVED`, `RECEIVED`, `CLOSED`, `CANCELLED`). Token yang tidak valid menghasilkan HTTP `422 VALIDATION_ERROR`.
+- Backend memvalidasi setiap token status terhadap whitelist resmi dokumen (`DRAFT`, `WAITING_L1_APPROVAL`, `WAITING_L2_APPROVAL`, `ISSUED`, `PARTIALLY_RECEIVED`, `RECEIVED`, `CLOSED`, `CANCELLED`). Token yang tidak valid menghasilkan HTTP `422 VALIDATION_ERROR`.
 - Pada lapisan repository PostgreSQL, kondisi dieksekusi dengan ekspresi aman `po.status = ANY(%s)` menggunakan parameter array string PostgreSQL.
 - Fitur ini memungkinkan form pembuatan Goods Receipt (`useGoodsReceiptReferences`) memuat seluruh PO yang siap diterima (baik berstatus `ISSUED` maupun `PARTIALLY_RECEIVED` yang masih memiliki sisa kuantitas), sehingga selaras 100% dengan rekapitulasi tugas tertunda pada Dashboard.
+
+### Kontrak Persetujuan Berjenjang, Pengaturan Ambang PO, & *Segregation of Duties* (Tahap 34–38)
+
+1. **Pengaturan Ambang Approval PO (`/api/v1/settings/approval`):**
+   - `GET /api/v1/settings/approval` (pengguna terautentikasi) mengembalikan `{ "po_l2_approval_threshold": <number> }` (bawaan `10000000`).
+   - `PUT /api/v1/settings/approval` (permission `settings:manage`) memperbarui ambang nominal PO Level 2 dan mencatat perubahan ke `audit_logs`.
+2. **Alur Pengajuan, Approval 2-Level, & Penolakan PO:**
+   - `POST /api/v1/purchase-orders/{po_id}/submit` (`po:create`): memindahkan `DRAFT -> WAITING_L1_APPROVAL`.
+   - `POST /api/v1/purchase-orders/{po_id}/approve` (`po:approve_l1` untuk `WAITING_L1_APPROVAL`, `po:approve_l2` untuk `WAITING_L2_APPROVAL`): jika `total_amount > po_l2_approval_threshold`, Level 1 berpindah ke `WAITING_L2_APPROVAL`; jika `total_amount <= po_l2_approval_threshold` (termasuk `0`), Level 1 langsung menerbitkan PO (`ISSUED`). Level 2 selalu memindahkan `WAITING_L2_APPROVAL -> ISSUED`.
+   - `POST /api/v1/purchase-orders/{po_id}/reject` (`po:approve_l1` / `po:approve_l2`): mewajibkan `reason` non-kosong dan mengembalikan PO ke `DRAFT` (menyimpan `rejection_reason` dan mencatat ke `approval_logs`).
+   - Respon detail PO & Opname menyertakan `approval_logs` kronologis; `po_lines` mendukung `unit_price` opsional & `line_subtotal`, serta `purchase_orders` menyertakan `total_amount`, `expected_delivery_date`, `revised_from_po_id`, dan kolom tracking `submitted_by/at`, `l1_approved_by/at`, `l2_approved_by/at`.
+3. **Pemisahan Izin GR & Validasi *Segregation of Duties* (`SOD_VIOLATION`):**
+   - Izin `gr:manage` digantikan oleh `gr:create` (buat/ubah/batalkan draft GR) dan `gr:post` (posting stok final GR). Izin `opname:approve` digantikan oleh `opname:approve_l1` dan `opname:approve_l2`.
+   - Pada aksi `PO Approve L1/L2`, `GR Post`, `Transfer Approve`, dan `Stock Opname Approve L1/L2`, aktor non-`Super Admin` dilarang menyetujui/memposting dokumen yang ia buat/ajukan/hitung/setujui di tahap sebelumnya; pelanggaran mengembalikan HTTP `403 PERMISSION_DENIED` dengan `details.code = "SOD_VIOLATION"`. `Super Admin` diizinkan melakukan *override* yang ditandai `"sod_override": true` di `audit_logs`.
 
 ## Ownership
 
