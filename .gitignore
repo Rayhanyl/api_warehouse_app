@@ -23,6 +23,7 @@ docs/_local/
 htmlcov/
 
 # Runtime and local development artifacts
+uploads/
 *.log
 *.pid
 *.sqlite

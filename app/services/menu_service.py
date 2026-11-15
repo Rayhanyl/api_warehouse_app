@@ -1,6 +1,5 @@
 """Service logika bisnis untuk Menu Navigasi Dinamis (FR-01, PRD Lampiran A & C)."""
 
-import re
 from typing import Any
 
 from psycopg import Connection
@@ -12,27 +11,15 @@ from app.core.exceptions import (
     NotFoundError,
     ValidationDomainError,
 )
+from app.core.validation import (
+    ensure_non_blank_str,
+    validate_code_format,
+    validate_icon_format,
+    validate_menu_path,
+)
 from app.repositories import menu_repo
 from app.services import audit_service
 from app.utils.pagination import build_order_by, normalize_pagination
-
-CODE_REGEX = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
-ICON_REGEX = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
-
-
-def _validate_icon_format(icon: str | None) -> str | None:
-    """Memvalidasi nama ikon agar sesuai format identifier kebab-case (mis. 'layout-dashboard', 'package-check')."""
-    if icon is None:
-        return None
-    clean = icon.strip()
-    if not clean:
-        return None
-    if not ICON_REGEX.match(clean):
-        raise ValidationDomainError(
-            "Format nama icon tidak valid; gunakan huruf kecil, angka, dan tanda hubung (kebab-case, mis. 'package-check').",
-            details={"field": "icon", "value": clean},
-        )
-    return clean
 
 MENU_SORT_COLUMNS: dict[str, str] = {
     "id": "m.id",
@@ -253,31 +240,14 @@ def create_menu(
     is_active: bool = True,
     ip_address: str | None = None,
 ) -> dict[str, Any]:
-    clean_code = code.strip()
-    clean_name = name.strip()
-    clean_path = path.strip()
-    clean_icon = _validate_icon_format(icon)
-
-    if not clean_code:
-        raise ValidationDomainError(
-            "Kode menu tidak boleh kosong.",
-            details={"field": "code"},
-        )
-    if not CODE_REGEX.match(clean_code):
-        raise ValidationDomainError(
-            "Format kode menu tidak valid; hanya boleh berisi huruf, angka, titik, garis bawah, garis miring, atau tanda hubung tanpa spasi.",
-            details={"field": "code", "value": clean_code},
-        )
-    if not clean_name:
-        raise ValidationDomainError(
-            "Nama menu tidak boleh kosong.",
-            details={"field": "name"},
-        )
-    if not clean_path or not clean_path.startswith("/"):
-        raise ValidationDomainError(
-            "Path menu wajib diawali dengan karakter '/'.",
-            details={"field": "path", "value": clean_path},
-        )
+    clean_code = validate_code_format(
+        code, field_name="code", label="Kode menu", max_length=50
+    )
+    clean_name = ensure_non_blank_str(
+        name, field_name="name", label="Nama menu", max_length=100
+    )
+    clean_path = validate_menu_path(path)
+    clean_icon = validate_icon_format(icon)
 
     with conn.transaction():
         existing = menu_repo.get_menu_by_code(conn, clean_code)
@@ -349,30 +319,21 @@ def update_menu(
             )
         old_snapshot = menu_repo.get_menu_by_id(conn, menu_id)
 
-        new_code = code.strip() if code is not None else locked["code"]
-        new_name = name.strip() if name is not None else locked["name"]
-        new_path = path.strip() if path is not None else locked["path"]
-
-        if not new_code:
-            raise ValidationDomainError(
-                "Kode menu tidak boleh kosong.",
-                details={"field": "code"},
+        new_code = (
+            validate_code_format(
+                code, field_name="code", label="Kode menu", max_length=50
             )
-        if not CODE_REGEX.match(new_code):
-            raise ValidationDomainError(
-                "Format kode menu tidak valid; hanya boleh berisi huruf, angka, titik, garis bawah, garis miring, atau tanda hubung tanpa spasi.",
-                details={"field": "code", "value": new_code},
+            if code is not None
+            else locked["code"]
+        )
+        new_name = (
+            ensure_non_blank_str(
+                name, field_name="name", label="Nama menu", max_length=100
             )
-        if not new_name:
-            raise ValidationDomainError(
-                "Nama menu tidak boleh kosong.",
-                details={"field": "name"},
-            )
-        if not new_path or not new_path.startswith("/"):
-            raise ValidationDomainError(
-                "Path menu wajib diawali dengan karakter '/'.",
-                details={"field": "path", "value": new_path},
-            )
+            if name is not None
+            else locked["name"]
+        )
+        new_path = validate_menu_path(path) if path is not None else locked["path"]
 
         if new_code.lower() != str(locked["code"]).lower():
             dup = menu_repo.get_menu_by_code(conn, new_code)
@@ -383,7 +344,7 @@ def update_menu(
                 )
 
         if icon is not None:
-            new_icon = _validate_icon_format(icon)
+            new_icon = validate_icon_format(icon)
         else:
             new_icon = locked["icon"]
 

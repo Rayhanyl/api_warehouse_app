@@ -26,8 +26,14 @@ Modul Purchase Order (PO) mengelola siklus pengadaan barang ke pemasok untuk sat
 stateDiagram-v2
     [*] --> DRAFT: POST /purchase-orders (po:create)
     DRAFT --> DRAFT: PATCH /purchase-orders/{id} (po:create)
+    DRAFT --> WAITING_L1_APPROVAL: POST /{id}/submit (po:create)
     DRAFT --> ISSUED: POST /{id}/issue (po:issue)
     DRAFT --> CANCELLED: POST /{id}/cancel (po:create)
+    WAITING_L1_APPROVAL --> WAITING_L2_APPROVAL: POST /{id}/approve (po:approve_l1, total > threshold)
+    WAITING_L1_APPROVAL --> ISSUED: POST /{id}/approve (po:approve_l1, total <= threshold atau 0)
+    WAITING_L1_APPROVAL --> DRAFT: POST /{id}/reject (po:approve_l1, alasan wajib)
+    WAITING_L2_APPROVAL --> ISSUED: POST /{id}/approve (po:approve_l2)
+    WAITING_L2_APPROVAL --> DRAFT: POST /{id}/reject (po:approve_l2, alasan wajib)
     ISSUED --> CANCELLED: POST /{id}/cancel (po:cancel, tanpa GR DRAFT/POSTED)
     ISSUED --> PARTIALLY_RECEIVED: Sistem (saat GR POSTED, sebagian diterima)
     ISSUED --> RECEIVED: Sistem (saat GR POSTED, seluruh baris penuh)
@@ -39,14 +45,18 @@ stateDiagram-v2
 
 | Status Saat Ini | Pemicu | Status Berikutnya | Syarat & Efek |
 | --- | --- | --- | --- |
-| *(Baru)* | `POST /api/v1/purchase-orders` | `DRAFT` | Pemasok dan gudang tujuan aktif; nomor `PO-YYYYMM-NNNN` dibuat otomatis. Baris boleh kosong saat penyusunan. |
-| `DRAFT` | `PATCH /api/v1/purchase-orders/{id}` | `DRAFT` | Revisi header atau penggantian daftar baris. |
-| `DRAFT` | `POST /api/v1/purchase-orders/{id}/issue` | `ISSUED` | Minimal 1 baris; seluruh barang aktif dan `qty_ordered > 0`. Baris PO dikunci dari revisi dan siap menerima GR. |
+| *(Baru)* | `POST /api/v1/purchase-orders` | `DRAFT` | Pemasok dan gudang tujuan aktif; nomor `PO-YYYYMM-NNNN` dibuat otomatis. Baris boleh kosong saat penyusunan (mendukung `unit_price` opsional). |
+| `DRAFT` | `PATCH /api/v1/purchase-orders/{id}` | `DRAFT` | Revisi header (`expected_delivery_date`, `notes`, dll.) atau penggantian daftar baris. |
+| `DRAFT` | `POST /api/v1/purchase-orders/{id}/submit` | `WAITING_L1_APPROVAL` | Membutuhkan `po:create`; minimal 1 baris valid (`qty_ordered > 0`). Mengajukan PO untuk persetujuan berjenjang dan mencatat ke `approval_logs`. |
+| `DRAFT` | `POST /api/v1/purchase-orders/{id}/issue` | `ISSUED` | Membutuhkan `po:issue` (penerbitan langsung / bypass admin & manager); minimal 1 baris; seluruh barang aktif dan `qty_ordered > 0`. Baris PO dikunci dari revisi dan siap menerima GR. |
+| `WAITING_L1_APPROVAL` | `POST /api/v1/purchase-orders/{id}/approve` | `WAITING_L2_APPROVAL` / `ISSUED` | Membutuhkan `po:approve_l1` + aturan SoD (`actor != submitted_by/created_by`, kecuali `Super Admin`). Jika `total_amount > po_l2_approval_threshold`, lanjut ke `WAITING_L2_APPROVAL`; selainnya langsung `ISSUED`. |
+| `WAITING_L2_APPROVAL` | `POST /api/v1/purchase-orders/{id}/approve` | `ISSUED` | Membutuhkan `po:approve_l2` + aturan SoD (`actor != submitted_by/created_by/l1_approved_by`, kecuali `Super Admin`). PO diterbitkan dan siap menerima GR. |
+| `WAITING_L1_APPROVAL` / `WAITING_L2_APPROVAL` | `POST /api/v1/purchase-orders/{id}/reject` | `DRAFT` | Membutuhkan `po:approve_l1` / `po:approve_l2`; `reason` wajib diisi; mengembalikan ke `DRAFT` dengan `rejection_reason` agar dapat direvisi. |
 | `DRAFT` | `POST /api/v1/purchase-orders/{id}/cancel` | `CANCELLED` | Membutuhkan `po:create`. |
 | `ISSUED` | `POST /api/v1/purchase-orders/{id}/cancel` | `CANCELLED` | Membutuhkan `po:cancel`; belum ada GR `POSTED` dan tidak ada GR `DRAFT` pada PO tersebut. |
 | `ISSUED` | Sistem (saat GR `POSTED`) | `PARTIALLY_RECEIVED` | Total `qty_received > 0` dan masih ada baris dengan `qty_received < qty_ordered`. |
 | `ISSUED` / `PARTIALLY_RECEIVED` | Sistem (saat GR `POSTED`) | `RECEIVED` | Seluruh baris PO memiliki `qty_received == qty_ordered`. Status final. |
-| `ISSUED` / `PARTIALLY_RECEIVED` | `POST /api/v1/purchase-orders/{id}/close` | `CLOSED` | Membutuhkan `po:close`; tidak ada GR `DRAFT` yang menggantung; `closed_reason` wajib diisi. Status final. |
+| `ISSUED` / `PARTIALLY_RECEIVED` | `POST /api/v1/purchase-orders/{id}/close` | `CLOSED` | Membutuhkan `po:close`; tidak ada GR `DRAFT` yang menggantung; `closed_reason` wajib diisi (termasuk dukungan short-close per baris `/lines/{line_id}/close`). Status final. |
 
 ### 2.3 Aturan Integritas Utama
 
@@ -64,11 +74,13 @@ stateDiagram-v2
 
 | Permission | Aksi | Peran Bawaan (Matriks 3.1) | Warehouse Scoping `(g)` |
 | --- | --- | --- | --- |
-| `po:read` | Daftar & detail PO | *Super Admin*, *Warehouse Manager*, *Purchasing Staff*, *Warehouse Staff*, *Auditor* | **Ya `(g)`** untuk *Warehouse Staff*, *Warehouse Manager*, dan *Purchasing Staff* (hanya melihat PO pada gudang yang ditugaskan; gudang lain → `403 WAREHOUSE_NOT_ASSIGNED`). *Super Admin* dan *Auditor* tidak dibatasi (unscoped). |
-| `po:create` | Buat PO `DRAFT`, revisi PO `DRAFT`, batalkan PO `DRAFT` | *Super Admin*, *Purchasing Staff* | **Ya `(g)`** (`ensure_warehouse_access` pada `warehouse_id`) |
-| `po:issue` | Terbitkan PO (`DRAFT → ISSUED`) | *Super Admin*, *Purchasing Staff* | **Ya `(g)`** (`ensure_warehouse_access` pada `warehouse_id`) |
-| `po:cancel` | Batalkan PO `ISSUED` (`ISSUED → CANCELLED`) | *Super Admin*, *Purchasing Staff* | **Ya `(g)`** (`ensure_warehouse_access` pada `warehouse_id`) |
-| `po:close` | Tutup PO (`ISSUED`/`PARTIALLY_RECEIVED → CLOSED`) | *Super Admin*, *Warehouse Manager*, *Purchasing Staff* | **Ya `(g)`** (`ensure_warehouse_access` pada `warehouse_id`) |
+| `po:read` | Daftar & detail PO | *Super Admin*, *Warehouse Manager*, *Warehouse Supervisor*, *Purchasing Staff*, *Procurement Manager*, *Warehouse Staff*, *Auditor* | **Ya `(g)`** untuk role non-*Super Admin*/*Auditor* (hanya melihat PO pada gudang yang ditugaskan; gudang lain → `403 WAREHOUSE_NOT_ASSIGNED`). *Super Admin* dan *Auditor* tidak dibatasi (unscoped). |
+| `po:create` | Buat PO `DRAFT`, revisi PO `DRAFT`, ajukan (`submit`), batalkan PO `DRAFT` | *Super Admin*, *Purchasing Staff*, *Procurement Manager* | **Ya `(g)`** (`ensure_warehouse_access` pada `warehouse_id`) |
+| `po:issue` | Terbitkan langsung PO (`DRAFT → ISSUED`) | *Super Admin*, *Purchasing Staff*, *Procurement Manager* | **Ya `(g)`** (`ensure_warehouse_access` pada `warehouse_id`) |
+| `po:approve_l1` | Setujui / tolak PO pada tahap Level 1 | *Super Admin*, *Warehouse Manager*, *Procurement Manager* | **Ya `(g)`** (`ensure_warehouse_access` pada `warehouse_id`) + wajib lolos SoD (`created_by`/`submitted_by` ≠ approver) |
+| `po:approve_l2` | Setujui / tolak PO pada tahap Level 2 (di atas ambang nominal) | *Super Admin*, *Procurement Manager* | **Ya `(g)`** (`ensure_warehouse_access` pada `warehouse_id`) + wajib lolos SoD (`created_by`/`submitted_by`/`l1_approved_by` ≠ approver) |
+| `po:cancel` | Batalkan PO `ISSUED` (`ISSUED → CANCELLED`) | *Super Admin*, *Purchasing Staff*, *Procurement Manager* | **Ya `(g)`** (`ensure_warehouse_access` pada `warehouse_id`) |
+| `po:close` | Tutup PO (`ISSUED`/`PARTIALLY_RECEIVED → CLOSED`) & short-close baris | *Super Admin*, *Warehouse Manager*, *Purchasing Staff*, *Procurement Manager* | **Ya `(g)`** (`ensure_warehouse_access` pada `warehouse_id`) |
 
 > [!NOTE]
 > Endpoint `POST /api/v1/purchase-orders/{po_id}/cancel` di lapisan route mengizinkan pemanggil yang memiliki `po:create` **atau** `po:cancel`, lalu di dalam `po_service.cancel_purchase_order()` setelah baris PO dikunci (`FOR UPDATE`), sistem memverifikasi izin spesifik sesuai status aktual dokumen (`po:create` untuk `DRAFT`, `po:cancel` untuk `ISSUED`) serta memastikan penugasan gudang pemanggil (`ensure_warehouse_access`).
@@ -81,11 +93,16 @@ stateDiagram-v2
 | :-: | --- | --- | --- | --- | --- |
 | 1 | GET | `/api/v1/purchase-orders` | Daftar PO (paginasi, filter gudang/pemasok/status/tanggal, pencarian, urut) | Bearer | `po:read` |
 | 2 | POST | `/api/v1/purchase-orders` | Buat PO baru berstatus `DRAFT` | Bearer | `po:create` |
-| 3 | GET | `/api/v1/purchase-orders/{po_id}` | Detail PO beserta daftar barisnya (`lines`) | Bearer | `po:read` |
+| 3 | GET | `/api/v1/purchase-orders/{po_id}` | Detail PO beserta daftar baris (`lines`) dan riwayat `approval_logs` | Bearer | `po:read` |
 | 4 | PATCH | `/api/v1/purchase-orders/{po_id}` | Revisi header dan/atau baris PO berstatus `DRAFT` | Bearer | `po:create` |
-| 5 | POST | `/api/v1/purchase-orders/{po_id}/issue` | Terbitkan PO (`DRAFT → ISSUED`) | Bearer | `po:issue` |
-| 6 | POST | `/api/v1/purchase-orders/{po_id}/cancel` | Batalkan PO (`DRAFT` atau `ISSUED → CANCELLED`) | Bearer | `po:create` / `po:cancel` |
-| 7 | POST | `/api/v1/purchase-orders/{po_id}/close` | Tutup PO dengan alasan wajib (`ISSUED`/`PARTIALLY_RECEIVED → CLOSED`) | Bearer | `po:close` |
+| 5 | POST | `/api/v1/purchase-orders/{po_id}/submit` | Ajukan PO `DRAFT` ke antrean persetujuan (`WAITING_L1_APPROVAL`) | Bearer | `po:create` |
+| 6 | POST | `/api/v1/purchase-orders/{po_id}/approve` | Setujui PO Level 1 atau Level 2 (`WAITING_L1/L2_APPROVAL → WAITING_L2_APPROVAL / ISSUED`) | Bearer | `po:approve_l1` / `po:approve_l2` |
+| 7 | POST | `/api/v1/purchase-orders/{po_id}/reject` | Tolak PO dengan alasan wajib kembali ke `DRAFT` | Bearer | `po:approve_l1` / `po:approve_l2` |
+| 8 | POST | `/api/v1/purchase-orders/{po_id}/issue` | Terbitkan langsung PO (`DRAFT → ISSUED`) | Bearer | `po:issue` |
+| 9 | POST | `/api/v1/purchase-orders/{po_id}/cancel` | Batalkan PO (`DRAFT` atau `ISSUED → CANCELLED`) | Bearer | `po:create` / `po:cancel` |
+| 10 | POST | `/api/v1/purchase-orders/{po_id}/close` | Tutup PO dengan alasan wajib (`ISSUED`/`PARTIALLY_RECEIVED → CLOSED`) | Bearer | `po:close` |
+| 11 | POST | `/api/v1/purchase-orders/{po_id}/lines/{line_id}/close` | Short-close sisa kuantitas baris PO tertentu dengan alasan wajib | Bearer | `po:close` |
+| 12 | POST | `/api/v1/purchase-orders/{po_id}/revise` | Batalkan PO `ISSUED` & buat salinan draft revisi baru secara atomik | Bearer | `po:cancel` + `po:create` |
 
 ---
 
@@ -106,7 +123,7 @@ Mengambil daftar ringkasan Purchase Order dengan dukungan pagination, filter, pe
 | `offset` | integer | Tidak | `0` | Minimal `0`. |
 | `warehouse_id` | integer | Tidak | `null` | Filter gudang tujuan. Untuk *Warehouse Staff*, wajib termasuk gudang yang ditugaskan (`403 WAREHOUSE_NOT_ASSIGNED` bila di luar cakupan). |
 | `supplier_id` | integer | Tidak | `null` | Filter ID pemasok. |
-| `status` | string | Tidak | `null` | Status tunggal atau gabungan multi-status dipisahkan koma (misal: `status=ISSUED,PARTIALLY_RECEIVED`). Whitelist nilai: `DRAFT`, `ISSUED`, `PARTIALLY_RECEIVED`, `RECEIVED`, `CLOSED`, `CANCELLED`. |
+| `status` | string | Tidak | `null` | Status tunggal atau gabungan multi-status dipisahkan koma (misal: `status=ISSUED,PARTIALLY_RECEIVED`). Whitelist nilai: `DRAFT`, `WAITING_L1_APPROVAL`, `WAITING_L2_APPROVAL`, `ISSUED`, `PARTIALLY_RECEIVED`, `RECEIVED`, `CLOSED`, `CANCELLED`. |
 | `date_from` | date (`YYYY-MM-DD`) | Tidak | `null` | Batas awal tanggal pesanan (`order_date >= date_from`). |
 | `date_to` | date (`YYYY-MM-DD`) | Tidak | `null` | Batas akhir tanggal pesanan (`order_date <= date_to`). Tidak boleh `< date_from`. |
 | `search` | string | Tidak | `null` | Pencarian `ILIKE` pada `po_number`, `supplier_code`, `supplier_name`, atau `notes`. |

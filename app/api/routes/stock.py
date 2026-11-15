@@ -8,6 +8,7 @@ from psycopg import Connection
 from app.core.database import get_conn
 from app.core.permissions import LEDGER_READ, STOCK_READ, require_permission
 from app.schemas.common import (
+    OptBoolQuery,
     OptDatetimeQuery,
     OptEndDatetimeQuery,
     OptIntQuery,
@@ -63,6 +64,7 @@ def list_stock_by_warehouse(
     warehouse_id: OptIntQuery = Query(default=None),
     item_id: OptIntQuery = Query(default=None),
     category_id: OptIntQuery = Query(default=None),
+    critical_only: OptBoolQuery = Query(default=None),
     search: OptStrQuery = Query(default=None),
     sort_by: OptStrQuery = Query(default=None),
     sort_dir: OptStrQuery = Query(default=None),
@@ -77,6 +79,7 @@ def list_stock_by_warehouse(
         warehouse_id=warehouse_id,
         item_id=item_id,
         category_id=category_id,
+        critical_only=critical_only,
         search=search,
         sort_by=sort_by,
         sort_dir=sort_dir,
@@ -91,6 +94,7 @@ def list_stock_summary(
     warehouse_id: OptIntQuery = Query(default=None),
     item_id: OptIntQuery = Query(default=None),
     category_id: OptIntQuery = Query(default=None),
+    critical_only: OptBoolQuery = Query(default=None),
     search: OptStrQuery = Query(default=None),
     sort_by: OptStrQuery = Query(default=None),
     sort_dir: OptStrQuery = Query(default=None),
@@ -105,6 +109,7 @@ def list_stock_summary(
         warehouse_id=warehouse_id,
         item_id=item_id,
         category_id=category_id,
+        critical_only=critical_only,
         search=search,
         sort_by=sort_by,
         sort_dir=sort_dir,

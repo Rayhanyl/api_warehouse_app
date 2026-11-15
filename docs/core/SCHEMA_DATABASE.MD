@@ -12,7 +12,7 @@
 ## 1. Prinsip Desain & Konvensi Skema
 
 1. **Akses PostgreSQL Langsung & Migrasi SQL Murni (PRD 7.5):**
-   * Aplikasi tidak menggunakan ORM (SQLAlchemy/Alembic). Seluruh perubahan skema dikelola melalui berkas SQL bernomor urut pada folder `db/migrations/` (`001_...sql` s.d. `011_...sql`) yang dijalankan oleh *runner* `db/migrate.py` dan dicatat pada tabel `schema_migrations`.
+   * Aplikasi tidak menggunakan ORM (SQLAlchemy/Alembic). Seluruh perubahan skema dikelola melalui berkas SQL bernomor urut pada folder `db/migrations/` (`001_...sql` s.d. `015_...sql`) yang dijalankan oleh *runner* `db/migrate.py` dan dicatat pada tabel `schema_migrations`.
    * Database memisahkan **role pemilik skema** (`wms_owner`, digunakan saat migrasi) dan **role aplikasi** (`wms_app`, digunakan oleh layanan FastAPI sehari-hari).
 
 2. **Konvensi Penamaan *Constraint* & Indeks Eksplisit (PRD 7.5):**
@@ -54,6 +54,12 @@ Sesuai arsitektur pada `FOLDER_STRUCTURE.md`, definisi DDL dibagi ke dalam berka
 | `db/migrations/010_harden_constraints_and_indexes.sql` | Indeks unik fungsional case-insensitive (`LOWER`), constraint CHECK anti-blank, CHECK metadata status dokumen, dan pencabutan hak `DELETE` pada tabel `menus` dari `wms_app`. |
 | `db/migrations/011_optimize_audit_logs_index.sql` | Indeks komposit `(created_at DESC, id DESC)` pada `audit_logs` dan `stock_movements` untuk paginasi & filter waktu performa tinggi. |
 | `db/migrations/012_add_barcode_to_items.sql` | Penambahan kolom `barcode` pada tabel `items` dan indeks unik fungsional case-insensitive `uq_items_barcode_lower`. |
+| `db/migrations/013_consolidate_stock_monitoring_menu.sql` | Konsolidasi menu root `inventory` menjadi `Monitoring Saldo Stok` (`/stock`) dan penonaktifan submenu lama (`stock_by_location`, `stock_by_warehouse`, `stock_summary`, `stock_ledger`). |
+| `db/migrations/014_enhance_audit_logs.sql` | Penambahan kolom `status` (`SUCCESS`/`FAILED` + constraint `ck_audit_logs_status`), `user_agent`, `request_id`, dan `details` (`JSONB`) beserta indeks `ix_audit_logs_status` & `ix_audit_logs_request_id`. |
+| `db/migrations/015_create_document_templates_table.sql` | Pembuatan tabel `document_templates`, seed bawaan 3 jenis dokumen (`GOODS_RECEIPT`, `STOCK_TRANSFER`, `PURCHASE_ORDER`), menu `/admin/document-templates`, dan grant hak akses `wms_app`. |
+| `db/migrations/016_enhance_po_edit_and_short_close.sql` | Penambahan `expected_delivery_date` & `revised_from_po_id` pada `purchase_orders` serta kolom short-close per baris (`qty_closed`, `line_status`, `line_closed_reason`, `line_closed_at`, `line_closed_by`) dan backfill pada `po_lines`. |
+| `db/migrations/017_add_item_min_stock_and_supplier_enrichment.sql` | Penambahan `min_stock` (`>= 0`) pada `items` dan pengayaan data rekening bank, `fax`, `npwp`, `payment_terms`, serta `notes` pada `suppliers`. |
+| `db/migrations/018_rbac_multi_level_approval_and_sod.sql` | Ekspansi 2 role baku (`Warehouse Supervisor`, `Procurement Manager`), migrasi & ekspansi permission (`gr:create`, `gr:post`, `po:approve_l1/l2`, `opname:approve_l1/l2`, `settings:manage`), tabel `app_settings` & `approval_logs`, `po_lines.unit_price`, dan tracking L1/L2 pada `purchase_orders` & `stock_opnames`. |
 
 ---
 
@@ -1242,6 +1248,36 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_items_barcode_lower
     ON items (LOWER(barcode))
     WHERE barcode IS NOT NULL;
 ```
+
+### 5.13. `013_consolidate_stock_monitoring_menu.sql` — Konsolidasi Menu Persediaan Terpadu
+
+Menyatukan menu sidebar modul stok menjadi satu pintu `Monitoring Saldo Stok` (`/stock`, ikon `boxes`) dan menonaktifkan 4 submenu stok lama (`stock_by_location`, `stock_by_warehouse`, `stock_summary`, `stock_ledger`) sesuai UX tab terpadu di frontend.
+
+### 5.14. `014_enhance_audit_logs.sql` — Penyempurnaan Atribut Konteks & Status `audit_logs`
+
+Menambahkan kolom `status VARCHAR(20) NOT NULL DEFAULT 'SUCCESS'` (dengan check constraint `ck_audit_logs_status CHECK (status IN ('SUCCESS', 'FAILED'))`), `user_agent VARCHAR(512)`, `request_id VARCHAR(128)`, dan `details JSONB` beserta indeks `ix_audit_logs_status` dan `ix_audit_logs_request_id` tanpa mengubah trigger *append-only* pada `audit_logs`.
+
+### 5.15. `015_create_document_templates_table.sql` — Tabel Template Dokumen Cetak Modular
+
+Membuat tabel `document_templates` (konfigurasi judul dokumen, identitas/kontak/logo perusahaan, posisi & ukuran logo, ukuran & orientasi kertas, `margin_mm`, flag visibilitas, `section_order` JSONB, `table_columns` JSONB, dan `signature_layout` JSONB) beserta check constraint nilai valid, data awal 3 dokumen (`GOODS_RECEIPT`, `STOCK_TRANSFER`, `PURCHASE_ORDER`), submenu `admin_document_templates` (`/admin/document-templates`), dan `GRANT SELECT, INSERT, UPDATE` untuk role `wms_app`.
+
+### 5.16. `016_enhance_po_edit_and_short_close.sql` — Edit/Revisi PO & Short-Close Per Baris
+
+Menambahkan kolom `expected_delivery_date DATE` dan `revised_from_po_id BIGINT` (FK ke `purchase_orders.id`) beserta indeks parsial pada `purchase_orders`, serta kolom `qty_closed NUMERIC(18,4)`, `line_status VARCHAR(30)`, `line_closed_reason TEXT`, `line_closed_at TIMESTAMPTZ`, dan `line_closed_by BIGINT` pada `po_lines` lengkap dengan constraint `ck_po_lines_qty_bounds` (`qty_received + qty_closed <= qty_ordered`), `ck_po_lines_line_status` (`OPEN`, `PARTIALLY_RECEIVED`, `RECEIVED`, `CLOSED`), `ck_po_lines_closed_reason`, dan backfill status baris eksisting.
+
+### 5.17. `017_add_item_min_stock_and_supplier_enrichment.sql` — Parameter Stok Kritis & Profil Supplier
+
+Menambahkan kolom `min_stock NUMERIC(18,4) NOT NULL DEFAULT 0` (dengan constraint `ck_items_min_stock_nonneg CHECK (min_stock >= 0)`) pada `items` untuk parameter stok kritis dashboard per gudang, serta menambahkan kolom `bank_name`, `bank_account_number`, `bank_account_holder`, `fax`, `npwp`, `payment_terms`, dan `notes` pada `suppliers`.
+
+### 5.18. `018_rbac_multi_level_approval_and_sod.sql` — Multi-Level Approval, Ekspansi Role, & Segregation of Duties
+
+Menerapkan pembaruan RBAC, konfigurasi approval, dan kontrol pemisahan tugas (*Segregation of Duties*):
+- Memecah `gr:manage` menjadi `gr:create` dan `gr:post`, memecah `opname:approve` menjadi `opname:approve_l1` dan `opname:approve_l2`, serta menambahkan `po:approve_l1`, `po:approve_l2`, dan `settings:manage`.
+- Menambahkan 2 role jabatan baku (`Warehouse Supervisor` dan `Procurement Manager`) serta memigrasikan pemetaan `role_permissions` eksisting.
+- Membuat tabel `app_settings` (`key`, `value`, `description`, `updated_by`, `updated_at`) dengan seed default `po_l2_approval_threshold = '10000000'`, serta tabel `approval_logs` (`doc_type` `'PO'|'OPNAME'`, `doc_id`, `approval_level` `0|1|2`, `action` `'SUBMITTED'|'APPROVED'|'REJECTED'`, `actor_id`, `actor_name`, `actor_role`, `notes`, `created_at`).
+- Menambahkan `unit_price NUMERIC(18,2)` (`>= 0`) pada `po_lines`, serta `total_amount`, `rejection_reason`, `submitted_by/at`, `l1_approved_by/at`, dan `l2_approved_by/at` pada `purchase_orders` dengan status baru `WAITING_L1_APPROVAL` dan `WAITING_L2_APPROVAL`.
+- Menambahkan `l1_approved_by/at` dan `l2_approved_by/at` pada `stock_opnames` serta memperbarui constraint & indeks aktif untuk status `WAITING_L1_APPROVAL` dan `WAITING_L2_APPROVAL`.
+- Memberikan `GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE app_settings, approval_logs` serta sequence usage kepada `wms_app`.
 
 ---
 

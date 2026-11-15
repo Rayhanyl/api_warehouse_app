@@ -49,6 +49,10 @@ class Settings(BaseSettings):
         description="Nilai SameSite untuk cookie refresh token (lax / strict / none)",
     )
     trusted_proxy_ips: list[str] = Field(default_factory=list)
+    upload_dir: str = Field(
+        default="uploads",
+        description="Direktori penyimpanan berkas unggahan aplikasi (mis. logo template dokumen)",
+    )
 
     # Notifikasi error real-time via Telegram Bot HTTP API (Tahap 13 / Poin 6)
     telegram_enabled: bool = Field(

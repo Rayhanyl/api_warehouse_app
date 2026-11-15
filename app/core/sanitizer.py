@@ -81,6 +81,51 @@ _EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 _ID_PHONE_RE = re.compile(r"(?<!\w)(?:\+62|08)\d[\d-]{6,13}\d(?!\w)")
 
 
+_CREDENTIAL_SINGLE_SEGMENTS: frozenset[str] = frozenset(
+    {
+        "password",
+        "passwd",
+        "pwd",
+        "secret",
+        "token",
+        "authorization",
+        "cookie",
+        "cookies",
+        "credential",
+        "credentials",
+        "jwt",
+        "apikey",
+        "signature",
+        "otp",
+        "pin",
+        "cvv",
+    }
+)
+
+_CREDENTIAL_PAIR_SEGMENTS: tuple[tuple[str, str], ...] = (
+    ("api", "key"),
+    ("private", "key"),
+    ("access", "key"),
+    ("secret", "key"),
+    ("session", "id"),
+    ("csrf", "token"),
+    ("xsrf", "token"),
+    ("set", "cookie"),
+)
+
+_AUDIT_SAFE_METADATA_KEYS: frozenset[str] = frozenset(
+    {
+        "password_changed",
+        "revoked_refresh_tokens",
+        "refresh_token_id",
+        "previous_token_id",
+        "new_token_id",
+        "reused_token_id",
+        "revoked_token_id",
+    }
+)
+
+
 def is_sensitive_key(key: str) -> bool:
     """Mengembalikan True bila nama field/parameter mengindikasikan kredensial atau data pribadi."""
     segments = tuple(re.findall(r"[a-z0-9]+", key.lower()))
@@ -90,6 +135,41 @@ def is_sensitive_key(key: str) -> bool:
         return True
     segment_set = set(segments)
     return any(first in segment_set and second in segment_set for first, second in _SENSITIVE_PAIR_SEGMENTS)
+
+
+def is_credential_key(key: str) -> bool:
+    """Mengembalikan True bila nama field mengindikasikan kredensial/rahasia (aman untuk audit_logs master data)."""
+    key_lower = key.strip().lower()
+    if key_lower in _AUDIT_SAFE_METADATA_KEYS:
+        return False
+    segments = tuple(re.findall(r"[a-z0-9]+", key_lower))
+    if not segments:
+        return False
+    if any(seg in _CREDENTIAL_SINGLE_SEGMENTS for seg in segments):
+        return True
+    segment_set = set(segments)
+    return any(
+        first in segment_set and second in segment_set
+        for first, second in _CREDENTIAL_PAIR_SEGMENTS
+    )
+
+
+def sanitize_credential_text(text: str, *, max_length: int | None = None) -> str:
+    """Menyamarkan password URL DB, token bot Telegram, JWT, dan header Bearer/Basic saja."""
+    if not text:
+        return ""
+    cleaned = _URL_CREDENTIAL_RE.sub(r"\1[REDACTED]\3", text)
+    cleaned = _TELEGRAM_BOT_TOKEN_RE.sub(
+        lambda m: f"{m.group(1) or ''}[REDACTED_BOT_TOKEN]",
+        cleaned,
+    )
+    cleaned = _JWT_RE.sub("[REDACTED_JWT]", cleaned)
+    cleaned = _AUTH_SCHEME_RE.sub(r"\1 [REDACTED]", cleaned)
+    if max_length is not None and len(cleaned) > max_length:
+        suffix = "... [truncated]"
+        cut = max(0, max_length - len(suffix))
+        cleaned = f"{cleaned[:cut]}{suffix}"
+    return cleaned
 
 
 def sanitize_text(text: str, *, max_length: int | None = None) -> str:

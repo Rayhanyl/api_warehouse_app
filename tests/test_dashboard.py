@@ -229,3 +229,69 @@ def test_ac38_dashboard_summary_unassigned_user_and_auth(
     # 2. Tanpa autentikasi -> 401
     unauth_res = client.get("/api/v1/dashboard/summary")
     assert unauth_res.status_code == 401
+
+
+def test_dashboard_summary_warehouse_id_filter_and_role_enforcement(
+    client: TestClient,
+    db_conn: Connection[dict[str, Any]],
+    superadmin_user: dict[str, Any],
+    manager_user: dict[str, Any],
+) -> None:
+    """Tahap 25:
+    - Super Admin dapat memfilter dashboard dengan `?warehouse_id=...`.
+    - Non-Super Admin diizinkan memfilter gudang miliknya dan ditolak (403 WAREHOUSE_NOT_ASSIGNED) pada gudang lain.
+    """
+    cat = factories.create_category(db_conn, name="Kat Dashboard Filter")
+    uom = factories.create_uom(db_conn, code="PCS-DF", name="Pieces DF")
+    item_a = factories.create_item(
+        db_conn, sku="SKU-DF-A", name="Item A", category_id=cat["id"], uom_id=uom["id"]
+    )
+    item_b = factories.create_item(
+        db_conn, sku="SKU-DF-B", name="Item B", category_id=cat["id"], uom_id=uom["id"]
+    )
+    wh_a = factories.create_warehouse(db_conn, code="DF-WHA", name="Gudang Filter A")
+    wh_b = factories.create_warehouse(db_conn, code="DF-WHB", name="Gudang Filter B")
+    loc_a = factories.create_location(db_conn, warehouse_id=wh_a["id"], code="LOC-FA1", name="Rak FA1")
+    loc_b = factories.create_location(db_conn, warehouse_id=wh_b["id"], code="LOC-FB1", name="Rak FB1")
+
+    db_conn.execute(
+        """
+        INSERT INTO inventory_balances (warehouse_id, location_id, item_id, qty_on_hand, created_by)
+        VALUES (%s, %s, %s, %s, %s), (%s, %s, %s, %s, %s)
+        """,
+        (
+            wh_a["id"], loc_a["id"], item_a["id"], Decimal("12.0000"), superadmin_user["id"],
+            wh_b["id"], loc_b["id"], item_b["id"], Decimal("30.0000"), superadmin_user["id"],
+        ),
+    )
+    permission_repo.update_user_warehouses(
+        db_conn, user_id=manager_user["id"], warehouse_ids=[wh_a["id"]], actor_id=superadmin_user["id"]
+    )
+
+    sa_wh_a = client.get(
+        f"/api/v1/dashboard/summary?warehouse_id={wh_a['id']}",
+        headers=superadmin_user["auth_headers"],
+    )
+    assert sa_wh_a.status_code == 200, sa_wh_a.text
+    assert Decimal(sa_wh_a.json()["stock_summary"]["total_qty_on_hand"]) == Decimal("12.0000")
+
+    sa_wh_b = client.get(
+        f"/api/v1/dashboard/summary?warehouse_id={wh_b['id']}",
+        headers=superadmin_user["auth_headers"],
+    )
+    assert sa_wh_b.status_code == 200, sa_wh_b.text
+    assert Decimal(sa_wh_b.json()["stock_summary"]["total_qty_on_hand"]) == Decimal("30.0000")
+
+    mgr_wh_a = client.get(
+        f"/api/v1/dashboard/summary?warehouse_id={wh_a['id']}",
+        headers=manager_user["auth_headers"],
+    )
+    assert mgr_wh_a.status_code == 200, mgr_wh_a.text
+    assert Decimal(mgr_wh_a.json()["stock_summary"]["total_qty_on_hand"]) == Decimal("12.0000")
+
+    mgr_wh_b = client.get(
+        f"/api/v1/dashboard/summary?warehouse_id={wh_b['id']}",
+        headers=manager_user["auth_headers"],
+    )
+    assert mgr_wh_b.status_code == 403
+    assert mgr_wh_b.json()["error"]["code"] == "WAREHOUSE_NOT_ASSIGNED"

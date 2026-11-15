@@ -948,5 +948,51 @@ def test_m4_inventory_apply_movement_concurrency_stock_views_and_ledger(
     assert ledger_items[0]["qty_after"] == "5.0000"
 
 
+def test_warehouses_endpoint_warehouse_id_filter_and_scope(
+    client: TestClient,
+    db_conn: Connection[dict[str, Any]],
+    superadmin_user: dict[str, Any],
+    staff_user: dict[str, Any],
+    auditor_user: dict[str, Any],
+) -> None:
+    """Tahap 25: `GET /warehouses?warehouse_id=` mematuhi role scoping & mengembalikan 403 jika di luar hak akses."""
+    from app.repositories import permission_repo
+    from tests import factories
+
+    wh_1 = factories.create_warehouse(db_conn, code="WH-FIL-1", name="Gudang Filter Satu")
+    wh_2 = factories.create_warehouse(db_conn, code="WH-FIL-2", name="Gudang Filter Dua")
+    permission_repo.update_user_warehouses(
+        db_conn, user_id=staff_user["id"], warehouse_ids=[wh_1["id"]], actor_id=superadmin_user["id"]
+    )
+
+    sa_filtered = client.get(
+        f"/api/v1/warehouses?warehouse_id={wh_2['id']}",
+        headers=superadmin_user["auth_headers"],
+    )
+    assert sa_filtered.status_code == 200, sa_filtered.text
+    assert [w["id"] for w in sa_filtered.json()["items"]] == [wh_2["id"]]
+
+    aud_filtered = client.get(
+        f"/api/v1/warehouses?warehouse_id={wh_2['id']}",
+        headers=auditor_user["auth_headers"],
+    )
+    assert aud_filtered.status_code == 200, aud_filtered.text
+    assert [w["id"] for w in aud_filtered.json()["items"]] == [wh_2["id"]]
+
+    staff_own = client.get(
+        f"/api/v1/warehouses?warehouse_id={wh_1['id']}",
+        headers=staff_user["auth_headers"],
+    )
+    assert staff_own.status_code == 200, staff_own.text
+    assert [w["id"] for w in staff_own.json()["items"]] == [wh_1["id"]]
+
+    staff_forbidden = client.get(
+        f"/api/v1/warehouses?warehouse_id={wh_2['id']}",
+        headers=staff_user["auth_headers"],
+    )
+    assert staff_forbidden.status_code == 403
+    assert staff_forbidden.json()["error"]["code"] == "WAREHOUSE_NOT_ASSIGNED"
+
+
 
 

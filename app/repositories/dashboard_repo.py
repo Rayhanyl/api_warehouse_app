@@ -18,10 +18,36 @@ def get_stock_summary(
             "low_stock_items_count": 0,
         }
 
-    # Total macam SKU aktif
-    row_active = conn.execute(
-        "SELECT COUNT(*)::INT AS total FROM items WHERE is_active = TRUE"
-    ).fetchone()
+    # Total macam SKU aktif (global atau yang dikelola pada warehouse_ids terkait)
+    if warehouse_ids is None:
+        row_active = conn.execute(
+            "SELECT COUNT(*)::INT AS total FROM items WHERE is_active = TRUE"
+        ).fetchone()
+    else:
+        row_active = conn.execute(
+            """
+            SELECT COUNT(DISTINCT i.id)::INT AS total
+            FROM items i
+            WHERE i.is_active = TRUE
+              AND (
+                  EXISTS (
+                      SELECT 1
+                      FROM inventory_balances ib
+                      WHERE ib.item_id = i.id
+                        AND ib.warehouse_id = ANY(%s)
+                  )
+                  OR EXISTS (
+                      SELECT 1
+                      FROM stock_transfer_lines stl
+                      JOIN stock_transfers st ON st.id = stl.transfer_id
+                      WHERE stl.item_id = i.id
+                        AND st.status = 'SHIPPED'
+                        AND st.destination_warehouse_id = ANY(%s)
+                  )
+              )
+            """,
+            (warehouse_ids, warehouse_ids),
+        ).fetchone()
     total_active_items = int(row_active["total"]) if row_active else 0
 
     # Total kuantitas on-hand
@@ -66,20 +92,21 @@ def get_stock_summary(
         Decimal(str(row_transit["total"])) if row_transit else Decimal("0.0000")
     )
 
-    # Low stock items count (SKU aktif dengan saldo di gudang <= 0)
+    # Low stock items count (SKU aktif dengan saldo <= min_stock; saat difilter gudang hanya mengevaluasi item yang tercatat di gudang tersebut)
     if warehouse_ids is None:
         row_low = conn.execute(
             """
             WITH item_stock AS (
                 SELECT
                     i.id,
+                    i.min_stock,
                     COALESCE(SUM(ib.qty_on_hand), 0) AS on_hand
                 FROM items i
                 LEFT JOIN inventory_balances ib ON i.id = ib.item_id
                 WHERE i.is_active = TRUE
-                GROUP BY i.id
+                GROUP BY i.id, i.min_stock
             )
-            SELECT COUNT(*)::INT AS total FROM item_stock WHERE on_hand <= 0
+            SELECT COUNT(*)::INT AS total FROM item_stock WHERE on_hand <= min_stock
             """
         ).fetchone()
     else:
@@ -88,13 +115,16 @@ def get_stock_summary(
             WITH item_stock AS (
                 SELECT
                     i.id,
+                    i.min_stock,
                     COALESCE(SUM(ib.qty_on_hand), 0) AS on_hand
                 FROM items i
-                LEFT JOIN inventory_balances ib ON i.id = ib.item_id AND ib.warehouse_id = ANY(%s)
+                JOIN inventory_balances ib
+                  ON i.id = ib.item_id
+                 AND ib.warehouse_id = ANY(%s)
                 WHERE i.is_active = TRUE
-                GROUP BY i.id
+                GROUP BY i.id, i.min_stock
             )
-            SELECT COUNT(*)::INT AS total FROM item_stock WHERE on_hand <= 0
+            SELECT COUNT(*)::INT AS total FROM item_stock WHERE on_hand <= min_stock
             """,
             (warehouse_ids,),
         ).fetchone()
@@ -183,17 +213,17 @@ def get_pending_actions(
         int(trf_recv_row["total"]) if trf_recv_row else 0
     )
 
-    # Opname aktif (IN_PROGRESS / WAITING_APPROVAL)
+    # Opname aktif (IN_PROGRESS / WAITING_L1_APPROVAL / WAITING_L2_APPROVAL)
     if warehouse_ids is None:
         opn_row = conn.execute(
-            "SELECT COUNT(*)::INT AS total FROM stock_opnames WHERE status IN ('IN_PROGRESS', 'WAITING_APPROVAL')"
+            "SELECT COUNT(*)::INT AS total FROM stock_opnames WHERE status IN ('IN_PROGRESS', 'WAITING_L1_APPROVAL', 'WAITING_L2_APPROVAL', 'WAITING_APPROVAL')"
         ).fetchone()
     else:
         opn_row = conn.execute(
             """
             SELECT COUNT(*)::INT AS total
             FROM stock_opnames
-            WHERE status IN ('IN_PROGRESS', 'WAITING_APPROVAL') AND warehouse_id = ANY(%s)
+            WHERE status IN ('IN_PROGRESS', 'WAITING_L1_APPROVAL', 'WAITING_L2_APPROVAL', 'WAITING_APPROVAL') AND warehouse_id = ANY(%s)
             """,
             (warehouse_ids,),
         ).fetchone()

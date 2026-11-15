@@ -6,6 +6,8 @@ from typing import Any
 
 from psycopg import Connection
 
+from app.repositories import approval_repo
+
 
 def list_purchase_orders(
     conn: Connection[dict[str, Any]],
@@ -18,6 +20,7 @@ def list_purchase_orders(
     status: str | list[str] | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
+    overdue_only: bool = False,
     search: str | None = None,
     order_by_sql: str = "po.id DESC",
 ) -> tuple[list[dict[str, Any]], int]:
@@ -60,6 +63,13 @@ def list_purchase_orders(
         conditions.append("po.order_date <= %s")
         params.append(date_to)
 
+    if overdue_only:
+        conditions.append(
+            "po.status IN ('ISSUED', 'PARTIALLY_RECEIVED') "
+            "AND po.expected_delivery_date IS NOT NULL "
+            "AND po.expected_delivery_date < CURRENT_DATE"
+        )
+
     if search:
         kw = f"%{search.strip()}%"
         conditions.append(
@@ -94,12 +104,35 @@ def list_purchase_orders(
             w.name AS warehouse_name,
             po.status,
             po.order_date,
+            po.expected_delivery_date,
+            (
+                po.status IN ('ISSUED', 'PARTIALLY_RECEIVED')
+                AND po.expected_delivery_date IS NOT NULL
+                AND po.expected_delivery_date < CURRENT_DATE
+            ) AS is_overdue,
+            CASE
+                WHEN po.status IN ('ISSUED', 'PARTIALLY_RECEIVED')
+                 AND po.expected_delivery_date IS NOT NULL
+                 AND po.expected_delivery_date < CURRENT_DATE
+                THEN (CURRENT_DATE - po.expected_delivery_date)::INT
+                ELSE 0
+            END AS days_overdue,
+            po.revised_from_po_id,
+            src_po.po_number AS revised_from_po_number,
+            po.total_amount,
+            po.rejection_reason,
             po.notes,
             (
                 SELECT COUNT(*)::INT
                 FROM po_lines pl
                 WHERE pl.po_id = po.id
             ) AS line_count,
+            po.submitted_by,
+            po.submitted_at,
+            po.l1_approved_by,
+            po.l1_approved_at,
+            po.l2_approved_by,
+            po.l2_approved_at,
             po.issued_at,
             po.issued_by,
             po.closed_reason,
@@ -111,6 +144,7 @@ def list_purchase_orders(
         FROM purchase_orders po
         JOIN suppliers s ON s.id = po.supplier_id
         JOIN warehouses w ON w.id = po.warehouse_id
+        LEFT JOIN purchase_orders src_po ON src_po.id = po.revised_from_po_id
         {where_sql}
         ORDER BY {order_by_sql}
         LIMIT %s OFFSET %s
@@ -138,7 +172,15 @@ def list_po_lines(
             u.code AS uom_code,
             u.allow_decimal,
             pl.qty_ordered,
+            pl.unit_price,
+            (pl.qty_ordered * pl.unit_price)::NUMERIC(18, 2) AS line_subtotal,
             pl.qty_received,
+            pl.qty_closed,
+            GREATEST(pl.qty_ordered - pl.qty_received - pl.qty_closed, 0) AS qty_remaining,
+            pl.line_status,
+            pl.line_closed_reason,
+            pl.line_closed_at,
+            pl.line_closed_by,
             pl.notes,
             pl.created_by,
             pl.created_at,
@@ -166,6 +208,15 @@ def get_po_by_id(
             po.supplier_id,
             s.code AS supplier_code,
             s.name AS supplier_name,
+            s.phone AS supplier_phone,
+            s.fax AS supplier_fax,
+            s.email AS supplier_email,
+            s.address AS supplier_address,
+            s.npwp AS supplier_npwp,
+            s.bank_name AS supplier_bank_name,
+            s.bank_account_number AS supplier_bank_account_number,
+            s.bank_account_holder AS supplier_bank_account_holder,
+            s.payment_terms AS supplier_payment_terms,
             s.is_active AS supplier_is_active,
             po.warehouse_id,
             w.code AS warehouse_code,
@@ -173,7 +224,30 @@ def get_po_by_id(
             w.is_active AS warehouse_is_active,
             po.status,
             po.order_date,
+            po.expected_delivery_date,
+            (
+                po.status IN ('ISSUED', 'PARTIALLY_RECEIVED')
+                AND po.expected_delivery_date IS NOT NULL
+                AND po.expected_delivery_date < CURRENT_DATE
+            ) AS is_overdue,
+            CASE
+                WHEN po.status IN ('ISSUED', 'PARTIALLY_RECEIVED')
+                 AND po.expected_delivery_date IS NOT NULL
+                 AND po.expected_delivery_date < CURRENT_DATE
+                THEN (CURRENT_DATE - po.expected_delivery_date)::INT
+                ELSE 0
+            END AS days_overdue,
+            po.revised_from_po_id,
+            src_po.po_number AS revised_from_po_number,
+            po.total_amount,
+            po.rejection_reason,
             po.notes,
+            po.submitted_by,
+            po.submitted_at,
+            po.l1_approved_by,
+            po.l1_approved_at,
+            po.l2_approved_by,
+            po.l2_approved_at,
             po.issued_at,
             po.issued_by,
             po.closed_reason,
@@ -185,6 +259,7 @@ def get_po_by_id(
         FROM purchase_orders po
         JOIN suppliers s ON s.id = po.supplier_id
         JOIN warehouses w ON w.id = po.warehouse_id
+        LEFT JOIN purchase_orders src_po ON src_po.id = po.revised_from_po_id
         WHERE po.id = %s
         """,
         (po_id,),
@@ -196,6 +271,9 @@ def get_po_by_id(
     result = dict(header)
     result["line_count"] = len(lines)
     result["lines"] = lines
+    result["approval_logs"] = approval_repo.list_approval_logs(
+        conn, doc_type="PO", doc_id=po_id
+    )
     return result
 
 
@@ -212,7 +290,14 @@ def lock_po_by_id(
             warehouse_id,
             status,
             order_date,
+            expected_delivery_date,
+            revised_from_po_id,
+            total_amount,
+            rejection_reason,
             notes,
+            submitted_by,
+            l1_approved_by,
+            l2_approved_by,
             issued_at,
             issued_by,
             closed_reason,
@@ -240,7 +325,11 @@ def lock_po_lines(
             po_id,
             item_id,
             qty_ordered,
+            unit_price,
             qty_received,
+            qty_closed,
+            line_status,
+            line_closed_reason,
             notes,
             created_by,
             created_at,
@@ -262,18 +351,40 @@ def insert_po_header(
     supplier_id: int,
     warehouse_id: int,
     order_date: date,
+    expected_delivery_date: date | None = None,
+    revised_from_po_id: int | None = None,
+    total_amount: Decimal = Decimal("0.00"),
     notes: str | None,
     created_by: int,
 ) -> dict[str, Any]:
     row = conn.execute(
         """
         INSERT INTO purchase_orders (
-            po_number, supplier_id, warehouse_id, status, order_date, notes, created_by
+            po_number,
+            supplier_id,
+            warehouse_id,
+            status,
+            order_date,
+            expected_delivery_date,
+            revised_from_po_id,
+            total_amount,
+            notes,
+            created_by
         )
-        VALUES (%s, %s, %s, 'DRAFT', %s, %s, %s)
+        VALUES (%s, %s, %s, 'DRAFT', %s, %s, %s, %s, %s, %s)
         RETURNING id
         """,
-        (po_number, supplier_id, warehouse_id, order_date, notes, created_by),
+        (
+            po_number,
+            supplier_id,
+            warehouse_id,
+            order_date,
+            expected_delivery_date,
+            revised_from_po_id,
+            total_amount,
+            notes,
+            created_by,
+        ),
     ).fetchone()
     assert row is not None
     return row
@@ -286,24 +397,37 @@ def replace_po_lines(
     lines: list[dict[str, Any]],
     actor_id: int,
 ) -> None:
-    """Mengganti daftar baris PO (hanya saat PO berstatus DRAFT)."""
+    """Mengganti daftar baris PO (hanya saat PO berstatus DRAFT) sekaligus menyinkronkan total_amount."""
     conn.execute("DELETE FROM po_lines WHERE po_id = %s", (po_id,))
+    total_amount = Decimal("0.00")
     for line in lines:
+        qty_ordered = Decimal(line["qty_ordered"])
+        unit_price = Decimal(line.get("unit_price", Decimal("0.00"))).quantize(Decimal("0.01"))
+        total_amount += (qty_ordered * unit_price).quantize(Decimal("0.01"))
         conn.execute(
             """
             INSERT INTO po_lines (
-                po_id, item_id, qty_ordered, qty_received, notes, created_by
+                po_id, item_id, qty_ordered, unit_price, qty_received, notes, created_by
             )
-            VALUES (%s, %s, %s, 0.0000, %s, %s)
+            VALUES (%s, %s, %s, %s, 0.0000, %s, %s)
             """,
             (
                 po_id,
                 line["item_id"],
-                line["qty_ordered"],
+                qty_ordered,
+                unit_price,
                 line.get("notes"),
                 actor_id,
             ),
         )
+    conn.execute(
+        """
+        UPDATE purchase_orders
+        SET total_amount = %s, updated_at = CURRENT_TIMESTAMP
+        WHERE id = %s
+        """,
+        (total_amount.quantize(Decimal("0.01")), po_id),
+    )
 
 
 def update_po_draft_header(
@@ -313,6 +437,7 @@ def update_po_draft_header(
     supplier_id: int,
     warehouse_id: int,
     order_date: date,
+    expected_delivery_date: date | None,
     notes: str | None,
 ) -> None:
     conn.execute(
@@ -322,11 +447,12 @@ def update_po_draft_header(
             supplier_id = %s,
             warehouse_id = %s,
             order_date = %s,
+            expected_delivery_date = %s,
             notes = %s,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = %s
         """,
-        (supplier_id, warehouse_id, order_date, notes, po_id),
+        (supplier_id, warehouse_id, order_date, expected_delivery_date, notes, po_id),
     )
 
 
@@ -343,10 +469,121 @@ def update_po_issued(
             status = 'ISSUED',
             issued_at = CURRENT_TIMESTAMP,
             issued_by = %s,
+            rejection_reason = NULL,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = %s
         """,
         (issued_by, po_id),
+    )
+
+
+def update_po_submitted(
+    conn: Connection[dict[str, Any]],
+    po_id: int,
+    *,
+    submitted_by: int,
+) -> None:
+    conn.execute(
+        """
+        UPDATE purchase_orders
+        SET
+            status = 'WAITING_L1_APPROVAL',
+            submitted_by = %s,
+            submitted_at = CURRENT_TIMESTAMP,
+            l1_approved_by = NULL,
+            l1_approved_at = NULL,
+            l2_approved_by = NULL,
+            l2_approved_at = NULL,
+            rejection_reason = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = %s
+        """,
+        (submitted_by, po_id),
+    )
+
+
+def update_po_l1_approved(
+    conn: Connection[dict[str, Any]],
+    po_id: int,
+    *,
+    approved_by: int,
+    next_status: str,
+) -> None:
+    if next_status == "ISSUED":
+        conn.execute(
+            """
+            UPDATE purchase_orders
+            SET
+                status = 'ISSUED',
+                l1_approved_by = %s,
+                l1_approved_at = CURRENT_TIMESTAMP,
+                issued_by = %s,
+                issued_at = CURRENT_TIMESTAMP,
+                rejection_reason = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+            """,
+            (approved_by, approved_by, po_id),
+        )
+    else:
+        conn.execute(
+            """
+            UPDATE purchase_orders
+            SET
+                status = 'WAITING_L2_APPROVAL',
+                l1_approved_by = %s,
+                l1_approved_at = CURRENT_TIMESTAMP,
+                rejection_reason = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+            """,
+            (approved_by, po_id),
+        )
+
+
+def update_po_l2_approved(
+    conn: Connection[dict[str, Any]],
+    po_id: int,
+    *,
+    approved_by: int,
+) -> None:
+    conn.execute(
+        """
+        UPDATE purchase_orders
+        SET
+            status = 'ISSUED',
+            l2_approved_by = %s,
+            l2_approved_at = CURRENT_TIMESTAMP,
+            issued_by = %s,
+            issued_at = CURRENT_TIMESTAMP,
+            rejection_reason = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = %s
+        """,
+        (approved_by, approved_by, po_id),
+    )
+
+
+def update_po_rejected(
+    conn: Connection[dict[str, Any]],
+    po_id: int,
+    *,
+    rejection_reason: str,
+) -> None:
+    conn.execute(
+        """
+        UPDATE purchase_orders
+        SET
+            status = 'DRAFT',
+            rejection_reason = %s,
+            l1_approved_by = NULL,
+            l1_approved_at = NULL,
+            l2_approved_by = NULL,
+            l2_approved_at = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = %s
+        """,
+        (rejection_reason, po_id),
     )
 
 
@@ -386,6 +623,50 @@ def update_po_closed(
         """,
         (closed_reason, closed_by, po_id),
     )
+    # Tutup sisa baris yang belum terpenuhi saat Short-Close level header dijalankan
+    conn.execute(
+        """
+        UPDATE po_lines
+        SET
+            qty_closed = GREATEST(qty_ordered - qty_received, 0),
+            line_status = 'CLOSED',
+            line_closed_reason = %s,
+            line_closed_at = CURRENT_TIMESTAMP,
+            line_closed_by = %s,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE po_id = %s
+          AND line_status <> 'CLOSED'
+          AND qty_received < qty_ordered
+        """,
+        (closed_reason, closed_by, po_id),
+    )
+
+
+def close_po_line(
+    conn: Connection[dict[str, Any]],
+    *,
+    po_line_id: int,
+    qty_closed: Decimal,
+    closed_reason: str,
+    closed_by: int,
+) -> dict[str, Any]:
+    row = conn.execute(
+        """
+        UPDATE po_lines
+        SET
+            qty_closed = %s,
+            line_status = 'CLOSED',
+            line_closed_reason = %s,
+            line_closed_at = CURRENT_TIMESTAMP,
+            line_closed_by = %s,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = %s
+        RETURNING id, po_id, item_id, qty_ordered, qty_received, qty_closed, line_status, line_closed_reason
+        """,
+        (qty_closed, closed_reason, closed_by, po_line_id),
+    ).fetchone()
+    assert row is not None
+    return row
 
 
 def update_po_status(
@@ -417,11 +698,17 @@ def add_po_line_received_qty(
         UPDATE po_lines
         SET
             qty_received = qty_received + %s,
+            line_status = CASE
+                WHEN (qty_received + %s) >= qty_ordered THEN 'RECEIVED'
+                WHEN (qty_received + %s + qty_closed) >= qty_ordered AND qty_closed > 0 THEN 'CLOSED'
+                WHEN (qty_received + %s) > 0 THEN 'PARTIALLY_RECEIVED'
+                ELSE line_status
+            END,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = %s
-        RETURNING id, po_id, item_id, qty_ordered, qty_received
+        RETURNING id, po_id, item_id, qty_ordered, qty_received, qty_closed, line_status
         """,
-        (qty_added, po_line_id),
+        (qty_added, qty_added, qty_added, qty_added, po_line_id),
     ).fetchone()
     assert row is not None
     return row

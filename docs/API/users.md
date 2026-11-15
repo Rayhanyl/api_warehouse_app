@@ -21,7 +21,7 @@
 Modul ini menyediakan pengelolaan terpusat untuk:
 
 1. **Akun Pengguna (`users`):** Pendaftaran pengguna baru, pembaruan profil/peran/kata sandi, serta penonaktifan akun (*soft deactivate* melalui `is_active = false`).
-2. **Peran & Permission (`roles`, `permissions`, `role_permissions`):** Pembacaan 5 peran dan 24 kode *permission* sistem serta penyesuaian pemetaan *permission* pada suatu peran.
+2. **Peran & Permission (`roles`, `permissions`, `role_permissions`):** Pembacaan 7 peran baku (`Super Admin`, `Warehouse Manager`, `Warehouse Supervisor`, `Purchasing Staff`, `Procurement Manager`, `Warehouse Staff`, `Auditor`) dan 29 kode *permission* sistem (termasuk hasil migrasi `018`: `gr:create`/`gr:post`, `po:approve_l1`/`po:approve_l2`, `opname:approve_l1`/`opname:approve_l2`, `settings:manage`) serta penyesuaian pemetaan *permission* pada suatu peran.
 3. **Penugasan Gudang (`user_warehouses`):** Pengaturan daftar gudang yang ditugaskan kepada pengguna operasional untuk menegakkan aturan *Warehouse Scoping* (PRD 3.2).
 
 ### 2.2 Alur Bisnis Utama
@@ -242,10 +242,10 @@ Mengambil seluruh peran yang ada di sistem beserta daftar kode *permission* yang
     "name": "Super Admin",
     "description": "Administrator sistem TI dengan akses penuh ke seluruh modul dan seluruh gudang",
     "permissions": [
-      "audit:read", "gr:manage", "gr:read", "ledger:read", "location:manage",
-      "master:manage", "master:read", "opname:approve", "opname:count", "opname:manage",
-      "opname:read", "po:cancel", "po:close", "po:create", "po:issue", "po:read",
-      "stock:read", "transfer:approve", "transfer:create", "transfer:read",
+      "audit:read", "gr:create", "gr:post", "gr:read", "ledger:read", "location:manage",
+      "master:manage", "master:read", "opname:approve_l1", "opname:approve_l2", "opname:count", "opname:manage",
+      "opname:read", "po:approve_l1", "po:approve_l2", "po:cancel", "po:close", "po:create", "po:issue", "po:read",
+      "settings:manage", "stock:read", "transfer:approve", "transfer:create", "transfer:read",
       "transfer:receive", "transfer:ship", "user:manage", "warehouse:manage"
     ],
     "created_at": "2026-10-21T13:47:03.960479+07:00",
@@ -560,10 +560,13 @@ Tabel berikut merangkum 24 kode *permission* yang di-*seed* oleh `008_seed_roles
 | `master:read` | ✓ | ✓ (g) | ✓ (g) | ✓ (g) | ✓ |
 | `po:create` | ✓ | – | ✓ (g) | – | – |
 | `po:issue` | ✓ | – | ✓ (g) | – | – |
+| `po:approve_l1` | ✓ | ✓ (g) | – | – | – |
+| `po:approve_l2` | ✓ | – | – | – | – |
 | `po:cancel` | ✓ | – | ✓ (g) | – | – |
 | `po:close` | ✓ | ✓ (g) | ✓ (g) | – | – |
 | `po:read` | ✓ | ✓ (g) | ✓ (g) | ✓ (g) | ✓ |
-| `gr:manage` | ✓ | – | – | ✓ (g) | – |
+| `gr:create` | ✓ | ✓ (g) | – | ✓ (g) | – |
+| `gr:post` | ✓ | ✓ (g) | – | – | – |
 | `gr:read` | ✓ | ✓ (g) | ✓ (g) | ✓ (g) | ✓ |
 | `transfer:create` | ✓ | – | – | ✓ (g) | – |
 | `transfer:approve` | ✓ | ✓ (g) | – | – | – |
@@ -572,13 +575,15 @@ Tabel berikut merangkum 24 kode *permission* yang di-*seed* oleh `008_seed_roles
 | `transfer:read` | ✓ | ✓ (g) | – | ✓ (g) | ✓ |
 | `opname:manage` | ✓ | ✓ (g) | – | – | – |
 | `opname:count` | ✓ | – | – | ✓ (g) | – |
-| `opname:approve` | ✓ | ✓ (g) | – | – | – |
+| `opname:approve_l1` | ✓ | ✓ (g) | – | – | – |
+| `opname:approve_l2` | ✓ | ✓ (g) | – | – | – |
 | `opname:read` | ✓ | ✓ (g) | – | ✓ (g) | ✓ |
 | `stock:read` | ✓ | ✓ (g) | ✓ (g) | ✓ (g) | ✓ |
 | `ledger:read` | ✓ | ✓ (g) | – | ✓ (g) | ✓ |
 | `audit:read` | ✓ | – | – | – | ✓ |
+| `settings:manage` | ✓ | – | – | – | – |
 
-*(Keterangan: tanda **(g)** menunjukkan aksi/pembacaan yang dibatasi oleh penugasan gudang di `user_warehouses`. Untuk pemilihan tujuan transfer, parameter query `purpose=transfer_destination` pada endpoint gudang & lokasi membuka pembacaan gudang/lokasi aktif di luar penugasan).*
+*(Keterangan: tanda **(g)** menunjukkan aksi/pembacaan yang dibatasi oleh penugasan gudang di `user_warehouses`. Mulai migrasi `018`, sistem juga menambahkan peran `Warehouse Supervisor` (`location:manage`, `gr:create`/`gr:post`, `transfer:*`, `opname:manage`/`count`/`approve_l1`, `stock:read`, `ledger:read`) dan `Procurement Manager` (`master:manage`, `po:*` termasuk `po:approve_l1` & `po:approve_l2`, `gr:read`, `stock:read`). Rincian lengkap ada di [PRD_GENERAL.md §3.1](../core/PRD_GENERAL.md#31-matriks-permission-per-role-mvp).)*
 
 ---
 

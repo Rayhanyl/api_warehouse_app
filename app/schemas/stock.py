@@ -1,6 +1,7 @@
 """Schema Pydantic untuk tampilan saldo stok (per lokasi, per gudang, agregat) & buku besar (FR-03, FR-08, PRD 7.4)."""
 
 from datetime import datetime
+from decimal import Decimal
 
 from pydantic import BaseModel
 
@@ -39,6 +40,8 @@ class StockWarehouseBalanceOut(BaseModel):
     category_name: str
     uom_id: int
     uom_code: str
+    min_stock: DecimalStr = Decimal("0.0000")
+    is_critical: bool = False
     qty_on_hand: DecimalStr
     qty_in_transit: DecimalStr
 
@@ -52,6 +55,8 @@ class StockSummaryOut(BaseModel):
     category_name: str
     uom_id: int
     uom_code: str
+    min_stock: DecimalStr = Decimal("0.0000")
+    is_critical: bool = False
     qty_on_hand: DecimalStr
     qty_in_transit: DecimalStr
 

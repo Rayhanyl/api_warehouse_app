@@ -1,4 +1,4 @@
-"""Repository SQL untuk tabel audit_logs (append-only, FR-09 & PRD 6.4)."""
+"""Repository SQL untuk tabel audit_logs (append-only, FR-09, PRD 6.4, & Tahap 14)."""
 
 from datetime import datetime
 from typing import Any
@@ -13,6 +13,8 @@ AUDIT_SORT_COLUMNS: dict[str, str] = {
     "created_at": "a.created_at",
     "action": "a.action",
     "entity_type": "a.entity_type",
+    "status": "a.status",
+    "ip_address": "a.ip_address",
 }
 
 
@@ -26,6 +28,10 @@ def insert_audit_log(
     old_values: dict[str, Any] | None,
     new_values: dict[str, Any] | None,
     ip_address: str | None,
+    status: str = "SUCCESS",
+    details: dict[str, Any] | None = None,
+    user_agent: str | None = None,
+    request_id: str | None = None,
 ) -> dict[str, Any]:
     """Menyisipkan satu baris jejak audit ke tabel audit_logs."""
     row = conn.execute(
@@ -37,9 +43,13 @@ def insert_audit_log(
             entity_id,
             old_values,
             new_values,
-            ip_address
+            status,
+            details,
+            ip_address,
+            user_agent,
+            request_id
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING
             id,
             user_id,
@@ -48,7 +58,11 @@ def insert_audit_log(
             entity_id,
             old_values,
             new_values,
+            status,
+            details,
             ip_address,
+            user_agent,
+            request_id,
             created_at
         """,
         (
@@ -58,7 +72,11 @@ def insert_audit_log(
             str(entity_id) if entity_id is not None else None,
             Jsonb(old_values) if old_values is not None else None,
             Jsonb(new_values) if new_values is not None else None,
+            status,
+            Jsonb(details) if details is not None else None,
             ip_address,
+            user_agent,
+            request_id,
         ),
     ).fetchone()
     assert row is not None
@@ -81,9 +99,13 @@ def insert_audit_logs_batch(
                 entity_id,
                 old_values,
                 new_values,
-                ip_address
+                status,
+                details,
+                ip_address,
+                user_agent,
+                request_id
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             [
                 (
@@ -99,11 +121,20 @@ def insert_audit_logs_batch(
                     Jsonb(event["new_values"])
                     if event["new_values"] is not None
                     else None,
+                    event.get("status", "SUCCESS"),
+                    Jsonb(event["details"])
+                    if event.get("details") is not None
+                    else None,
                     event["ip_address"],
+                    event.get("user_agent"),
+                    event.get("request_id"),
                 )
                 for event in events
             ],
         )
+
+
+ROUTINE_TECHNICAL_ACTIONS: tuple[str, ...] = ("AUTH_TOKEN_REFRESHED",)
 
 
 def list_audit_logs(
@@ -115,13 +146,16 @@ def list_audit_logs(
     action: str | None = None,
     entity_type: str | None = None,
     entity_id: str | None = None,
+    status: str | None = None,
+    category: str | None = None,
+    include_technical: bool = False,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     search: str | None = None,
     sort_by: str | None = None,
     sort_dir: str | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
-    """Membaca daftar audit_logs dengan filter dan pagination."""
+    """Membaca daftar audit_logs dengan filter kategori, noise exclusion, dan pagination."""
     conditions: list[str] = []
     params: list[Any] = []
 
@@ -137,6 +171,37 @@ def list_audit_logs(
     if entity_id is not None:
         conditions.append("a.entity_id = %s")
         params.append(entity_id)
+    if status is not None:
+        conditions.append("a.status = %s")
+        params.append(status)
+
+    if category == "business":
+        conditions.append(
+            "a.status = 'SUCCESS' AND a.action NOT LIKE %s ESCAPE '\\' AND a.action NOT LIKE %s ESCAPE '\\'"
+        )
+        params.extend(["AUTH\\_%", "USER\\_PASSWORD\\_%"])
+    elif category == "security":
+        conditions.append(
+            "(a.action LIKE %s ESCAPE '\\' OR a.action LIKE %s ESCAPE '\\' OR a.action = ANY(%s))"
+        )
+        params.extend(
+            [
+                "AUTH\\_%",
+                "USER\\_PASSWORD\\_%",
+                [
+                    "PERMISSION_DENIED",
+                    "WAREHOUSE_NOT_ASSIGNED",
+                    "ROLE_PERMISSIONS_UPDATED",
+                    "USER_WAREHOUSES_UPDATED",
+                ],
+            ]
+        )
+    elif category == "failed":
+        conditions.append("a.status = 'FAILED'")
+
+    if not include_technical and action not in ROUTINE_TECHNICAL_ACTIONS:
+        conditions.append("NOT (a.action = ANY(%s))")
+        params.append(list(ROUTINE_TECHNICAL_ACTIONS))
     if date_from is not None:
         conditions.append("a.created_at >= %s")
         params.append(date_from)
@@ -146,9 +211,9 @@ def list_audit_logs(
     if search:
         pattern = f"%{search.strip()}%"
         conditions.append(
-            "(a.action ILIKE %s OR a.entity_type ILIKE %s OR COALESCE(a.entity_id, '') ILIKE %s OR COALESCE(u.username, '') ILIKE %s)"
+            "(a.action ILIKE %s OR a.entity_type ILIKE %s OR COALESCE(a.entity_id, '') ILIKE %s OR COALESCE(u.username, '') ILIKE %s OR COALESCE(a.ip_address, '') ILIKE %s OR COALESCE(a.request_id, '') ILIKE %s)"
         )
-        params.extend([pattern, pattern, pattern, pattern])
+        params.extend([pattern, pattern, pattern, pattern, pattern, pattern])
 
     where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     order_clause = build_order_by(sort_by, sort_dir, AUDIT_SORT_COLUMNS, "id", "DESC")
@@ -171,7 +236,11 @@ def list_audit_logs(
             a.entity_id,
             a.old_values,
             a.new_values,
+            a.status,
+            a.details,
             a.ip_address,
+            a.user_agent,
+            a.request_id,
             a.created_at
         FROM audit_logs a
         LEFT JOIN users u ON u.id = a.user_id
@@ -183,4 +252,3 @@ def list_audit_logs(
     ).fetchall()
 
     return list(rows), total
-

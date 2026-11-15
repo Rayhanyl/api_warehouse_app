@@ -3,8 +3,18 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from app.core.validation import (
+    pydantic_optional_non_blank_str,
+    pydantic_required_str,
+    pydantic_validate_code,
+    pydantic_validate_icon,
+    pydantic_validate_menu_path,
+    pydantic_validate_optional_code,
+)
 
 
 class MenuCreate(BaseModel):
@@ -16,6 +26,26 @@ class MenuCreate(BaseModel):
     sort_order: int = Field(default=0, ge=0, le=10000)
     permission_id: int | None = Field(default=None, gt=0)
     is_active: bool = True
+
+    @field_validator("code")
+    @classmethod
+    def _val_code(cls, v: Any) -> str:
+        return pydantic_validate_code(v, label="Kode menu")
+
+    @field_validator("name")
+    @classmethod
+    def _val_name(cls, v: Any) -> str:
+        return pydantic_required_str(v, label="Nama menu")
+
+    @field_validator("path")
+    @classmethod
+    def _val_path(cls, v: Any) -> str:
+        return pydantic_validate_menu_path(v)
+
+    @field_validator("icon")
+    @classmethod
+    def _val_icon(cls, v: Any) -> str | None:
+        return pydantic_validate_icon(v)
 
 
 class MenuUpdate(BaseModel):
@@ -29,6 +59,31 @@ class MenuUpdate(BaseModel):
     permission_id: int | None = Field(default=None, gt=0)
     clear_permission: bool = False
     is_active: bool | None = None
+
+    @field_validator("code")
+    @classmethod
+    def _val_code(cls, v: Any) -> str | None:
+        if v is None:
+            return None
+        clean = pydantic_optional_non_blank_str(v, label="Kode menu")
+        return pydantic_validate_optional_code(clean, label="Kode menu")
+
+    @field_validator("name")
+    @classmethod
+    def _val_name(cls, v: Any) -> str | None:
+        return pydantic_optional_non_blank_str(v, label="Nama menu")
+
+    @field_validator("path")
+    @classmethod
+    def _val_path(cls, v: Any) -> str | None:
+        if v is None:
+            return None
+        return pydantic_validate_menu_path(v)
+
+    @field_validator("icon")
+    @classmethod
+    def _val_icon(cls, v: Any) -> str | None:
+        return pydantic_validate_icon(v)
 
     @model_validator(mode="after")
     def _ensure_non_empty_patch(self) -> MenuUpdate:

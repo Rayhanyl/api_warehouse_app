@@ -236,14 +236,15 @@ Memperbarui gudang/lokasi asal, gudang/lokasi tujuan, catatan, dan/atau menggant
 Menyetujui rencana Transfer Stok (`DRAFT → APPROVED`).
 
 * **HTTP Method & URL:** `POST /api/v1/stock-transfers/{transfer_id}/approve`
-* **Autentikasi & Permission:** Bearer Token, `transfer:approve` + **Warehouse Scoping `(g)`** pada `source_warehouse_id`.
+* **Autentikasi & Permission:** Bearer Token, `transfer:approve` + **Warehouse Scoping `(g)`** pada `source_warehouse_id` + **Segregation of Duties (`actor.id != created_by`, kecuali `Super Admin`)**.
 * **Request Body:** Tidak ada.
 * **Aturan Bisnis & Audit:**
   * Mengunci header Transfer (`FOR UPDATE`); wajib berstatus `DRAFT` (`409 INVALID_STATE_TRANSITION` bila bukan).
+  * Wajib lolos SoD (`actor.id != created_by`); pelanggaran oleh role operasional ditolak dengan `403 PERMISSION_DENIED` (`details.code = "SOD_VIOLATION"`), sementara override `Super Admin` dicatat dengan `"sod_override": true` di `audit_logs`.
   * Wajib memiliki **minimal 1 baris** (`422 VALIDATION_ERROR` bila kosong) serta seluruh referensi gudang, lokasi, dan barang masih aktif.
   * Menyimpan `approved_by`, `approved_at`, dan mencatat `TRANSFER_APPROVED` pada `audit_logs`. Belum mengubah saldo stok.
 * **Response Berhasil:** `200 OK` (`StockTransferOut` dengan `status: "APPROVED"`).
-* **Kemungkinan Error:** `401 AUTH_TOKEN_INVALID`, `403 PERMISSION_DENIED`, `403 WAREHOUSE_NOT_ASSIGNED`, `404 NOT_FOUND`, `409 INVALID_STATE_TRANSITION`, `422 INACTIVE_REFERENCE`, `422 INVALID_LOCATION`, `422 VALIDATION_ERROR`.
+* **Kemungkinan Error:** `401 AUTH_TOKEN_INVALID`, `403 PERMISSION_DENIED` (termasuk `SOD_VIOLATION`), `403 WAREHOUSE_NOT_ASSIGNED`, `404 NOT_FOUND`, `409 INVALID_STATE_TRANSITION`, `422 INACTIVE_REFERENCE`, `422 INVALID_LOCATION`, `422 VALIDATION_ERROR`.
 
 ---
 

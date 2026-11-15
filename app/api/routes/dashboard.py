@@ -2,11 +2,12 @@
 
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from psycopg import Connection
 
 from app.api.deps import get_current_user
 from app.core.database import get_conn
+from app.schemas.common import OptIntQuery
 from app.schemas.dashboard import DashboardSummaryOut
 from app.services import dashboard_service
 
@@ -15,9 +16,12 @@ router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
 @router.get("/summary", response_model=DashboardSummaryOut)
 def get_dashboard_summary(
+    warehouse_id: OptIntQuery = Query(default=None),
     current_user: dict[str, Any] = Depends(get_current_user),
     conn: Connection[dict[str, Any]] = Depends(get_conn),
 ) -> DashboardSummaryOut:
-    """Mengembalikan ringkasan metrik stok, tugas tertunda, dan mutasi terkini sesuai penugasan gudang."""
-    result = dashboard_service.get_dashboard_summary(conn, actor=current_user)
+    """Mengembalikan ringkasan metrik stok, tugas tertunda, dan mutasi terkini sesuai penugasan & filter gudang."""
+    result = dashboard_service.get_dashboard_summary(
+        conn, actor=current_user, warehouse_id=warehouse_id
+    )
     return DashboardSummaryOut(**result)

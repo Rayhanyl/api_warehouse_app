@@ -1,4 +1,4 @@
-"""Schema Pydantic untuk pembacaan Audit Log (FR-09)."""
+"""Schema Pydantic untuk pembacaan Audit Log (FR-09 & Tahap 14)."""
 
 from datetime import datetime
 from typing import Any
@@ -15,6 +15,9 @@ class AuditLogOut(BaseModel):
     entity_id: str | None = None
     old_values: dict[str, Any] | None = None
     new_values: dict[str, Any] | None = None
+    status: str = "SUCCESS"
+    details: dict[str, Any] | None = None
     ip_address: str | None = None
+    user_agent: str | None = None
+    request_id: str | None = None
     created_at: datetime
-

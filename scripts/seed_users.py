@@ -9,6 +9,8 @@ Contoh:
 Environment password yang didukung:
     SEED_SUPER_ADMIN_PASSWORD
     SEED_WAREHOUSE_MANAGER_PASSWORD
+    SEED_WAREHOUSE_SUPERVISOR_PASSWORD
+    SEED_PROCUREMENT_MANAGER_PASSWORD
     SEED_PURCHASING_STAFF_PASSWORD
     SEED_WAREHOUSE_STAFF_PASSWORD
     SEED_AUDITOR_PASSWORD
@@ -33,10 +35,12 @@ from psycopg.rows import dict_row
 from app.core.config import settings
 from app.core.permissions import (
     ROLE_AUDITOR,
+    ROLE_PROCUREMENT_MANAGER,
     ROLE_PURCHASING_STAFF,
     ROLE_SUPER_ADMIN,
     ROLE_WAREHOUSE_MANAGER,
     ROLE_WAREHOUSE_STAFF,
+    ROLE_WAREHOUSE_SUPERVISOR,
 )
 from app.core.security import hash_password
 from app.repositories import permission_repo, user_repo
@@ -57,6 +61,20 @@ SEED_USERS: tuple[dict[str, str], ...] = (
         "email": "warehouse.manager@wms.local",
         "full_name": "Warehouse Manager",
         "password_env": "SEED_WAREHOUSE_MANAGER_PASSWORD",
+    },
+    {
+        "role": ROLE_WAREHOUSE_SUPERVISOR,
+        "username": "warehouse.supervisor",
+        "email": "warehouse.supervisor@wms.local",
+        "full_name": "Warehouse Supervisor",
+        "password_env": "SEED_WAREHOUSE_SUPERVISOR_PASSWORD",
+    },
+    {
+        "role": ROLE_PROCUREMENT_MANAGER,
+        "username": "procurement.manager",
+        "email": "procurement.manager@wms.local",
+        "full_name": "Procurement Manager",
+        "password_env": "SEED_PROCUREMENT_MANAGER_PASSWORD",
     },
     {
         "role": ROLE_PURCHASING_STAFF,

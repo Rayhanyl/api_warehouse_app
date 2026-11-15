@@ -1,7 +1,7 @@
 """Service logika bisnis untuk Master Data: Kategori, UoM, Pemasok, dan Barang (FR-02, PRD 6.3, 6.8)."""
 
-import re
 from collections import Counter
+from decimal import Decimal
 from io import BytesIO
 from typing import Any
 from zipfile import BadZipFile
@@ -19,6 +19,14 @@ from app.core.exceptions import (
     InactiveReferenceError,
     NotFoundError,
     ValidationDomainError,
+)
+from app.core.validation import (
+    EMAIL_REGEX,
+    clean_optional_str,
+    ensure_non_blank_str,
+    validate_code_format,
+    validate_email_format,
+    validate_optional_phone,
 )
 from app.repositories import master_repo
 from app.services import audit_service
@@ -52,9 +60,6 @@ ITEM_SORT_COLUMNS: dict[str, str] = {
     "created_at": "i.created_at",
 }
 
-EMAIL_REGEX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-CODE_REGEX = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
-PHONE_REGEX = re.compile(r"^[0-9+() -]{6,30}$")
 ITEM_IMPORT_HEADERS = (
     "sku",
     "barcode",
@@ -376,8 +381,8 @@ def _parse_item_import_workbook(file_bytes: bytes) -> list[dict[str, Any]]:
             sku = read_text(0, required=True, max_length=64)
             if sku is not None:
                 try:
-                    sku = _validate_code_format(
-                        sku, field_name="sku", label="SKU barang"
+                    sku = validate_code_format(
+                        sku, field_name="sku", label="SKU barang", max_length=64
                     )
                 except ValidationDomainError as exc:
                     errors.append(
@@ -389,8 +394,8 @@ def _parse_item_import_workbook(file_bytes: bytes) -> list[dict[str, Any]]:
             barcode = read_text(1, required=False, max_length=64)
             if barcode is not None:
                 try:
-                    barcode = _validate_code_format(
-                        barcode, field_name="barcode", label="Barcode barang"
+                    barcode = validate_code_format(
+                        barcode, field_name="barcode", label="Barcode barang", max_length=64
                     )
                 except ValidationDomainError as exc:
                     errors.append(
@@ -580,8 +585,8 @@ def _parse_supplier_import_workbook(file_bytes: bytes) -> list[dict[str, Any]]:
             code = read_text(0, required=True, max_length=50)
             if code is not None:
                 try:
-                    code = _validate_code_format(
-                        code, field_name="code", label="Kode pemasok"
+                    code = validate_code_format(
+                        code, field_name="code", label="Kode pemasok", max_length=50
                     )
                 except ValidationDomainError as exc:
                     errors.append(
@@ -596,7 +601,7 @@ def _parse_supplier_import_workbook(file_bytes: bytes) -> list[dict[str, Any]]:
 
             if phone is not None:
                 try:
-                    phone = _validate_optional_phone(phone)
+                    phone = validate_optional_phone(phone, label="Nomor telepon pemasok")
                 except ValidationDomainError as exc:
                     errors.append(
                         _item_import_error(row_number, "phone", exc.code, exc.message)
@@ -660,48 +665,13 @@ def _parse_supplier_import_workbook(file_bytes: bytes) -> list[dict[str, Any]]:
         workbook.close()
 
 
-def _validate_code_format(value: str, *, field_name: str, label: str) -> str:
-    clean = value.strip()
-    if not clean:
-        raise ValidationDomainError(
-            f"{label} tidak boleh kosong.",
-            details={"field": field_name},
-        )
-    if not CODE_REGEX.match(clean):
-        raise ValidationDomainError(
-            f"Format {label.lower()} tidak valid; hanya boleh diawali huruf/angka dan berisi huruf, angka, titik (.), garis bawah (_), garis miring (/), atau tanda hubung (-) tanpa spasi.",
-            details={"field": field_name, "value": clean},
-        )
-    return clean
-
-
-def _validate_optional_phone(phone: str | None) -> str | None:
-    if phone is None:
-        return None
-    clean = phone.strip()
-    if not clean:
-        return None
-    digit_count = sum(ch.isdigit() for ch in clean)
-    if not PHONE_REGEX.match(clean) or digit_count < 6:
-        raise ValidationDomainError(
-            "Format nomor telepon pemasok tidak valid (gunakan 6-30 karakter angka, +, -, tanda kurung, atau spasi).",
-            details={"field": "phone", "value": clean},
-        )
-    return clean
-
-
 def _validate_optional_barcode(barcode: str | None) -> str | None:
-    if barcode is None:
+    clean = clean_optional_str(barcode)
+    if clean is None:
         return None
-    clean = barcode.strip()
-    if not clean:
-        return None
-    if len(clean) > 64:
-        raise ValidationDomainError(
-            "Barcode barang maksimal 64 karakter.",
-            details={"field": "barcode", "value": clean},
-        )
-    return _validate_code_format(clean, field_name="barcode", label="Barcode barang")
+    return validate_code_format(
+        clean, field_name="barcode", label="Barcode barang", max_length=64
+    )
 
 
 # ============================================================================
@@ -942,14 +912,12 @@ def create_uom(
     is_active: bool = True,
     ip_address: str | None = None,
 ) -> dict[str, Any]:
-    clean_code = code.strip()
-    clean_name = name.strip()
-    if not clean_code or not clean_name:
-        raise ValidationDomainError(
-            "Kode dan nama UoM tidak boleh kosong.",
-            details={"code": clean_code, "name": clean_name},
-        )
-    clean_code = _validate_code_format(clean_code, field_name="code", label="Kode UoM")
+    clean_code = validate_code_format(
+        code, field_name="code", label="Kode UoM", max_length=32
+    )
+    clean_name = ensure_non_blank_str(
+        name, field_name="name", label="Nama UoM", max_length=100
+    )
 
     with conn.transaction():
         existing = master_repo.get_uom_by_code(conn, clean_code)
@@ -1006,7 +974,9 @@ def update_uom(
 
         new_code = existing["code"]
         if code is not None:
-            new_code = _validate_code_format(code, field_name="code", label="Kode UoM")
+            new_code = validate_code_format(
+                code, field_name="code", label="Kode UoM", max_length=32
+            )
             if new_code.lower() != str(existing["code"]).lower():
                 dup = master_repo.get_uom_by_code(conn, new_code)
                 if dup and int(dup["id"]) != uom_id:
@@ -1017,12 +987,9 @@ def update_uom(
 
         new_name = existing["name"]
         if name is not None:
-            new_name = name.strip()
-            if not new_name:
-                raise ValidationDomainError(
-                    "Nama UoM tidak boleh kosong.",
-                    details={"field": "name"},
-                )
+            new_name = ensure_non_blank_str(
+                name, field_name="name", label="Nama UoM", max_length=100
+            )
 
         new_allow_decimal = (
             bool(allow_decimal)
@@ -1140,31 +1107,29 @@ def create_supplier(
     name: str,
     contact_person: str | None = None,
     phone: str | None = None,
+    fax: str | None = None,
     email: str | None = None,
     address: str | None = None,
+    bank_name: str | None = None,
+    bank_account_number: str | None = None,
+    bank_account_holder: str | None = None,
+    npwp: str | None = None,
+    payment_terms: str | None = None,
+    notes: str | None = None,
     is_active: bool = True,
     ip_address: str | None = None,
 ) -> dict[str, Any]:
-    clean_code = code.strip()
-    clean_name = name.strip()
-    if not clean_code or not clean_name:
-        raise ValidationDomainError(
-            "Kode dan nama pemasok tidak boleh kosong.",
-            details={"code": clean_code, "name": clean_name},
-        )
-    clean_code = _validate_code_format(
-        clean_code, field_name="code", label="Kode pemasok"
+    clean_code = validate_code_format(
+        code, field_name="code", label="Kode pemasok", max_length=50
     )
-    clean_phone = _validate_optional_phone(phone)
+    clean_name = ensure_non_blank_str(
+        name, field_name="name", label="Nama pemasok", max_length=150
+    )
+    clean_phone = validate_optional_phone(phone, label="Nomor telepon pemasok")
 
     clean_email: str | None = None
-    if email is not None and email.strip():
-        clean_email = email.strip().lower()
-        if not EMAIL_REGEX.match(clean_email):
-            raise ValidationDomainError(
-                "Format alamat email pemasok tidak valid.",
-                details={"field": "email", "value": clean_email},
-            )
+    if clean_optional_str(email) is not None:
+        clean_email = validate_email_format(email or "")
 
     with conn.transaction():
         existing = master_repo.get_supplier_by_code(conn, clean_code)
@@ -1177,12 +1142,17 @@ def create_supplier(
             conn,
             code=clean_code,
             name=clean_name,
-            contact_person=contact_person.strip()
-            if contact_person and contact_person.strip()
-            else None,
+            contact_person=clean_optional_str(contact_person),
             phone=clean_phone,
+            fax=clean_optional_str(fax),
             email=clean_email,
-            address=address.strip() if address and address.strip() else None,
+            address=clean_optional_str(address),
+            bank_name=clean_optional_str(bank_name),
+            bank_account_number=clean_optional_str(bank_account_number),
+            bank_account_holder=clean_optional_str(bank_account_holder),
+            npwp=clean_optional_str(npwp),
+            payment_terms=clean_optional_str(payment_terms),
+            notes=clean_optional_str(notes),
             is_active=is_active,
             created_by=int(actor["id"]),
         )
@@ -1199,8 +1169,15 @@ def create_supplier(
                 "name": created["name"],
                 "contact_person": created["contact_person"],
                 "phone": created["phone"],
+                "fax": created.get("fax"),
                 "email": created["email"],
                 "address": created["address"],
+                "bank_name": created.get("bank_name"),
+                "bank_account_number": created.get("bank_account_number"),
+                "bank_account_holder": created.get("bank_account_holder"),
+                "npwp": created.get("npwp"),
+                "payment_terms": created.get("payment_terms"),
+                "notes": created.get("notes"),
                 "is_active": created["is_active"],
             },
             ip_address=ip_address,
@@ -1332,9 +1309,27 @@ def update_supplier(
     code: str | None = None,
     name: str | None = None,
     contact_person: str | None = None,
+    contact_person_provided: bool = False,
     phone: str | None = None,
+    phone_provided: bool = False,
+    fax: str | None = None,
+    fax_provided: bool = False,
     email: str | None = None,
+    email_provided: bool = False,
     address: str | None = None,
+    address_provided: bool = False,
+    bank_name: str | None = None,
+    bank_name_provided: bool = False,
+    bank_account_number: str | None = None,
+    bank_account_number_provided: bool = False,
+    bank_account_holder: str | None = None,
+    bank_account_holder_provided: bool = False,
+    npwp: str | None = None,
+    npwp_provided: bool = False,
+    payment_terms: str | None = None,
+    payment_terms_provided: bool = False,
+    notes: str | None = None,
+    notes_provided: bool = False,
     is_active: bool | None = None,
     ip_address: str | None = None,
 ) -> dict[str, Any]:
@@ -1348,8 +1343,8 @@ def update_supplier(
 
         new_code = existing["code"]
         if code is not None:
-            new_code = _validate_code_format(
-                code, field_name="code", label="Kode pemasok"
+            new_code = validate_code_format(
+                code, field_name="code", label="Kode pemasok", max_length=50
             )
             if new_code.lower() != str(existing["code"]).lower():
                 dup = master_repo.get_supplier_by_code(conn, new_code)
@@ -1361,37 +1356,69 @@ def update_supplier(
 
         new_name = existing["name"]
         if name is not None:
-            new_name = name.strip()
-            if not new_name:
-                raise ValidationDomainError(
-                    "Nama pemasok tidak boleh kosong.",
-                    details={"field": "name"},
-                )
+            new_name = ensure_non_blank_str(
+                name, field_name="name", label="Nama pemasok", max_length=150
+            )
 
         new_contact = (
-            (contact_person.strip() or None)
-            if contact_person is not None
+            clean_optional_str(contact_person)
+            if contact_person_provided or contact_person is not None
             else existing["contact_person"]
         )
         new_phone = (
-            _validate_optional_phone(phone)
-            if phone is not None
+            validate_optional_phone(phone, label="Nomor telepon pemasok")
+            if phone_provided or phone is not None
             else existing["phone"]
         )
+        new_fax = (
+            clean_optional_str(fax)
+            if fax_provided or fax is not None
+            else existing.get("fax")
+        )
         new_address = (
-            (address.strip() or None)
-            if address is not None
+            clean_optional_str(address)
+            if address_provided or address is not None
             else existing["address"]
         )
 
         new_email = existing["email"]
-        if email is not None:
-            new_email = email.strip().lower() if email.strip() else None
-            if new_email and not EMAIL_REGEX.match(new_email):
-                raise ValidationDomainError(
-                    "Format alamat email pemasok tidak valid.",
-                    details={"field": "email", "value": new_email},
-                )
+        if email_provided or email is not None:
+            new_email = (
+                validate_email_format(email)
+                if clean_optional_str(email) is not None
+                else None
+            )
+
+        new_bank_name = (
+            clean_optional_str(bank_name)
+            if bank_name_provided or bank_name is not None
+            else existing.get("bank_name")
+        )
+        new_bank_acc_no = (
+            clean_optional_str(bank_account_number)
+            if bank_account_number_provided or bank_account_number is not None
+            else existing.get("bank_account_number")
+        )
+        new_bank_acc_holder = (
+            clean_optional_str(bank_account_holder)
+            if bank_account_holder_provided or bank_account_holder is not None
+            else existing.get("bank_account_holder")
+        )
+        new_npwp = (
+            clean_optional_str(npwp)
+            if npwp_provided or npwp is not None
+            else existing.get("npwp")
+        )
+        new_payment_terms = (
+            clean_optional_str(payment_terms)
+            if payment_terms_provided or payment_terms is not None
+            else existing.get("payment_terms")
+        )
+        new_notes = (
+            clean_optional_str(notes)
+            if notes_provided or notes is not None
+            else existing.get("notes")
+        )
 
         new_active = (
             bool(is_active) if is_active is not None else bool(existing["is_active"])
@@ -1412,8 +1439,15 @@ def update_supplier(
             name=new_name,
             contact_person=new_contact,
             phone=new_phone,
+            fax=new_fax,
             email=new_email,
             address=new_address,
+            bank_name=new_bank_name,
+            bank_account_number=new_bank_acc_no,
+            bank_account_holder=new_bank_acc_holder,
+            npwp=new_npwp,
+            payment_terms=new_payment_terms,
+            notes=new_notes,
             is_active=new_active,
         )
         action = (
@@ -1432,8 +1466,15 @@ def update_supplier(
                 "name": existing["name"],
                 "contact_person": existing["contact_person"],
                 "phone": existing["phone"],
+                "fax": existing.get("fax"),
                 "email": existing["email"],
                 "address": existing["address"],
+                "bank_name": existing.get("bank_name"),
+                "bank_account_number": existing.get("bank_account_number"),
+                "bank_account_holder": existing.get("bank_account_holder"),
+                "npwp": existing.get("npwp"),
+                "payment_terms": existing.get("payment_terms"),
+                "notes": existing.get("notes"),
                 "is_active": existing["is_active"],
             },
             new_values={
@@ -1441,8 +1482,15 @@ def update_supplier(
                 "name": updated["name"],
                 "contact_person": updated["contact_person"],
                 "phone": updated["phone"],
+                "fax": updated.get("fax"),
                 "email": updated["email"],
                 "address": updated["address"],
+                "bank_name": updated.get("bank_name"),
+                "bank_account_number": updated.get("bank_account_number"),
+                "bank_account_holder": updated.get("bank_account_holder"),
+                "npwp": updated.get("npwp"),
+                "payment_terms": updated.get("payment_terms"),
+                "notes": updated.get("notes"),
                 "is_active": updated["is_active"],
             },
             ip_address=ip_address,
@@ -1513,17 +1561,21 @@ def create_item(
     description: str | None = None,
     category_id: int,
     uom_id: int,
+    min_stock: Decimal = Decimal("0"),
     is_active: bool = True,
     ip_address: str | None = None,
 ) -> dict[str, Any]:
-    clean_sku = sku.strip()
-    clean_name = name.strip()
-    if not clean_sku or not clean_name:
+    if min_stock < Decimal("0"):
         raise ValidationDomainError(
-            "SKU dan nama barang tidak boleh kosong.",
-            details={"sku": clean_sku, "name": clean_name},
+            "Batas stok minimum tidak boleh bernilai negatif.",
+            details={"field": "min_stock"},
         )
-    clean_sku = _validate_code_format(clean_sku, field_name="sku", label="SKU barang")
+    clean_sku = validate_code_format(
+        sku, field_name="sku", label="SKU barang", max_length=64
+    )
+    clean_name = ensure_non_blank_str(
+        name, field_name="name", label="Nama barang", max_length=200
+    )
     clean_barcode = _validate_optional_barcode(barcode)
 
     with conn.transaction():
@@ -1574,6 +1626,7 @@ def create_item(
             description=description.strip() if description is not None else None,
             category_id=category_id,
             uom_id=uom_id,
+            min_stock=min_stock,
             is_active=is_active,
             created_by=int(actor["id"]),
         )
@@ -1592,6 +1645,7 @@ def create_item(
                 "description": created["description"],
                 "category_id": created["category_id"],
                 "uom_id": created["uom_id"],
+                "min_stock": str(created.get("min_stock", "0")),
                 "is_active": created["is_active"],
             },
             ip_address=ip_address,
@@ -1849,9 +1903,15 @@ def update_item(
     description: str | None = None,
     category_id: int | None = None,
     uom_id: int | None = None,
+    min_stock: Decimal | None = None,
     is_active: bool | None = None,
     ip_address: str | None = None,
 ) -> dict[str, Any]:
+    if min_stock is not None and min_stock < Decimal("0"):
+        raise ValidationDomainError(
+            "Batas stok minimum tidak boleh bernilai negatif.",
+            details={"field": "min_stock"},
+        )
     with conn.transaction():
         existing = master_repo.lock_item_by_id(conn, item_id)
         if not existing:
@@ -1862,7 +1922,9 @@ def update_item(
 
         new_sku = existing["sku"]
         if sku is not None:
-            new_sku = _validate_code_format(sku, field_name="sku", label="SKU barang")
+            new_sku = validate_code_format(
+                sku, field_name="sku", label="SKU barang", max_length=64
+            )
             if new_sku != existing["sku"]:
                 # PRD FR-02 & 6.8: SKU tidak dapat diubah setelah barang dipakai pada transaksi apa pun
                 if master_repo.is_item_used_in_transactions(conn, item_id):
@@ -1941,6 +2003,11 @@ def update_item(
                 )
             new_uom_id = int(uom_id)
 
+        new_min_stock = (
+            min_stock
+            if min_stock is not None
+            else Decimal(str(existing.get("min_stock") or "0"))
+        )
         new_active = (
             bool(is_active) if is_active is not None else bool(existing["is_active"])
         )
@@ -1962,6 +2029,7 @@ def update_item(
             description=new_desc,
             category_id=new_category_id,
             uom_id=new_uom_id,
+            min_stock=new_min_stock,
             is_active=new_active,
         )
         action = (
@@ -1982,6 +2050,7 @@ def update_item(
                 "description": existing["description"],
                 "category_id": existing["category_id"],
                 "uom_id": existing["uom_id"],
+                "min_stock": str(existing.get("min_stock", "0")),
                 "is_active": existing["is_active"],
             },
             new_values={
@@ -1991,6 +2060,7 @@ def update_item(
                 "description": updated["description"],
                 "category_id": updated["category_id"],
                 "uom_id": updated["uom_id"],
+                "min_stock": str(updated.get("min_stock", "0")),
                 "is_active": updated["is_active"],
             },
             ip_address=ip_address,

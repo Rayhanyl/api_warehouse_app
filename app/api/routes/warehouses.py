@@ -35,6 +35,7 @@ router = APIRouter(tags=["Warehouses & Locations"])
 def list_warehouses(
     limit: int = Query(default=50),
     offset: int = Query(default=0),
+    warehouse_id: OptIntQuery = Query(default=None),
     is_active: OptBoolQuery = Query(default=None),
     search: OptStrQuery = Query(default=None),
     sort_by: OptStrQuery = Query(default=None),
@@ -48,6 +49,7 @@ def list_warehouses(
         actor=actor,
         limit=limit,
         offset=offset,
+        warehouse_id=warehouse_id,
         is_active=is_active,
         search=search,
         sort_by=sort_by,

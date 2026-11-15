@@ -123,6 +123,7 @@ def list_stock_by_warehouse(
     warehouse_id: int | None = None,
     item_id: int | None = None,
     category_id: int | None = None,
+    critical_only: bool | None = None,
     search: str | None = None,
     sort_by: str | None = None,
     sort_dir: str | None = None,
@@ -145,6 +146,7 @@ def list_stock_by_warehouse(
         warehouse_id=warehouse_id,
         item_id=item_id,
         category_id=category_id,
+        critical_only=critical_only,
         search=search,
         order_by_sql=order_by_sql,
     )
@@ -165,6 +167,7 @@ def list_stock_summary(
     warehouse_id: int | None = None,
     item_id: int | None = None,
     category_id: int | None = None,
+    critical_only: bool | None = None,
     search: str | None = None,
     sort_by: str | None = None,
     sort_dir: str | None = None,
@@ -187,6 +190,7 @@ def list_stock_summary(
         warehouse_id=warehouse_id,
         item_id=item_id,
         category_id=category_id,
+        critical_only=critical_only,
         search=search,
         order_by_sql=order_by_sql,
     )

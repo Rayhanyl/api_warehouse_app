@@ -6,6 +6,8 @@ from typing import Any
 
 from psycopg import Connection
 
+from app.repositories import approval_repo
+
 _HEADER_SELECT = """
     SELECT
         so.id,
@@ -27,6 +29,10 @@ _HEADER_SELECT = """
         so.started_by,
         so.submitted_at,
         so.submitted_by,
+        so.l1_approved_by,
+        so.l1_approved_at,
+        so.l2_approved_by,
+        so.l2_approved_at,
         so.approved_by,
         so.approved_at,
         so.rejection_reason,
@@ -57,7 +63,7 @@ def get_active_opname_freezing_location(
         FROM stock_opnames
         WHERE warehouse_id = %s
           AND (location_id IS NULL OR location_id = %s)
-          AND status IN ('IN_PROGRESS', 'WAITING_APPROVAL')
+          AND status IN ('IN_PROGRESS', 'WAITING_L1_APPROVAL', 'WAITING_L2_APPROVAL', 'WAITING_APPROVAL')
         ORDER BY id
         LIMIT 1
         """,
@@ -96,7 +102,7 @@ def get_active_overlapping_opname(
                 SELECT id, opname_number, warehouse_id, location_id, status
                 FROM stock_opnames
                 WHERE warehouse_id = %s
-                  AND status IN ('IN_PROGRESS', 'WAITING_APPROVAL')
+                  AND status IN ('IN_PROGRESS', 'WAITING_L1_APPROVAL', 'WAITING_L2_APPROVAL', 'WAITING_APPROVAL')
                   AND id <> %s
                 ORDER BY id
                 LIMIT 1
@@ -108,7 +114,7 @@ def get_active_overlapping_opname(
             SELECT id, opname_number, warehouse_id, location_id, status
             FROM stock_opnames
             WHERE warehouse_id = %s
-              AND status IN ('IN_PROGRESS', 'WAITING_APPROVAL')
+              AND status IN ('IN_PROGRESS', 'WAITING_L1_APPROVAL', 'WAITING_L2_APPROVAL', 'WAITING_APPROVAL')
             ORDER BY id
             LIMIT 1
             """,
@@ -122,7 +128,7 @@ def get_active_overlapping_opname(
             FROM stock_opnames
             WHERE warehouse_id = %s
               AND (location_id IS NULL OR location_id = %s)
-              AND status IN ('IN_PROGRESS', 'WAITING_APPROVAL')
+              AND status IN ('IN_PROGRESS', 'WAITING_L1_APPROVAL', 'WAITING_L2_APPROVAL', 'WAITING_APPROVAL')
               AND id <> %s
             ORDER BY id
             LIMIT 1
@@ -370,6 +376,9 @@ def get_opname_by_id(
     result = dict(header)
     result["line_count"] = len(lines)
     result["lines"] = lines
+    result["approval_logs"] = approval_repo.list_approval_logs(
+        conn, doc_type="OPNAME", doc_id=opname_id
+    )
     return result
 
 
@@ -390,6 +399,10 @@ def lock_opname_by_id(
             started_by,
             submitted_at,
             submitted_by,
+            l1_approved_by,
+            l1_approved_at,
+            l2_approved_by,
+            l2_approved_at,
             approved_by,
             approved_at,
             rejection_reason,
@@ -601,13 +614,39 @@ def update_opname_submitted(
         """
         UPDATE stock_opnames
         SET
-            status = 'WAITING_APPROVAL',
+            status = 'WAITING_L1_APPROVAL',
             submitted_at = CURRENT_TIMESTAMP,
             submitted_by = %s,
+            l1_approved_by = NULL,
+            l1_approved_at = NULL,
+            l2_approved_by = NULL,
+            l2_approved_at = NULL,
+            rejection_reason = NULL,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = %s
         """,
         (submitted_by, opname_id),
+    )
+
+
+def update_opname_l1_approved(
+    conn: Connection[dict[str, Any]],
+    opname_id: int,
+    *,
+    approved_by: int,
+) -> None:
+    conn.execute(
+        """
+        UPDATE stock_opnames
+        SET
+            status = 'WAITING_L2_APPROVAL',
+            l1_approved_by = %s,
+            l1_approved_at = CURRENT_TIMESTAMP,
+            rejection_reason = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = %s
+        """,
+        (approved_by, opname_id),
     )
 
 
@@ -622,12 +661,15 @@ def update_opname_completed(
         UPDATE stock_opnames
         SET
             status = 'COMPLETED',
+            l2_approved_by = %s,
+            l2_approved_at = CURRENT_TIMESTAMP,
             approved_by = %s,
             approved_at = CURRENT_TIMESTAMP,
+            rejection_reason = NULL,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = %s
         """,
-        (approved_by, opname_id),
+        (approved_by, approved_by, opname_id),
     )
 
 
@@ -643,6 +685,10 @@ def update_opname_rejected(
         SET
             status = 'IN_PROGRESS',
             rejection_reason = %s,
+            l1_approved_by = NULL,
+            l1_approved_at = NULL,
+            l2_approved_by = NULL,
+            l2_approved_at = NULL,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = %s
         """,

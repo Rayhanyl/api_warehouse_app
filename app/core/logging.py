@@ -7,6 +7,9 @@ import sys
 request_id_ctx: contextvars.ContextVar[str] = contextvars.ContextVar(
     "request_id", default="-"
 )
+audit_context_ctx: contextvars.ContextVar[dict[str, str | None]] = (
+    contextvars.ContextVar("audit_context", default={})
+)
 
 
 class RequestIdFilter(logging.Filter):

@@ -21,7 +21,14 @@ from app.core.exceptions import (
     ValidationDomainError,
     WarehouseNotAssigned,
 )
-from app.core.permissions import TRANSFER_APPROVE, TRANSFER_CREATE
+from app.core.permissions import TRANSFER_APPROVE, TRANSFER_CREATE, check_sod_actor
+from app.core.validation import (
+    FOUR_PLACES,
+    MAX_QTY,
+    ZERO,
+    clean_optional_str as _clean_text,
+    normalize_decimal_qty,
+)
 from app.repositories import (
     inventory_repo,
     transfer_repo,
@@ -38,9 +45,6 @@ from app.services import (
 from app.utils.enums import DocType, MovementType, ReferenceType, TransferStatus
 from app.utils.pagination import build_order_by, normalize_pagination
 
-FOUR_PLACES = Decimal("0.0001")
-ZERO = Decimal("0.0000")
-MAX_QTY = Decimal("99999999999999.9999")
 ENTITY_TYPE = "stock_transfers"
 
 TRANSFER_SORT_COLUMNS: dict[str, str] = {
@@ -60,42 +64,7 @@ ALLOWED_TRANSFER_STATUSES: frozenset[str] = frozenset(s.value for s in TransferS
 # ============================================================================
 def _normalize_qty(value: Any, *, field_name: str, allow_zero: bool) -> Decimal:
     """Memastikan kuantitas Decimal (bukan float), maksimal 4 desimal, dan > 0 (atau >= 0) (PRD 6.9)."""
-    if isinstance(value, float):
-        raise ValidationDomainError(
-            f"Field '{field_name}' harus bertipe Decimal, tidak boleh float.",
-            details={"field": field_name, "value": str(value)},
-        )
-    if not isinstance(value, Decimal):
-        try:
-            value = Decimal(str(value))
-        except Exception as exc:
-            raise ValidationDomainError(
-                f"Format angka desimal pada '{field_name}' tidak valid.",
-                details={"field": field_name, "value": str(value)},
-            ) from exc
-
-    if not value.is_finite():
-        raise ValidationDomainError(
-            f"Field '{field_name}' harus berupa angka yang valid.",
-            details={"field": field_name, "value": str(value)},
-        )
-    quantized = value.quantize(FOUR_PLACES)
-    if quantized != value:
-        raise ValidationDomainError(
-            f"Field '{field_name}' maksimal memiliki 4 angka di belakang koma.",
-            details={"field": field_name, "value": str(value)},
-        )
-    if quantized < ZERO or (not allow_zero and quantized == ZERO):
-        raise ValidationDomainError(
-            f"Field '{field_name}' harus {'>= 0' if allow_zero else 'lebih besar dari 0'}.",
-            details={"field": field_name, "value": str(quantized)},
-        )
-    if quantized > MAX_QTY:
-        raise ValidationDomainError(
-            f"Field '{field_name}' melebihi batas maksimum NUMERIC(18,4) ({MAX_QTY}).",
-            details={"field": field_name, "value": str(quantized), "max_qty": str(MAX_QTY)},
-        )
-    return quantized
+    return normalize_decimal_qty(value, field_name=field_name, allow_zero=allow_zero)
 
 
 def _ensure_integer_if_required(
@@ -297,13 +266,6 @@ def _serialize_snapshot(detail: dict[str, Any]) -> dict[str, Any]:
             for ln in detail.get("lines", [])
         ],
     }
-
-
-def _clean_text(value: str | None) -> str | None:
-    if value is None:
-        return None
-    stripped = value.strip()
-    return stripped or None
 
 
 # ============================================================================
@@ -602,6 +564,11 @@ def approve_transfer(
         access_service.ensure_warehouse_access(
             conn, actor, int(locked["source_warehouse_id"])
         )
+        is_sod_override = check_sod_actor(
+            actor,
+            [int(locked["created_by"])],
+            action_label="menyetujui Stock Transfer yang dibuatnya sendiri",
+        )
 
         _validate_header(
             conn,
@@ -645,6 +612,7 @@ def approve_transfer(
                 if updated["approved_at"]
                 else None,
             },
+            details={"sod_override": True} if is_sod_override else None,
             ip_address=ip_address,
         )
         return updated

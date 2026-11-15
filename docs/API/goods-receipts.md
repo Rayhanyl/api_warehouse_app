@@ -24,10 +24,10 @@ Modul Goods Receipt (GR) mencatat penerimaan fisik barang di gudang berdasarkan 
 
 ```mermaid
 stateDiagram-v2
-    [*] --> DRAFT: POST /goods-receipts (gr:manage)
-    DRAFT --> DRAFT: PATCH /goods-receipts/{id} (gr:manage)
-    DRAFT --> POSTED: POST /{id}/post (gr:manage, transaksi atomik)
-    DRAFT --> CANCELLED: POST /{id}/cancel (gr:manage)
+    [*] --> DRAFT: POST /goods-receipts (gr:create)
+    DRAFT --> DRAFT: PATCH /goods-receipts/{id} (gr:create)
+    DRAFT --> POSTED: POST /{id}/post (gr:post + SoD, transaksi atomik)
+    DRAFT --> CANCELLED: POST /{id}/cancel (gr:create)
 ```
 
 | Status Saat Ini | Pemicu | Status Berikutnya | Syarat & Efek |
@@ -77,8 +77,9 @@ Saat `POST /api/v1/goods-receipts/{gr_id}/post` dipanggil, seluruh langkah dijal
 
 | Permission | Aksi | Peran Bawaan (Matriks 3.1) | Warehouse Scoping `(g)` |
 | --- | --- | --- | --- |
-| `gr:read` | Daftar & detail GR | *Super Admin*, *Warehouse Manager*, *Purchasing Staff*, *Warehouse Staff*, *Auditor* | **Ya `(g)`** untuk *Warehouse Staff*, *Warehouse Manager*, dan *Purchasing Staff* (hanya melihat GR pada gudang yang ditugaskan; gudang lain → `403 WAREHOUSE_NOT_ASSIGNED`). *Super Admin* dan *Auditor* tidak dibatasi (unscoped). |
-| `gr:manage` | Buat, revisi `DRAFT`, posting, dan batalkan GR | *Super Admin*, *Warehouse Staff* | **Ya `(g)`** (`ensure_warehouse_access` terhadap gudang tujuan PO). |
+| `gr:read` | Daftar & detail GR | *Super Admin*, *Warehouse Manager*, *Warehouse Supervisor*, *Purchasing Staff*, *Procurement Manager*, *Warehouse Staff*, *Auditor* | **Ya `(g)`** untuk role terlingkup gudang (hanya melihat GR pada gudang yang ditugaskan; gudang lain → `403 WAREHOUSE_NOT_ASSIGNED`). *Super Admin* dan *Auditor* tidak dibatasi (unscoped). |
+| `gr:create` | Buat, revisi `DRAFT`, dan batalkan GR | *Super Admin*, *Warehouse Manager*, *Warehouse Supervisor*, *Warehouse Staff* | **Ya `(g)`** (`ensure_warehouse_access` terhadap gudang tujuan PO). |
+| `gr:post` | Posting GR menjadi stok final (`DRAFT → POSTED`) | *Super Admin*, *Warehouse Manager*, *Warehouse Supervisor* | **Ya `(g)`** (`ensure_warehouse_access` + wajib lolos *Segregation of Duties*: `actor.id != created_by`, kecuali *Super Admin* yang dicatat `"sod_override": true`). |
 
 ---
 
@@ -87,11 +88,11 @@ Saat `POST /api/v1/goods-receipts/{gr_id}/post` dipanggil, seluruh langkah dijal
 | # | Method | Endpoint | Fungsi | Auth | Permission |
 | :-: | --- | --- | --- | --- | --- |
 | 1 | GET | `/api/v1/goods-receipts` | Daftar GR (paginasi, filter gudang/PO/status/tanggal, pencarian, urut) | Bearer | `gr:read` `(g)` |
-| 2 | POST | `/api/v1/goods-receipts` | Buat GR baru berstatus `DRAFT` | Bearer | `gr:manage` `(g)` |
+| 2 | POST | `/api/v1/goods-receipts` | Buat GR baru berstatus `DRAFT` | Bearer | `gr:create` `(g)` |
 | 3 | GET | `/api/v1/goods-receipts/{gr_id}` | Detail GR beserta daftar baris penerimaan (`lines`) | Bearer | `gr:read` `(g)` |
-| 4 | PATCH | `/api/v1/goods-receipts/{gr_id}` | Revisi GR berstatus `DRAFT` | Bearer | `gr:manage` `(g)` |
-| 5 | POST | `/api/v1/goods-receipts/{gr_id}/post` | Posting GR secara atomik (`DRAFT → POSTED`) | Bearer | `gr:manage` `(g)` |
-| 6 | POST | `/api/v1/goods-receipts/{gr_id}/cancel` | Batalkan GR berstatus `DRAFT` (`DRAFT → CANCELLED`) | Bearer | `gr:manage` `(g)` |
+| 4 | PATCH | `/api/v1/goods-receipts/{gr_id}` | Revisi GR berstatus `DRAFT` | Bearer | `gr:create` `(g)` |
+| 5 | POST | `/api/v1/goods-receipts/{gr_id}/post` | Posting GR secara atomik (`DRAFT → POSTED`) | Bearer | `gr:post` `(g)` + SoD |
+| 6 | POST | `/api/v1/goods-receipts/{gr_id}/cancel` | Batalkan GR berstatus `DRAFT` (`DRAFT → CANCELLED`) | Bearer | `gr:create` `(g)` |
 
 ---
 
@@ -161,7 +162,7 @@ Mengambil daftar ringkasan Goods Receipt dengan dukungan pagination, filter, pen
 Membuat dokumen Goods Receipt baru berstatus `DRAFT` untuk suatu PO. Gudang tujuan GR otomatis disamakan dengan `warehouse_id` pada PO yang dirujuk.
 
 * **HTTP Method & URL:** `POST /api/v1/goods-receipts`
-* **Autentikasi & Permission:** Bearer Token, `gr:manage` + **Warehouse Scoping `(g)`** pada gudang PO.
+* **Autentikasi & Permission:** Bearer Token, `gr:create` + **Warehouse Scoping `(g)`** pada gudang PO.
 
 **Request Body (`GoodsReceiptCreate`)**
 
@@ -262,7 +263,7 @@ Mengambil detail lengkap satu Goods Receipt beserta daftar baris (`lines`).
 Memperbarui `received_date`, `notes`, dan/atau mengganti daftar `lines` pada GR berstatus `DRAFT`.
 
 * **HTTP Method & URL:** `PATCH /api/v1/goods-receipts/{gr_id}`
-* **Autentikasi & Permission:** Bearer Token, `gr:manage` + **Warehouse Scoping `(g)`**
+* **Autentikasi & Permission:** Bearer Token, `gr:create` + **Warehouse Scoping `(g)`**
 * **Request Body (`GoodsReceiptUpdate`):** Seluruh field opsional (`received_date`, `notes`, `lines`). Jika `lines` dikirim, seluruh baris diganti; jika `notes` dikirim `""`, catatan dikosongkan menjadi `null`.
 * **Aturan Bisnis & Audit:**
   * Mengunci header GR (`FOR UPDATE`); wajib berstatus `DRAFT` dan PO induk masih berstatus `ISSUED` atau `PARTIALLY_RECEIVED` (`409 INVALID_STATE_TRANSITION` bila tidak).
@@ -278,13 +279,13 @@ Memperbarui `received_date`, `notes`, dan/atau mengganti daftar `lines` pada GR 
 Menyelesaikan penerimaan barang (`DRAFT → POSTED`), menambah saldo stok gudang tujuan, menulis buku besar `IN_PURCHASE`, serta memperbarui pemenuhan PO dalam satu transaksi atomik.
 
 * **HTTP Method & URL:** `POST /api/v1/goods-receipts/{gr_id}/post`
-* **Autentikasi & Permission:** Bearer Token, `gr:manage` + **Warehouse Scoping `(g)`**
+* **Autentikasi & Permission:** Bearer Token, `gr:post` + **Warehouse Scoping `(g)`** + **Segregation of Duties (`actor.id != created_by`, kecuali `Super Admin`)**
 * **Request Body:** Tidak ada.
-* **Aturan Bisnis & Audit:** Lihat urutan penguncian dan validasi pada Bagian 2.3. Minimal 1 baris wajib tersedia pada GR (`422 VALIDATION_ERROR` bila kosong).
+* **Aturan Bisnis & Audit:** Lihat urutan penguncian dan validasi pada Bagian 2.3. Minimal 1 baris wajib tersedia pada GR (`422 VALIDATION_ERROR` bila kosong). Jika aktor (selain `Super Admin`) sama dengan pembuat GR (`created_by`), request ditolak dengan `403 PERMISSION_DENIED` (`details.code = "SOD_VIOLATION"`). Override `Super Admin` dicatat dengan `"sod_override": true` di `audit_logs`.
 * **Response Berhasil:** `200 OK` (`GoodsReceiptOut` dengan `status: "POSTED"`, `posted_at`, dan `posted_by`).
 * **Kemungkinan Error:**
   * `401 AUTH_TOKEN_INVALID`
-  * `403 PERMISSION_DENIED`
+  * `403 PERMISSION_DENIED` (termasuk `SOD_VIOLATION` bila melakukan *self-posting*)
   * `403 WAREHOUSE_NOT_ASSIGNED` — Pengguna tidak ditugaskan ke gudang tujuan PO (**AC-12**).
   * `404 NOT_FOUND`
   * `409 INVALID_STATE_TRANSITION` — GR bukan `DRAFT` (termasuk permintaan posting ganda bersamaan — **AC-13**) atau PO bukan `ISSUED`/`PARTIALLY_RECEIVED`.
@@ -299,7 +300,7 @@ Menyelesaikan penerimaan barang (`DRAFT → POSTED`), menambah saldo stok gudang
 Membatalkan dokumen GR berstatus `DRAFT` menjadi `CANCELLED`.
 
 * **HTTP Method & URL:** `POST /api/v1/goods-receipts/{gr_id}/cancel`
-* **Autentikasi & Permission:** Bearer Token, `gr:manage` + **Warehouse Scoping `(g)`**
+* **Autentikasi & Permission:** Bearer Token, `gr:create` + **Warehouse Scoping `(g)`**
 * **Request Body:** Tidak ada.
 * **Aturan Bisnis & Audit:**
   * Mengunci header GR (`FOR UPDATE`) dan memeriksa penugasan gudang.

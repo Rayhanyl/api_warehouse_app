@@ -15,11 +15,13 @@ from app.api.routes import (
     audit_logs,
     auth,
     dashboard,
+    document_templates,
     goods_receipts,
     health,
     master,
     menus,
     purchase_orders,
+    settings as settings_route,
     stock,
     stock_opnames,
     stock_transfers,
@@ -31,6 +33,8 @@ from app.core.config import settings
 from app.core.exceptions import DomainError
 from app.core.logging import logger, request_id_ctx
 from app.core.middleware import register_request_id_middleware
+from app.core.validation import format_pydantic_errors
+from app.services import audit_service
 
 
 @asynccontextmanager
@@ -48,6 +52,13 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         )
         raise
     logger.info("Connection pool database siap digunakan.")
+    _db_ok, pending_migrations = database.check_schema_health()
+    if pending_migrations:
+        logger.warning(
+            "Terdapat %d migrasi SQL yang belum dijalankan pada database (%s). Jalankan 'python -m db.migrate' sebelum menggunakan endpoint terkait.",
+            len(pending_migrations),
+            ", ".join(pending_migrations),
+        )
     try:
         yield
     finally:
@@ -80,7 +91,20 @@ def create_app() -> FastAPI:
     register_request_id_middleware(application)
 
     @application.exception_handler(DomainError)
-    def handle_domain_error(_request: Request, exc: DomainError) -> JSONResponse:
+    def handle_domain_error(request: Request, exc: DomainError) -> JSONResponse:
+        if not getattr(request.state, "audit_failure_recorded", False) and (
+            request.method in {"POST", "PUT", "PATCH", "DELETE"}
+            or exc.http_status in {401, 403}
+        ):
+            audit_service.record_http_failure(
+                request,
+                action=exc.code,
+                error_code=exc.code,
+                http_status=exc.http_status,
+                message=exc.message,
+                error_details=exc.details,
+            )
+
         headers = {"WWW-Authenticate": "Bearer"} if exc.http_status == 401 else None
         return JSONResponse(
             status_code=exc.http_status,
@@ -96,15 +120,33 @@ def create_app() -> FastAPI:
 
     @application.exception_handler(RequestValidationError)
     def handle_validation_error(
-        _request: Request, exc: RequestValidationError
+        request: Request, exc: RequestValidationError
     ) -> JSONResponse:
+        encoded_errors = jsonable_encoder(exc.errors())
+        summary_message, translated_errors, field_errors = format_pydantic_errors(
+            encoded_errors
+        )
+        if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+            audit_service.record_http_failure(
+                request,
+                action="VALIDATION_ERROR",
+                error_code="VALIDATION_ERROR",
+                http_status=422,
+                message=summary_message,
+                error_details={
+                    "errors": audit_service.sanitize_validation_errors(encoded_errors)
+                },
+            )
         return JSONResponse(
             status_code=422,
             content={
                 "error": {
                     "code": "VALIDATION_ERROR",
-                    "message": "Payload permintaan tidak valid.",
-                    "details": {"errors": jsonable_encoder(exc.errors())},
+                    "message": summary_message,
+                    "details": {
+                        "errors": translated_errors,
+                        "field_errors": field_errors,
+                    },
                 }
             },
         )
@@ -170,6 +212,8 @@ def create_app() -> FastAPI:
     application.include_router(stock_opnames.router, prefix=settings.api_v1_prefix)
     application.include_router(audit_logs.router, prefix=settings.api_v1_prefix)
     application.include_router(dashboard.router, prefix=settings.api_v1_prefix)
+    application.include_router(document_templates.router, prefix=settings.api_v1_prefix)
+    application.include_router(settings_route.router, prefix=settings.api_v1_prefix)
 
     return application
 

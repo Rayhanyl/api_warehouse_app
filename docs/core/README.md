@@ -12,6 +12,7 @@ padanya dan tidak boleh menambah business requirement.
 | Dokumen | Status | Tanggung jawab |
 | --- | --- | --- |
 | [PRD_GENERAL.md](PRD_GENERAL.md) | Approved / master product requirements | Tujuan, scope, role, FR, NFR, workflow, AC |
+| [PRD_ERP.md](PRD_ERP.md) | Draft / Analisis & Roadmap ERP (Pasca-WMS & M9) | Cetak biru siklus bisnis ERP terpadu, skema diskon PO, & analisis 13 skenario operasional PO *(belum untuk implementasi sebelum WMS tuntas)* |
 | [PRD_BACKEND.md](PRD_BACKEND.md) | Approved / layer specification | API, service, validation, security, transaction, error |
 | [PRD_FRONTEND.md](PRD_FRONTEND.md) | Approved / spesifikasi antarmuka (`warehouse_app`) | Halaman, UX, state, permission UI, integrasi API |
 | [DATABASE_DESIGN.md](DATABASE_DESIGN.md) | Approved / design map | Entitas, relasi, integritas, migration ownership |
@@ -22,7 +23,7 @@ padanya dan tidak boleh menambah business requirement.
 | [security-server-and-app.md](security-server-and-app.md) | Approved / standar keamanan | Hardening SSH, firewall UFW, isolasi DB, rotasi rahasia, audit log, dan backup otomatis |
 | [telegram-monitoring-guide.md](telegram-monitoring-guide.md) | Approved / panduan observabilitas | Notifikasi real-time error aplikasi (HTTP 500) & status container Docker via Telegram |
 | [API_CONTRACT.md](API_CONTRACT.md) | Ringkasan kontrak | Batas kontrak API dan rujukan detail aktual |
-| [PRD Modular](PRD%20JejakStok%20%E2%80%94%20Sistem%20Manajemen%20Gudang%20%28Modular%29.md) | Draft / perlu konfirmasi | Usulan modular dan multi-tenant; bukan scope aktif |
+| [PRD_AUDIT_AND_RESTRUCTURING_REPORT.md](PRD_AUDIT_AND_RESTRUCTURING_REPORT.md) | Laporan audit historis | Catatan restrukturisasi dan integrasi PRD v2.0 |
 | [DOCUMENTATION_AUDIT.md](DOCUMENTATION_AUDIT.md) | Audit | Temuan, asumsi, dan hal belum terverifikasi |
 | [SSOT_MAPPING.md](SSOT_MAPPING.md) | Governance | Ownership dan pemetaan sumber kebenaran |
 

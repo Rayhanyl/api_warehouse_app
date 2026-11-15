@@ -7,7 +7,7 @@ from psycopg import Connection
 
 from app.api.deps import get_client_ip
 from app.core.database import get_conn
-from app.core.permissions import GR_MANAGE, GR_READ, require_permission
+from app.core.permissions import GR_CREATE, GR_POST, GR_READ, require_permission
 from app.schemas.common import OptDateQuery, OptIntQuery, OptStrQuery, Page
 from app.schemas.goods_receipt import (
     GoodsReceiptCreate,
@@ -60,7 +60,7 @@ def list_goods_receipts(
 def create_goods_receipt(
     payload: GoodsReceiptCreate,
     request: Request,
-    actor: dict[str, Any] = Depends(require_permission(GR_MANAGE)),
+    actor: dict[str, Any] = Depends(require_permission(GR_CREATE)),
     conn: Connection[dict[str, Any]] = Depends(get_conn),
 ) -> GoodsReceiptOut:
     created = gr_service.create_goods_receipt(
@@ -90,7 +90,7 @@ def update_goods_receipt(
     gr_id: int,
     payload: GoodsReceiptUpdate,
     request: Request,
-    actor: dict[str, Any] = Depends(require_permission(GR_MANAGE)),
+    actor: dict[str, Any] = Depends(require_permission(GR_CREATE)),
     conn: Connection[dict[str, Any]] = Depends(get_conn),
 ) -> GoodsReceiptOut:
     updated = gr_service.update_goods_receipt(
@@ -111,7 +111,7 @@ def update_goods_receipt(
 def post_goods_receipt(
     gr_id: int,
     request: Request,
-    actor: dict[str, Any] = Depends(require_permission(GR_MANAGE)),
+    actor: dict[str, Any] = Depends(require_permission(GR_POST)),
     conn: Connection[dict[str, Any]] = Depends(get_conn),
 ) -> GoodsReceiptOut:
     posted = gr_service.post_goods_receipt(
@@ -127,7 +127,7 @@ def post_goods_receipt(
 def cancel_goods_receipt(
     gr_id: int,
     request: Request,
-    actor: dict[str, Any] = Depends(require_permission(GR_MANAGE)),
+    actor: dict[str, Any] = Depends(require_permission(GR_CREATE)),
     conn: Connection[dict[str, Any]] = Depends(get_conn),
 ) -> GoodsReceiptOut:
     cancelled = gr_service.cancel_goods_receipt(

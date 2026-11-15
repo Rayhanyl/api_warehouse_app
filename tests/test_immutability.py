@@ -153,6 +153,11 @@ def test_ac08_immutability_stock_movements_and_audit_logs(
         )
     with pytest.raises(psycopg.Error):
         db_conn.execute(
+            "UPDATE audit_logs SET status = 'FAILED' WHERE id = %s",
+            (audit_row["id"],),
+        )
+    with pytest.raises(psycopg.Error):
+        db_conn.execute(
             "DELETE FROM audit_logs WHERE id = %s",
             (audit_row["id"],),
         )

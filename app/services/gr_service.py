@@ -15,6 +15,8 @@ from app.core.exceptions import (
     OverReceipt,
     ValidationDomainError,
 )
+from app.core.permissions import check_sod_actor
+from app.core.validation import FOUR_PLACES, MAX_QTY, normalize_decimal_qty
 from app.repositories import gr_repo, inventory_repo, po_repo
 from app.services import (
     access_service,
@@ -26,9 +28,6 @@ from app.services import (
 )
 from app.utils.enums import DocType, GRStatus, MovementType, POStatus, ReferenceType
 from app.utils.pagination import build_order_by, normalize_pagination
-
-FOUR_PLACES = Decimal("0.0001")
-MAX_QTY = Decimal("99999999999999.9999")
 
 GR_SORT_COLUMNS: dict[str, str] = {
     "id": "gr.id",
@@ -46,42 +45,7 @@ RECEIVABLE_PO_STATUSES: frozenset[str] = frozenset(
 
 def _normalize_positive_qty(value: Decimal, *, field_name: str = "qty_received") -> Decimal:
     """Memastikan kuantitas bertipe Decimal > 0 dengan maksimum 4 angka di belakang koma (PRD 6.9)."""
-    if isinstance(value, float):
-        raise ValidationDomainError(
-            f"Field '{field_name}' harus bertipe Decimal, tidak boleh float.",
-            details={"field": field_name, "value": str(value)},
-        )
-    if not isinstance(value, Decimal):
-        try:
-            value = Decimal(str(value))
-        except Exception as exc:
-            raise ValidationDomainError(
-                f"Format angka desimal pada '{field_name}' tidak valid.",
-                details={"field": field_name, "value": str(value)},
-            ) from exc
-
-    if not value.is_finite():
-        raise ValidationDomainError(
-            f"Field '{field_name}' harus berupa angka yang valid.",
-            details={"field": field_name, "value": str(value)},
-        )
-    quantized = value.quantize(FOUR_PLACES)
-    if quantized != value:
-        raise ValidationDomainError(
-            f"Field '{field_name}' maksimal memiliki 4 angka di belakang koma.",
-            details={"field": field_name, "value": str(value)},
-        )
-    if quantized <= Decimal("0.0000"):
-        raise ValidationDomainError(
-            f"Field '{field_name}' harus lebih besar dari 0.",
-            details={"field": field_name, "value": str(quantized)},
-        )
-    if quantized > MAX_QTY:
-        raise ValidationDomainError(
-            f"Field '{field_name}' melebihi batas maksimum NUMERIC(18,4) ({MAX_QTY}).",
-            details={"field": field_name, "value": str(quantized), "max_qty": str(MAX_QTY)},
-        )
-    return quantized
+    return normalize_decimal_qty(value, field_name=field_name, allow_zero=False)
 
 
 def _validate_and_normalize_gr_lines(
@@ -177,10 +141,30 @@ def _validate_and_normalize_gr_lines(
     for po_line_id, total_current_gr in requested_per_po_line.items():
         po_line = po_lines_by_id[po_line_id]
         already_received = Decimal(po_line["qty_received"]).quantize(FOUR_PLACES)
+        already_closed = Decimal(po_line.get("qty_closed", Decimal("0.0000"))).quantize(
+            FOUR_PLACES
+        )
         qty_ordered = Decimal(po_line["qty_ordered"]).quantize(FOUR_PLACES)
-        remaining = (qty_ordered - already_received).quantize(FOUR_PLACES)
+        remaining = (qty_ordered - already_received - already_closed).quantize(
+            FOUR_PLACES
+        )
 
-        if total_current_gr + already_received > qty_ordered:
+        if str(po_line.get("line_status", "OPEN")) == "CLOSED" or remaining <= Decimal("0.0000"):
+            raise OverReceipt(
+                f"Baris PO untuk barang #{po_line['item_id']} sudah ditutup atau terpenuhi penuh (sisa {remaining:.4f}).",
+                details={
+                    "po_id": po_id,
+                    "po_line_id": po_line_id,
+                    "item_id": po_line["item_id"],
+                    "qty_ordered": f"{qty_ordered:.4f}",
+                    "qty_already_received": f"{already_received:.4f}",
+                    "qty_closed": f"{already_closed:.4f}",
+                    "qty_remaining": f"{remaining:.4f}",
+                    "qty_requested": f"{total_current_gr:.4f}",
+                },
+            )
+
+        if total_current_gr > remaining:
             raise OverReceipt(
                 f"Kuantitas penerimaan ({total_current_gr:.4f}) melebihi sisa pesanan PO ({remaining:.4f}).",
                 details={
@@ -189,6 +173,7 @@ def _validate_and_normalize_gr_lines(
                     "item_id": po_line["item_id"],
                     "qty_ordered": f"{qty_ordered:.4f}",
                     "qty_already_received": f"{already_received:.4f}",
+                    "qty_closed": f"{already_closed:.4f}",
                     "qty_remaining": f"{remaining:.4f}",
                     "qty_requested": f"{total_current_gr:.4f}",
                 },
@@ -552,8 +537,13 @@ def post_goods_receipt(
         warehouse_id = int(gr["warehouse_id"])
         po_id = int(gr["po_id"])
 
-        # 2. Periksa penugasan gudang (AC-12)
+        # 2. Periksa penugasan gudang (AC-12) & Segregation of Duties (Tahap 38)
         access_service.ensure_warehouse_access(conn, actor, warehouse_id)
+        is_sod_override = check_sod_actor(
+            actor,
+            [int(gr["created_by"])],
+            action_label="mem-posting Goods Receipt yang dibuatnya sendiri",
+        )
 
         # 3. Kunci baris header PO terkait (FOR UPDATE) & pastikan status ISSUED / PARTIALLY_RECEIVED
         po = po_repo.lock_po_by_id(conn, po_id)
@@ -665,6 +655,7 @@ def post_goods_receipt(
                 "po_id": po_id,
                 "po_status_after": new_po_status,
             },
+            details={"sod_override": True} if is_sod_override else None,
             ip_address=ip_address,
         )
         return posted_gr

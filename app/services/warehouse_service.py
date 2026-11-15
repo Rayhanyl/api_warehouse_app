@@ -1,6 +1,5 @@
 """Service logika bisnis untuk Gudang (warehouses) dan Lokasi Penyimpanan (storage_locations) (FR-02, PRD 3.2, 6.3, 6.8)."""
 
-import re
 from typing import Any
 
 from psycopg import Connection
@@ -13,11 +12,14 @@ from app.core.exceptions import (
     NotFoundError,
     ValidationDomainError,
 )
+from app.core.validation import (
+    clean_optional_str,
+    ensure_non_blank_str,
+    validate_code_format,
+)
 from app.repositories import warehouse_repo
 from app.services import access_service, audit_service
 from app.utils.pagination import build_order_by, normalize_pagination
-
-CODE_REGEX = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
 
 # Nilai parameter `purpose` untuk referensi gudang/lokasi tujuan Stock Transfer (PRD 3.2 poin 2).
 PURPOSE_TRANSFER_DESTINATION = "transfer_destination"
@@ -55,20 +57,6 @@ def _resolve_reference_scope(
     return None, True, True
 
 
-def _validate_code_format(value: str, *, field_name: str, label: str) -> str:
-    clean = value.strip()
-    if not clean:
-        raise ValidationDomainError(
-            f"{label} tidak boleh kosong.",
-            details={"field": field_name},
-        )
-    if not CODE_REGEX.match(clean):
-        raise ValidationDomainError(
-            f"Format {label.lower()} tidak valid; hanya boleh diawali huruf/angka dan berisi huruf, angka, titik (.), garis bawah (_), garis miring (/), atau tanda hubung (-) tanpa spasi.",
-            details={"field": field_name, "value": clean},
-        )
-    return clean
-
 WAREHOUSE_SORT_COLUMNS: dict[str, str] = {
     "id": "w.id",
     "code": "w.code",
@@ -94,6 +82,7 @@ def list_warehouses(
     actor: dict[str, Any],
     limit: int = 50,
     offset: int = 0,
+    warehouse_id: int | None = None,
     is_active: bool | None = None,
     search: str | None = None,
     sort_by: str | None = None,
@@ -103,6 +92,8 @@ def list_warehouses(
     scoped_ids, effective_is_active, _ = _resolve_reference_scope(
         conn, actor, purpose=purpose, is_active=is_active
     )
+    if warehouse_id is not None and purpose is None:
+        access_service.ensure_warehouse_read_access(conn, actor, warehouse_id)
     norm_limit, norm_offset = normalize_pagination(limit, offset)
     order_by_sql = build_order_by(
         sort_by=sort_by,
@@ -119,6 +110,7 @@ def list_warehouses(
         search=search,
         order_by_sql=order_by_sql,
         scoped_warehouse_ids=scoped_ids,
+        warehouse_id=warehouse_id,
     )
     return {
         "items": items,
@@ -157,13 +149,11 @@ def create_warehouse(
 ) -> dict[str, Any]:
     clean_code = code.strip()
     clean_name = name.strip()
-    if not clean_code or not clean_name:
-        raise ValidationDomainError(
-            "Kode dan nama gudang tidak boleh kosong.",
-            details={"code": clean_code, "name": clean_name},
-        )
-    clean_code = _validate_code_format(
-        clean_code, field_name="code", label="Kode gudang"
+    clean_code = validate_code_format(
+        code, field_name="code", label="Kode gudang", max_length=50
+    )
+    clean_name = ensure_non_blank_str(
+        name, field_name="name", label="Nama gudang", max_length=150
     )
 
     with conn.transaction():
@@ -177,7 +167,7 @@ def create_warehouse(
             conn,
             code=clean_code,
             name=clean_name,
-            address=address.strip() if address is not None else None,
+            address=clean_optional_str(address),
             allow_negative_stock=allow_negative_stock,
             is_active=is_active,
             created_by=int(actor["id"]),
@@ -224,8 +214,8 @@ def update_warehouse(
 
         new_code = existing["code"]
         if code is not None:
-            new_code = _validate_code_format(
-                code, field_name="code", label="Kode gudang"
+            new_code = validate_code_format(
+                code, field_name="code", label="Kode gudang", max_length=50
             )
             if new_code.lower() != str(existing["code"]).lower():
                 dup = warehouse_repo.get_warehouse_by_code(conn, new_code)
@@ -237,15 +227,12 @@ def update_warehouse(
 
         new_name = existing["name"]
         if name is not None:
-            new_name = name.strip()
-            if not new_name:
-                raise ValidationDomainError(
-                    "Nama gudang tidak boleh kosong.",
-                    details={"field": "name"},
-                )
+            new_name = ensure_non_blank_str(
+                name, field_name="name", label="Nama gudang", max_length=150
+            )
 
         new_address = (
-            address.strip() if address is not None else existing["address"]
+            clean_optional_str(address) if address is not None else existing["address"]
         )
         new_allow_neg = (
             bool(allow_negative_stock)
@@ -432,13 +419,11 @@ def create_location(
 ) -> dict[str, Any]:
     clean_code = code.strip()
     clean_name = name.strip()
-    if not clean_code or not clean_name:
-        raise ValidationDomainError(
-            "Kode dan nama lokasi penyimpanan tidak boleh kosong.",
-            details={"code": clean_code, "name": clean_name},
-        )
-    clean_code = _validate_code_format(
-        clean_code, field_name="code", label="Kode lokasi penyimpanan"
+    clean_code = validate_code_format(
+        code, field_name="code", label="Kode lokasi penyimpanan", max_length=50
+    )
+    clean_name = ensure_non_blank_str(
+        name, field_name="name", label="Nama lokasi penyimpanan", max_length=150
     )
 
     with conn.transaction():
@@ -446,7 +431,7 @@ def create_location(
         if not warehouse:
             raise NotFoundError(
                 "Gudang tidak ditemukan.",
-                details={"warehouse_id": warehouse_id},
+                details={"field": "warehouse_id", "warehouse_id": warehouse_id},
             )
 
         # PRD Matriks 3.1 & 3.2: location:manage bertanda (g) -> wajib ditugaskan ke gudang terkait
@@ -455,7 +440,7 @@ def create_location(
         if not warehouse["is_active"]:
             raise InactiveReferenceError(
                 "Gudang tujuan lokasi penyimpanan berstatus tidak aktif.",
-                details={"warehouse_id": warehouse_id},
+                details={"field": "warehouse_id", "warehouse_id": warehouse_id},
             )
 
         existing = warehouse_repo.get_location_by_warehouse_and_code(
@@ -464,7 +449,7 @@ def create_location(
         if existing:
             raise DuplicateError(
                 f"Lokasi dengan kode '{clean_code}' sudah terdaftar pada gudang ini.",
-                details={"warehouse_id": warehouse_id, "code": clean_code},
+                details={"field": "code", "warehouse_id": warehouse_id, "code": clean_code},
             )
 
         created = warehouse_repo.insert_location(
@@ -518,8 +503,8 @@ def update_location(
 
         new_code = existing["code"]
         if code is not None:
-            new_code = _validate_code_format(
-                code, field_name="code", label="Kode lokasi penyimpanan"
+            new_code = validate_code_format(
+                code, field_name="code", label="Kode lokasi penyimpanan", max_length=50
             )
             if new_code.lower() != str(existing["code"]).lower():
                 dup = warehouse_repo.get_location_by_warehouse_and_code(
@@ -528,7 +513,7 @@ def update_location(
                 if dup and int(dup["id"]) != location_id:
                     raise DuplicateError(
                         f"Lokasi dengan kode '{new_code}' sudah terdaftar pada gudang ini.",
-                        details={"warehouse_id": warehouse_id, "code": new_code},
+                        details={"field": "code", "warehouse_id": warehouse_id, "code": new_code},
                     )
 
         new_name = existing["name"]

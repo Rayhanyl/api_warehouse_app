@@ -105,3 +105,9 @@ class EntityInUse(DomainError):
     code = "ENTITY_IN_USE"
     http_status = 409
 
+
+class SchemaMigrationRequiredError(DomainError):
+    code = "SCHEMA_MIGRATION_REQUIRED"
+    http_status = 503
+
+

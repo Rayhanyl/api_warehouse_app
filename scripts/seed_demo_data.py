@@ -1,22 +1,25 @@
-"""Menyiapkan data presentasi/demo lengkap untuk Fase 1 (M0-M8) WMS API.
+"""Membuat dan menyiapkan data presentasi/demo lengkap untuk WMS API (Tahap 1–38).
 
 Seluruh mutasi stok dijalankan melalui service resmi:
 (po_service, gr_service, transfer_service, opname_service -> inventory_service.apply_movement)
 sehingga buku besar stock_movements, inventory_balances, document_sequences,
-dan audit_logs 100% konsisten sesuai aturan bisnis PRD & AGENTS.md.
+approval_logs, dan audit_logs 100% konsisten sesuai aturan bisnis PRD & AGENTS.md.
 
 Fitur Script:
 - Idempotent: Aman dijalankan berulang kali tanpa membuat data duplikat kotor.
 - Dukungan flag --reset / --clean: Membersihkan data operasional dan me-reseed dari awal.
-- Master data lengkap & realistis (Users, Warehouses, Storage Locations, Categories, UoMs, Suppliers, Items).
-- Dokumen mencakup 100% siklus hidup status PRD:
-  * PO: DRAFT, ISSUED, PARTIALLY_RECEIVED, RECEIVED, CLOSED, CANCELLED
-  * GR: DRAFT, POSTED, CANCELLED
-  * Transfer: DRAFT, APPROVED, SHIPPED, RECEIVED (dengan variance reason), CANCELLED
-  * Opname: DRAFT, IN_PROGRESS (lokasi beku), WAITING_APPROVAL (lokasi beku), COMPLETED, CANCELLED
+- Master data lengkap & realistis (Users across 7 RBAC Roles, Warehouses, Storage Locations,
+  Categories, UoMs 8 satuan termasuk desimal, Suppliers dg info rekening/NPWP/fax/termin,
+  Items dg EAN-13 barcode & min_stock stok kritis).
+- Dokumen mencakup 100% siklus hidup status Tahap 34–38:
+  * PO: DRAFT, WAITING_L1_APPROVAL, WAITING_L2_APPROVAL, ISSUED, PARTIALLY_RECEIVED
+        (+ line-level short-close), RECEIVED, CLOSED, CANCELLED, PO Revisi & PO Rejected
+  * GR: DRAFT, POSTED, CANCELLED (patuh Segregation of Duties staff create -> supervisor/manager post)
+  * Transfer: DRAFT, APPROVED, SHIPPED (In-Transit), RECEIVED (dg variance & penuh), CANCELLED
+  * Opname: DRAFT, IN_PROGRESS (termasuk pasca-rejection), WAITING_L1_APPROVAL,
+            WAITING_L2_APPROVAL, COMPLETED (2-level L1/L2 approval), CANCELLED
 - Seluruh 5 tipe pergerakan stok terbentuk di stock_movements ledger.
-- Stok in-transit aktif dan terlihat di ringkasan agregat persediaan.
-- Mencetak ringkasan kredensial akun demo dan panduan skenario aksi live presentasi.
+- Mencetak ringkasan kredensial seluruh 7 role RBAC dan panduan skenario live demo.
 
 Cara menjalankan:
     python scripts/seed_demo_data.py
@@ -45,10 +48,12 @@ from psycopg.rows import dict_row
 from app.core.config import settings
 from app.core.permissions import (
     ROLE_AUDITOR,
+    ROLE_PROCUREMENT_MANAGER,
     ROLE_PURCHASING_STAFF,
     ROLE_SUPER_ADMIN,
     ROLE_WAREHOUSE_MANAGER,
     ROLE_WAREHOUSE_STAFF,
+    ROLE_WAREHOUSE_SUPERVISOR,
 )
 from app.repositories import (
     gr_repo,
@@ -66,6 +71,7 @@ from app.services import (
     master_service,
     opname_service,
     po_service,
+    settings_service,
     stock_service,
     transfer_service,
     user_service,
@@ -74,7 +80,7 @@ from app.services import (
 from db.migrate import run_migrations
 
 # -----------------------------------------------------------------------------
-# 1. Definisi Data Master Pengguna (Users) & Peran RBAC
+# 1. Definisi Data Master Pengguna (Users) & 7 Peran RBAC
 # -----------------------------------------------------------------------------
 DEMO_USERS_SPEC: tuple[dict[str, Any], ...] = (
     {
@@ -84,7 +90,16 @@ DEMO_USERS_SPEC: tuple[dict[str, Any], ...] = (
         "full_name": "Budi Santoso (Super Admin)",
         "warehouses": ["WH-JKT-01", "WH-SBY-01", "WH-BDG-01"],
         "is_active": True,
-        "desc": "Akses penuh global lintas seluruh gudang & modul sistem",
+        "desc": "Akses penuh global lintas seluruh gudang & konfigurasi sistem",
+    },
+    {
+        "role": ROLE_PROCUREMENT_MANAGER,
+        "username": "procurement.manager",
+        "email": "procurement.manager@wms.local",
+        "full_name": "Ratih Wulandari (Procurement Manager)",
+        "warehouses": ["WH-JKT-01", "WH-SBY-01", "WH-BDG-01"],
+        "is_active": True,
+        "desc": "Approval PO Level 2 (di atas threshold), tutup PO/baris & manajemen vendor",
     },
     {
         "role": ROLE_WAREHOUSE_MANAGER,
@@ -93,7 +108,7 @@ DEMO_USERS_SPEC: tuple[dict[str, Any], ...] = (
         "full_name": "Andi Pratama (Manager Regional Barat)",
         "warehouses": ["WH-JKT-01", "WH-BDG-01"],
         "is_active": True,
-        "desc": "Persetujuan transfer & opname gudang Jakarta & Bandung",
+        "desc": "Approval PO L1, Opname L2, transfer & kontrol gudang Jakarta & Bandung",
     },
     {
         "role": ROLE_WAREHOUSE_MANAGER,
@@ -102,7 +117,25 @@ DEMO_USERS_SPEC: tuple[dict[str, Any], ...] = (
         "full_name": "Eko Prasetyo (Manager Regional Timur)",
         "warehouses": ["WH-SBY-01"],
         "is_active": True,
-        "desc": "Persetujuan transfer & opname gudang distribusi Surabaya",
+        "desc": "Approval PO L1, Opname L2, transfer & kontrol gudang distribusi Surabaya",
+    },
+    {
+        "role": ROLE_WAREHOUSE_SUPERVISOR,
+        "username": "warehouse.supervisor",
+        "email": "warehouse.supervisor@wms.local",
+        "full_name": "Bagus Nugroho (Supervisor Regional Barat)",
+        "warehouses": ["WH-JKT-01", "WH-BDG-01"],
+        "is_active": True,
+        "desc": "Approval Opname L1, posting GR & approval transfer Jakarta/Bandung",
+    },
+    {
+        "role": ROLE_WAREHOUSE_SUPERVISOR,
+        "username": "supervisor.surabaya",
+        "email": "supervisor.surabaya@wms.local",
+        "full_name": "Nadia Kusuma (Supervisor Gudang Surabaya)",
+        "warehouses": ["WH-SBY-01"],
+        "is_active": True,
+        "desc": "Approval Opname L1, posting GR & approval transfer gudang Surabaya",
     },
     {
         "role": ROLE_PURCHASING_STAFF,
@@ -111,7 +144,7 @@ DEMO_USERS_SPEC: tuple[dict[str, Any], ...] = (
         "full_name": "Siti Rahma (Buyer Elektronik & Jaringan)",
         "warehouses": ["WH-JKT-01", "WH-SBY-01"],
         "is_active": True,
-        "desc": "Pengadaan master barang teknologi, issue & close PO",
+        "desc": "Buat, edit, submit & revisi PO barang teknologi dan jaringan",
     },
     {
         "role": ROLE_PURCHASING_STAFF,
@@ -120,7 +153,7 @@ DEMO_USERS_SPEC: tuple[dict[str, Any], ...] = (
         "full_name": "Ahmad Fauzi (Buyer Material & APD)",
         "warehouses": ["WH-JKT-01", "WH-SBY-01", "WH-BDG-01"],
         "is_active": True,
-        "desc": "Pengadaan kemasan, material logistik & perlengkapan K3",
+        "desc": "Buat, edit, submit & revisi PO kemasan, logistik & perlengkapan K3",
     },
     {
         "role": ROLE_WAREHOUSE_STAFF,
@@ -129,7 +162,7 @@ DEMO_USERS_SPEC: tuple[dict[str, Any], ...] = (
         "full_name": "Rizky Saputra (Lead Inbound Jakarta)",
         "warehouses": ["WH-JKT-01"],
         "is_active": True,
-        "desc": "Penerimaan GR, pergerakan stok & opname Gudang Jakarta",
+        "desc": "Input draft GR, buat transfer & input hitung fisik opname Gudang Jakarta",
     },
     {
         "role": ROLE_WAREHOUSE_STAFF,
@@ -147,7 +180,7 @@ DEMO_USERS_SPEC: tuple[dict[str, Any], ...] = (
         "full_name": "Dewi Lestari (Staf Gudang Surabaya)",
         "warehouses": ["WH-SBY-01"],
         "is_active": True,
-        "desc": "Penerimaan transfer & operasional gudang Surabaya",
+        "desc": "Input draft GR, penerimaan transfer & hitung opname gudang Surabaya",
     },
     {
         "role": ROLE_WAREHOUSE_STAFF,
@@ -156,7 +189,7 @@ DEMO_USERS_SPEC: tuple[dict[str, Any], ...] = (
         "full_name": "Dian Permana (Operator Transit Bandung)",
         "warehouses": ["WH-BDG-01"],
         "is_active": True,
-        "desc": "Penerimaan & rekonsiliasi stok hub transit Bandung",
+        "desc": "Penerimaan transfer & hitung fisik opname hub transit Bandung",
     },
     {
         "role": ROLE_AUDITOR,
@@ -165,7 +198,7 @@ DEMO_USERS_SPEC: tuple[dict[str, Any], ...] = (
         "full_name": "Hendra Wijaya (Internal Compliance Auditor)",
         "warehouses": ["WH-JKT-01", "WH-SBY-01", "WH-BDG-01"],
         "is_active": True,
-        "desc": "Pemeriksaan audit trail, mutasi ledger & stok global",
+        "desc": "Pemeriksaan audit trail, approval logs, mutasi ledger & stok global",
     },
     {
         "role": ROLE_AUDITOR,
@@ -174,7 +207,7 @@ DEMO_USERS_SPEC: tuple[dict[str, Any], ...] = (
         "full_name": "Ratna Juwita (External Stock Auditor)",
         "warehouses": ["WH-JKT-01", "WH-SBY-01", "WH-BDG-01"],
         "is_active": True,
-        "desc": "Pemeriksaan rekonsiliasi fisik & riwayat dokumen PO/GR/TRF",
+        "desc": "Pemeriksaan rekonsiliasi fisik & riwayat dokumen PO/GR/TRF/OPN",
     },
     {
         "role": ROLE_WAREHOUSE_STAFF,
@@ -280,161 +313,299 @@ UOMS_SPEC: tuple[tuple[str, str, bool], ...] = (
     ("LTR", "Liter (UoM Desimal)", True),
 )
 
-SUPPLIERS_SPEC: tuple[dict[str, str], ...] = (
+SUPPLIERS_SPEC: tuple[dict[str, Any], ...] = (
     {
         "code": "SUP-001",
         "name": "PT Nusantara Elektronik Mandiri",
         "contact_person": "Irwan Setiawan",
         "phone": "021-8901234",
+        "fax": "021-8901235",
         "email": "sales@nusantara-elektronik.co.id",
         "address": "Kawasan Industri Jababeka Tahap II Blok EE-4, Cikarang, Jawa Barat",
+        "bank_name": "Bank Mandiri",
+        "bank_account_number": "123-00-0987654-3",
+        "bank_account_holder": "PT Nusantara Elektronik Mandiri",
+        "npwp": "01.234.567.8-413.000",
+        "payment_terms": "NET 30",
+        "notes": "Pemasok utama komponen mikrokontroler, IoT & sensor industri",
     },
     {
         "code": "SUP-002",
         "name": "CV Mitra Kabel & Jaringan Presisi",
         "contact_person": "Lina Kusuma",
         "phone": "021-5544321",
+        "fax": "021-5544329",
         "email": "order@mitrakabel.co.id",
         "address": "Jl. Daan Mogot KM 14 No. 88, Cengkareng, Jakarta Barat",
+        "bank_name": "Bank BCA",
+        "bank_account_number": "4560987654",
+        "bank_account_holder": "CV Mitra Kabel & Jaringan Presisi",
+        "npwp": "02.345.678.9-034.000",
+        "payment_terms": "NET 14",
+        "notes": "Distributor kabel UTP, patch cord & aksesoris rackmount",
     },
     {
         "code": "SUP-003",
         "name": "PT Global Kemasan & Solusi Gudang",
         "contact_person": "Dedi Kurniawan",
         "phone": "031-8439900",
+        "fax": "031-8439905",
         "email": "cs@globalkemasan.co.id",
         "address": "Jl. Berbek Industri III No. 15, Kawasan SIER, Sidoarjo, Jawa Timur",
+        "bank_name": "Bank BNI",
+        "bank_account_number": "0098712345",
+        "bank_account_holder": "PT Global Kemasan & Solusi Gudang",
+        "npwp": "03.456.789.0-643.000",
+        "payment_terms": "NET 30",
+        "notes": "Vendor karton box double-wall, pallet wrap & desiccant Jawa Timur",
     },
     {
         "code": "SUP-004",
         "name": "PT Delta Daya Elektrika",
         "contact_person": "Bambang Wijaya",
         "phone": "021-5912345",
+        "fax": "021-5912348",
         "email": "marketing@deltadaya.co.id",
         "address": "Kawasan Industri Manis Blok F No. 10, Tangerang, Banten",
+        "bank_name": "Bank BRI",
+        "bank_account_number": "0345-01-001122-30-9",
+        "bank_account_holder": "PT Delta Daya Elektrika",
+        "npwp": "04.567.890.1-451.000",
+        "payment_terms": "NET 45",
+        "notes": "Spesialis DIN-Rail PSU, industrial mini UPS & relay kontrol",
     },
     {
         "code": "SUP-005",
         "name": "CV Sarana Instrumen & Logistik",
         "contact_person": "Maya Anggraeni",
         "phone": "031-7485500",
+        "fax": "031-7485509",
         "email": "sales@saranainstrumen.co.id",
         "address": "Jl. Margomulyo Indah Blok B-8, Tandes, Surabaya, Jawa Timur",
+        "bank_name": "Bank BCA",
+        "bank_account_number": "0887651122",
+        "bank_account_holder": "CV Sarana Instrumen & Logistik",
+        "npwp": "05.678.901.2-614.000",
+        "payment_terms": "CBD",
+        "notes": "Peralatan barcode scanner industri, label thermal & perkakas QC",
     },
     {
         "code": "SUP-006",
         "name": "PT Garda Prima Proteksi K3",
         "contact_person": "Rudi Hermawan",
         "phone": "021-8241122",
+        "fax": "021-8241125",
         "email": "contact@gardaprima.co.id",
         "address": "Jl. Raya Narogong KM 7 No. 45, Rawalumbu, Bekasi, Jawa Barat",
+        "bank_name": "Bank Mandiri",
+        "bank_account_number": "167-00-0445566-1",
+        "bank_account_holder": "PT Garda Prima Proteksi K3",
+        "npwp": "06.789.012.3-432.000",
+        "payment_terms": "NET 30",
+        "notes": "Perlengkapan APD standar ANSI & bahan pembersih elektronik",
+    },
+    {
+        "code": "SUP-007",
+        "name": "PT Sinar Fiber Nusantara",
+        "contact_person": "Teguh Santosa",
+        "phone": "022-7309988",
+        "fax": "022-7309989",
+        "email": "procurement@sinarfiber.co.id",
+        "address": "Jl. Soekarno-Hatta No. 590, Buahbatu, Bandung, Jawa Barat",
+        "bank_name": "Bank CIMB Niaga",
+        "bank_account_number": "800123456700",
+        "bank_account_holder": "PT Sinar Fiber Nusantara",
+        "npwp": "07.890.123.4-424.000",
+        "payment_terms": "NET 30",
+        "notes": "Pemasok kabel fiber optik, drop core & switch jaringan regional",
+    },
+    {
+        "code": "SUP-008",
+        "name": "CV Optima Label & Consumables",
+        "contact_person": "Sari Wahyuni",
+        "phone": "021-6530112",
+        "fax": "021-6530119",
+        "email": "admin@optimalabel.id",
+        "address": "Komplek Ruko Sunter Agung Podomoro Blok D-19, Jakarta Utara",
+        "bank_name": "Bank BCA",
+        "bank_account_number": "6470112233",
+        "bank_account_holder": "CV Optima Label & Consumables",
+        "npwp": "08.901.234.5-048.000",
+        "payment_terms": "NET 14",
+        "notes": "Produsen stiker thermal 70x40mm, 50x30mm & ribbon barcode",
     },
 )
 
-ITEMS_SPEC: tuple[dict[str, str], ...] = (
+ITEMS_SPEC: tuple[dict[str, Any], ...] = (
     {
         "sku": "ELC-MCU-001",
+        "barcode": "8991001001011",
         "name": "Microcontroller ESP32-S3 Industrial Dual-Core",
         "category": "Komponen Elektronik & Semikonduktor",
         "uom": "PCS",
+        "min_stock": Decimal("40.0000"),
         "description": "Modul kontroler IoT industri dengan Wi-Fi/BLE dan konektor antena eksternal IPEX",
     },
     {
         "sku": "ELC-PSU-002",
+        "barcode": "8991001001028",
         "name": "Industrial Power Supply DIN-Rail 24V 10A 240W",
         "category": "Catu Daya & Kelistrikan Industri",
         "uom": "PCS",
+        "min_stock": Decimal("65.0000"),
         "description": "Catu daya switching DIN-Rail efisiensi tinggi 93% dengan proteksi overload & short circuit",
     },
     {
         "sku": "ELC-SNS-003",
+        "barcode": "8991001001035",
         "name": "Sensor Suhu & Kelembaban RS485 Modbus RTU",
         "category": "Komponen Elektronik & Semikonduktor",
         "uom": "PCS",
+        "min_stock": Decimal("25.0000"),
         "description": "Sensor presisi pemantauan lingkungan gudang dan ruang server berprotokol Modbus RTU",
     },
     {
         "sku": "ELC-RLY-004",
+        "barcode": "8991001001042",
         "name": "Modul Relay Industri 8-Channel Optocoupler 24V",
         "category": "Komponen Elektronik & Semikonduktor",
         "uom": "PCS",
+        "min_stock": Decimal("15.0000"),
         "description": "Modul driver relay isolasi optocoupler untuk kontrol aktuator beban industri",
     },
     {
+        "sku": "ELC-UPS-005",
+        "barcode": "8991001001059",
+        "name": "Industrial DC Mini UPS 24V DIN-Rail Backup",
+        "category": "Catu Daya & Kelistrikan Industri",
+        "uom": "PCS",
+        "min_stock": Decimal("10.0000"),
+        "description": "Modul catu daya cadangan DIN-Rail 24V DC untuk menjaga uptime gateway gudang",
+    },
+    {
         "sku": "NET-RTR-001",
+        "barcode": "8991002002014",
         "name": "Industrial Gigabit Router 8-Port PoE+ Managed",
         "category": "Perangkat Jaringan & Server",
         "uom": "PCS",
+        "min_stock": Decimal("25.0000"),
         "description": "Router gigabit kelas industri dengan proteksi surge 6kV dan daya PoE+ 30W per port",
     },
     {
         "sku": "NET-SWT-002",
+        "barcode": "8991002002021",
         "name": "Industrial Ethernet Switch 16-Port DIN-Rail",
         "category": "Perangkat Jaringan & Server",
         "uom": "PCS",
+        "min_stock": Decimal("8.0000"),
         "description": "Switch unmanaged 16-port 10/100/1000 Mbps tahan suhu ekstrem -40C hingga +75C",
     },
     {
         "sku": "NET-PTC-003",
+        "barcode": "8991002002038",
         "name": "Cat6 Patch Cable Molded Snagless 2 Meter",
         "category": "Kabel, Fiber Optik & Aksesoris Instalasi",
         "uom": "PACK",
+        "min_stock": Decimal("20.0000"),
         "description": "Kabel patch RJ45 Cat6 tembaga murni isi 5 pcs per pack untuk interkoneksi rak server",
     },
     {
         "sku": "CBL-UTP-001",
+        "barcode": "8991003003017",
         "name": "Kabel UTP Cat6 Shielded Outdoor Anti-UV",
         "category": "Kabel, Fiber Optik & Aksesoris Instalasi",
         "uom": "MTR",
+        "min_stock": Decimal("100.0000"),
         "description": "Kabel jaringan STP outdoor berlapis double jacket anti cuaca (UoM desimal meter)",
     },
     {
         "sku": "CBL-FBR-002",
+        "barcode": None,
         "name": "Drop Core Fiber Optic 2-Core Single Mode G657A",
         "category": "Kabel, Fiber Optik & Aksesoris Instalasi",
         "uom": "MTR",
+        "min_stock": Decimal("150.0000"),
         "description": "Kabel fiber optik outdoor berpelindung kawat baja messenger wire (UoM desimal meter)",
     },
     {
         "sku": "PKG-BOX-001",
+        "barcode": "8991004004010",
         "name": "Karton Box Heavy Duty Double-Wall 60x40x40 cm",
         "category": "Material Kemasan & Perlengkapan Logistik",
         "uom": "BOX",
+        "min_stock": Decimal("30.0000"),
         "description": "Karton gelombang K150/M125x3/K150 daya tumpuk hingga 40 kg untuk distribusi antar-gudang",
     },
     {
         "sku": "PKG-BOX-002",
+        "barcode": "8991004004027",
         "name": "Karton Box Medium Single-Wall 30x20x20 cm",
         "category": "Material Kemasan & Perlengkapan Logistik",
         "uom": "BOX",
+        "min_stock": Decimal("50.0000"),
         "description": "Karton kemasan pengiriman unit retail komponen elektronik",
     },
     {
         "sku": "PKG-WRP-003",
+        "barcode": "8991004004034",
         "name": "Stretch Film / Pallet Wrap Clear 50cm x 300m",
         "category": "Material Kemasan & Perlengkapan Logistik",
         "uom": "ROLL",
+        "min_stock": Decimal("15.0000"),
         "description": "Plastik pembungkus pallet tebal 17 mikron elastisitas tinggi untuk kestabilan muatan",
     },
     {
+        "sku": "PKG-SLG-004",
+        "barcode": None,
+        "name": "Silica Gel Desiccant Food/Electronics Grade Bulk",
+        "category": "Material Kemasan & Perlengkapan Logistik",
+        "uom": "KG",
+        "min_stock": Decimal("12.0000"),
+        "description": "Penyerap kelembaban kemasan ekspor komponen elektronik (UoM desimal kilogram)",
+    },
+    {
         "sku": "WHS-SCN-001",
+        "barcode": "8991005005013",
         "name": "Wireless Barcode Scanner 2D Rugged IP65",
         "category": "Perkakas, Instrumen & Pemindai Gudang",
         "uom": "SET",
+        "min_stock": Decimal("8.0000"),
         "description": "Pemindai barcode QR dan 1D nirkabel industri dengan dock pengisian daya dan baterai 2600mAh",
     },
     {
+        "sku": "WHS-LBL-002",
+        "barcode": "8991005005020",
+        "name": "Thermal Barcode Label Sticker Direct 70x40mm (1000 pcs)",
+        "category": "Perkakas, Instrumen & Pemindai Gudang",
+        "uom": "ROLL",
+        "min_stock": Decimal("20.0000"),
+        "description": "Gulungan stiker label thermal ukuran 70x40mm anti-luntur untuk label rak & SKU",
+    },
+    {
+        "sku": "WHS-CHM-003",
+        "barcode": None,
+        "name": "Isopropyl Alcohol 99.9% Contact Cleaner Elektronik",
+        "category": "Perkakas, Instrumen & Pemindai Gudang",
+        "uom": "LTR",
+        "min_stock": Decimal("10.0000"),
+        "description": "Cairan pembersih PCB, kepala cetak thermal & konektor optik (UoM desimal liter)",
+    },
+    {
         "sku": "SAF-GLV-001",
+        "barcode": "8991006006016",
         "name": "Sarung Tangan Safety PU Coated Cut-Resistant Level 5",
         "category": "Alat Pelindung Diri & K3 Gudang",
         "uom": "PACK",
+        "min_stock": Decimal("15.0000"),
         "description": "Sarung tangan anti-sayat serat HPPE berlapis poliuretan tahan abrasi (isi 3 pasang per pack)",
     },
     {
         "sku": "SAF-HLM-002",
+        "barcode": "8991006006023",
         "name": "Helm Safety Proyek Fastrac ANSI Z89.1 Putih",
         "category": "Alat Pelindung Diri & K3 Gudang",
         "uom": "PCS",
+        "min_stock": Decimal("10.0000"),
         "description": "Helm keselamatan kerja standar ANSI dengan tali dagu 4-titik dan suspensi putar",
     },
 )
@@ -505,6 +676,13 @@ def _ensure_supplier(
     phone: str,
     email: str,
     address: str,
+    fax: str | None = None,
+    bank_name: str | None = None,
+    bank_account_number: str | None = None,
+    bank_account_holder: str | None = None,
+    npwp: str | None = None,
+    payment_terms: str | None = None,
+    notes: str | None = None,
 ) -> dict[str, Any]:
     existing = master_repo.get_supplier_by_code(conn, code)
     if existing:
@@ -516,8 +694,15 @@ def _ensure_supplier(
         name=name,
         contact_person=contact_person,
         phone=phone,
+        fax=fax,
         email=email,
         address=address,
+        bank_name=bank_name,
+        bank_account_number=bank_account_number,
+        bank_account_holder=bank_account_holder,
+        npwp=npwp,
+        payment_terms=payment_terms,
+        notes=notes,
         is_active=True,
         ip_address="127.0.0.1",
     )
@@ -528,10 +713,12 @@ def _ensure_item(
     *,
     actor: dict[str, Any],
     sku: str,
+    barcode: str | None,
     name: str,
     description: str,
     category_id: int,
     uom_id: int,
+    min_stock: Decimal = Decimal("0"),
 ) -> dict[str, Any]:
     existing = master_repo.get_item_by_sku(conn, sku)
     if existing:
@@ -540,10 +727,12 @@ def _ensure_item(
         conn,
         actor=actor,
         sku=sku,
+        barcode=barcode,
         name=name,
         description=description,
         category_id=category_id,
         uom_id=uom_id,
+        min_stock=min_stock,
         is_active=True,
         ip_address="127.0.0.1",
     )
@@ -608,6 +797,7 @@ def reset_operational_data(db_url: str | None = None) -> None:
         conn.execute(
             """
             TRUNCATE TABLE
+                approval_logs,
                 audit_logs,
                 document_sequences,
                 stock_opname_lines,
@@ -799,15 +989,26 @@ def seed_demo_data(
         assert superadmin_actor is not None
         users_by_username["superadmin"] = superadmin_actor
 
-        # Shortcut aktor representatif untuk transaksi
+        # Shortcut aktor representatif untuk transaksi lintas 7 RBAC role
+        proc_mgr_actor = users_by_username["procurement.manager"]
         mgr_jkt_actor = users_by_username["warehouse.manager"]
         mgr_sby_actor = users_by_username["manager.surabaya"]
+        sup_jkt_actor = users_by_username["warehouse.supervisor"]
+        sup_sby_actor = users_by_username["supervisor.surabaya"]
         pur_elc_actor = users_by_username["purchasing.staff"]
         pur_sup_actor = users_by_username["purchasing.supplies"]
         stf_jkt_actor = users_by_username["warehouse.staff"]
         stf_out_actor = users_by_username["staff.outbound"]
         stf_sby_actor = users_by_username["staff.surabaya"]
         stf_bdg_actor = users_by_username["staff.bandung"]
+
+        # Pastikan threshold L2 Approval PO eksplisit di Rp 10.000.000
+        settings_service.update_approval_settings(
+            conn,
+            po_l2_approval_threshold=Decimal("10000000.00"),
+            actor=superadmin_actor,
+            ip_address="127.0.0.1",
+        )
 
         # ---------------------------------------------------------------------
         # 4. Master Data: Kategori, UoM, Pemasok, dan Barang
@@ -841,6 +1042,13 @@ def seed_demo_data(
                 phone=sup_spec["phone"],
                 email=sup_spec["email"],
                 address=sup_spec["address"],
+                fax=sup_spec.get("fax"),
+                bank_name=sup_spec.get("bank_name"),
+                bank_account_number=sup_spec.get("bank_account_number"),
+                bank_account_holder=sup_spec.get("bank_account_holder"),
+                npwp=sup_spec.get("npwp"),
+                payment_terms=sup_spec.get("payment_terms"),
+                notes=sup_spec.get("notes"),
             )
             suppliers[sup_spec["code"]] = s
 
@@ -850,10 +1058,12 @@ def seed_demo_data(
                 conn,
                 actor=superadmin_actor,
                 sku=item_spec["sku"],
+                barcode=item_spec.get("barcode"),
                 name=item_spec["name"],
                 description=item_spec["description"],
                 category_id=int(categories[item_spec["category"]]["id"]),
                 uom_id=int(uoms[item_spec["uom"]]["id"]),
+                min_stock=item_spec.get("min_stock", Decimal("0")),
             )
             items[item_spec["sku"]] = it
 
@@ -898,12 +1108,44 @@ def seed_demo_data(
 
         today = date.today()
 
+        # Helper lokal untuk submit & approval PO 1-level / 2-level sesuai threshold
+        def _submit_and_approve_po(
+            po_obj: dict[str, Any],
+            *,
+            submit_actor: dict[str, Any],
+            l1_actor: dict[str, Any],
+            l2_actor: dict[str, Any],
+        ) -> dict[str, Any]:
+            submitted = po_service.submit_purchase_order(
+                conn,
+                actor=submit_actor,
+                po_id=int(po_obj["id"]),
+                notes="Pengajuan persetujuan pengadaan resmi",
+                ip_address="127.0.0.1",
+            )
+            approved = po_service.approve_purchase_order(
+                conn,
+                actor=l1_actor,
+                po_id=int(submitted["id"]),
+                notes="Disetujui Level 1 (verifikasi kebutuhan & kesesuaian gudang)",
+                ip_address="127.0.0.1",
+            )
+            if str(approved["status"]) == "WAITING_L2_APPROVAL":
+                approved = po_service.approve_purchase_order(
+                    conn,
+                    actor=l2_actor,
+                    po_id=int(approved["id"]),
+                    notes="Disetujui Level 2 (verifikasi anggaran & otorisasi pengadaan)",
+                    ip_address="127.0.0.1",
+                )
+            return approved
+
         # ---------------------------------------------------------------------
-        # 5. Skenario Transaksi PO & GR (Semua Status: RECEIVED, PARTIALLY_RECEIVED,
-        #    ISSUED, DRAFT, CLOSED, CANCELLED)
+        # 5. Skenario Transaksi PO & GR (Tahap 34–38: 8 Status PO, L1/L2 Approval,
+        #    Rejection, Revisi PO, Line-Level Short-Close, Overdue ETA, & SoD GR)
         # ---------------------------------------------------------------------
 
-        # [DEMO-PO-01] -> Status: RECEIVED (Penerimaan Penuh)
+        # [DEMO-PO-01] -> Status: RECEIVED (Penerimaan Penuh + Approval L1 & L2 > Rp 10jt)
         if not _get_po_by_notes_tag("[DEMO-PO-01]"):
             po1 = po_service.create_purchase_order(
                 conn,
@@ -911,37 +1153,41 @@ def seed_demo_data(
                 supplier_id=int(suppliers["SUP-001"]["id"]),
                 warehouse_id=int(wh_jkt["id"]),
                 order_date=today - timedelta(days=7),
+                expected_delivery_date=today - timedelta(days=2),
                 notes="[DEMO-PO-01] Pengadaan stok awal kuartal komponen ESP32, PSU 24V & router Gudang Jakarta",
                 lines=[
                     {
                         "item_id": int(items["ELC-MCU-001"]["id"]),
                         "qty_ordered": Decimal("200.0000"),
+                        "unit_price": Decimal("125000.00"),
                         "notes": "ESP32-S3 batch produksi Q4",
                     },
                     {
                         "item_id": int(items["ELC-PSU-002"]["id"]),
                         "qty_ordered": Decimal("80.0000"),
+                        "unit_price": Decimal("380000.00"),
                         "notes": "PSU DIN-Rail 24V 10A",
                     },
                     {
                         "item_id": int(items["NET-RTR-001"]["id"]),
                         "qty_ordered": Decimal("30.0000"),
+                        "unit_price": Decimal("2150000.00"),
                         "notes": "Router Gigabit PoE+ 8-Port",
                     },
                 ],
                 ip_address="127.0.0.1",
             )
-            po1 = po_service.issue_purchase_order(
-                conn,
-                actor=pur_elc_actor,
-                po_id=int(po1["id"]),
-                ip_address="127.0.0.1",
+            po1 = _submit_and_approve_po(
+                po1,
+                submit_actor=pur_elc_actor,
+                l1_actor=mgr_jkt_actor,
+                l2_actor=proc_mgr_actor,
             )
             po1_ln_map = {
                 int(ln["item_id"]): int(ln["id"]) for ln in po1["lines"]
             }
 
-            # GR #1 (POSTED): Menerima penuh seluruh pesanan PO #1
+            # GR #1 (POSTED): Staf buat GR -> Supervisor posting (SoD patuh)
             gr1 = gr_service.create_goods_receipt(
                 conn,
                 actor=stf_jkt_actor,
@@ -972,12 +1218,12 @@ def seed_demo_data(
             )
             gr_service.post_goods_receipt(
                 conn,
-                actor=stf_jkt_actor,
+                actor=sup_jkt_actor,
                 gr_id=int(gr1["id"]),
                 ip_address="127.0.0.1",
             )
 
-        # [DEMO-PO-02] -> Status: PARTIALLY_RECEIVED (Parsial + 1 GR DRAFT Siap Posting)
+        # [DEMO-PO-02] -> Status: PARTIALLY_RECEIVED (Parsial + Overdue ETA + 1 GR DRAFT Siap Posting)
         if not _get_po_by_notes_tag("[DEMO-PO-02]"):
             po2 = po_service.create_purchase_order(
                 conn,
@@ -985,37 +1231,41 @@ def seed_demo_data(
                 supplier_id=int(suppliers["SUP-002"]["id"]),
                 warehouse_id=int(wh_jkt["id"]),
                 order_date=today - timedelta(days=5),
+                expected_delivery_date=today - timedelta(days=1),
                 notes="[DEMO-PO-02] Pengadaan kabel UTP outdoor (UoM desimal), sensor suhu RS485, dan karton box",
                 lines=[
                     {
                         "item_id": int(items["CBL-UTP-001"]["id"]),
                         "qty_ordered": Decimal("300.5000"),
+                        "unit_price": Decimal("18500.00"),
                         "notes": "Kabel UTP outdoor 300.5 meter",
                     },
                     {
                         "item_id": int(items["ELC-SNS-003"]["id"]),
                         "qty_ordered": Decimal("50.0000"),
+                        "unit_price": Decimal("420000.00"),
                         "notes": "Sensor RS485 Modbus RTU",
                     },
                     {
                         "item_id": int(items["PKG-BOX-001"]["id"]),
                         "qty_ordered": Decimal("100.0000"),
+                        "unit_price": Decimal("32000.00"),
                         "notes": "Karton box heavy-duty double wall",
                     },
                 ],
                 ip_address="127.0.0.1",
             )
-            po2 = po_service.issue_purchase_order(
-                conn,
-                actor=pur_elc_actor,
-                po_id=int(po2["id"]),
-                ip_address="127.0.0.1",
+            po2 = _submit_and_approve_po(
+                po2,
+                submit_actor=pur_elc_actor,
+                l1_actor=mgr_jkt_actor,
+                l2_actor=proc_mgr_actor,
             )
             po2_ln_map = {
                 int(ln["item_id"]): int(ln["id"]) for ln in po2["lines"]
             }
 
-            # GR #2 (POSTED): Penerimaan parsial tahap pertama
+            # GR #2 (POSTED): Penerimaan parsial tahap pertama (Staf -> Supervisor)
             gr2 = gr_service.create_goods_receipt(
                 conn,
                 actor=stf_jkt_actor,
@@ -1046,12 +1296,12 @@ def seed_demo_data(
             )
             gr_service.post_goods_receipt(
                 conn,
-                actor=stf_jkt_actor,
+                actor=sup_jkt_actor,
                 gr_id=int(gr2["id"]),
                 ip_address="127.0.0.1",
             )
 
-            # GR #3 (DRAFT): Siap diposting secara live saat presentasi demo!
+            # GR #3 (DRAFT): Siap diposting secara live oleh Supervisor/Manager saat demo!
             gr_service.create_goods_receipt(
                 conn,
                 actor=stf_jkt_actor,
@@ -1081,39 +1331,49 @@ def seed_demo_data(
                 ip_address="127.0.0.1",
             )
 
-        # [DEMO-PO-03] -> Status: ISSUED (Siap Dibuatkan Goods Receipt dari Menu Receiving Surabaya)
+        # [DEMO-PO-03] -> Status: ISSUED (Overdue ETA, Siap Dibuatkan Goods Receipt di Surabaya)
         if not _get_po_by_notes_tag("[DEMO-PO-03]"):
             po3 = po_service.create_purchase_order(
                 conn,
                 actor=pur_sup_actor,
                 supplier_id=int(suppliers["SUP-003"]["id"]),
                 warehouse_id=int(wh_sby["id"]),
-                order_date=today - timedelta(days=2),
-                notes="[DEMO-PO-03] [SIAP BUAT GR SAAT LIVE DEMO] Pengadaan stok kemasan & switch jaringan cabang Surabaya",
+                order_date=today - timedelta(days=4),
+                expected_delivery_date=today - timedelta(days=1),
+                notes="[DEMO-PO-03] [SIAP BUAT GR SAAT LIVE DEMO] Pengadaan stok kemasan, label & switch jaringan cabang Surabaya",
                 lines=[
                     {
                         "item_id": int(items["PKG-BOX-001"]["id"]),
                         "qty_ordered": Decimal("120.0000"),
+                        "unit_price": Decimal("32000.00"),
                         "notes": "Karton box pengiriman Jawa Timur",
                     },
                     {
                         "item_id": int(items["PKG-WRP-003"]["id"]),
                         "qty_ordered": Decimal("30.0000"),
+                        "unit_price": Decimal("115000.00"),
                         "notes": "Pallet stretch film 30 roll",
                     },
                     {
                         "item_id": int(items["NET-SWT-002"]["id"]),
                         "qty_ordered": Decimal("10.0000"),
+                        "unit_price": Decimal("1650000.00"),
                         "notes": "Industrial switch 16-port",
+                    },
+                    {
+                        "item_id": int(items["WHS-LBL-002"]["id"]),
+                        "qty_ordered": Decimal("20.0000"),
+                        "unit_price": Decimal("65000.00"),
+                        "notes": "Thermal label 70x40mm untuk cabang Surabaya",
                     },
                 ],
                 ip_address="127.0.0.1",
             )
-            po3 = po_service.issue_purchase_order(
-                conn,
-                actor=pur_sup_actor,
-                po_id=int(po3["id"]),
-                ip_address="127.0.0.1",
+            po3 = _submit_and_approve_po(
+                po3,
+                submit_actor=pur_sup_actor,
+                l1_actor=mgr_sby_actor,
+                l2_actor=proc_mgr_actor,
             )
 
             # GR #4 (CANCELLED): Menguji pembatalan draft GR
@@ -1143,7 +1403,7 @@ def seed_demo_data(
                 ip_address="127.0.0.1",
             )
 
-        # [DEMO-PO-04] -> Status: DRAFT (Siap Di-klik "Issue Purchase Order" saat Demo)
+        # [DEMO-PO-04] -> Status: DRAFT (Siap Edit & Submit Pengajuan Approval saat Demo!)
         if not _get_po_by_notes_tag("[DEMO-PO-04]"):
             po_service.create_purchase_order(
                 conn,
@@ -1151,23 +1411,26 @@ def seed_demo_data(
                 supplier_id=int(suppliers["SUP-004"]["id"]),
                 warehouse_id=int(wh_jkt["id"]),
                 order_date=today,
-                notes="[DEMO-PO-04] [SIAP ISSUE SAAT LIVE DEMO] Pengadaan cadangan PSU DIN-Rail & modul relay industri",
+                expected_delivery_date=today + timedelta(days=7),
+                notes="[DEMO-PO-04] [SIAP EDIT & SUBMIT SAAT LIVE DEMO] Pengadaan cadangan PSU DIN-Rail & modul relay industri",
                 lines=[
                     {
                         "item_id": int(items["ELC-PSU-002"]["id"]),
                         "qty_ordered": Decimal("40.0000"),
+                        "unit_price": Decimal("380000.00"),
                         "notes": "PSU 24V 10A batch darurat",
                     },
                     {
                         "item_id": int(items["ELC-RLY-004"]["id"]),
                         "qty_ordered": Decimal("60.0000"),
+                        "unit_price": Decimal("185000.00"),
                         "notes": "Relay module 8-ch 24V",
                     },
                 ],
                 ip_address="127.0.0.1",
             )
 
-        # [DEMO-PO-05] -> Status: CLOSED (Ditutup Lebih Awal dengan Closed Reason Resmi)
+        # [DEMO-PO-05] -> Status: CLOSED (Header Ditutup Lebih Awal dengan Closed Reason Resmi)
         if not _get_po_by_notes_tag("[DEMO-PO-05]"):
             po5 = po_service.create_purchase_order(
                 conn,
@@ -1175,30 +1438,33 @@ def seed_demo_data(
                 supplier_id=int(suppliers["SUP-005"]["id"]),
                 warehouse_id=int(wh_jkt["id"]),
                 order_date=today - timedelta(days=10),
+                expected_delivery_date=today - timedelta(days=3),
                 notes="[DEMO-PO-05] Pengadaan pemindai barcode wireless & kabel patch rackmount",
                 lines=[
                     {
                         "item_id": int(items["WHS-SCN-001"]["id"]),
                         "qty_ordered": Decimal("25.0000"),
+                        "unit_price": Decimal("1850000.00"),
                         "notes": "Scanner 2D Rugged IP65",
                     },
                     {
                         "item_id": int(items["NET-PTC-003"]["id"]),
                         "qty_ordered": Decimal("50.0000"),
+                        "unit_price": Decimal("95000.00"),
                         "notes": "Patch cable Cat6 2m",
                     },
                 ],
                 ip_address="127.0.0.1",
             )
-            po5 = po_service.issue_purchase_order(
-                conn,
-                actor=pur_sup_actor,
-                po_id=int(po5["id"]),
-                ip_address="127.0.0.1",
+            po5 = _submit_and_approve_po(
+                po5,
+                submit_actor=pur_sup_actor,
+                l1_actor=mgr_jkt_actor,
+                l2_actor=proc_mgr_actor,
             )
             po_service.close_purchase_order(
                 conn,
-                actor=mgr_jkt_actor,
+                actor=proc_mgr_actor,
                 po_id=int(po5["id"]),
                 closed_reason="Prinsipal menghentikan produksi model scanner seri ini; pesanan ditutup resmi atas kesepakatan kedua belah pihak.",
                 ip_address="127.0.0.1",
@@ -1212,16 +1478,19 @@ def seed_demo_data(
                 supplier_id=int(suppliers["SUP-006"]["id"]),
                 warehouse_id=int(wh_bdg["id"]),
                 order_date=today - timedelta(days=3),
+                expected_delivery_date=today + timedelta(days=4),
                 notes="[DEMO-PO-06] Estimasi awal perlengkapan APD gudang transit Bandung (Dibatalkan karena revisi spesifikasi safety)",
                 lines=[
                     {
                         "item_id": int(items["SAF-GLV-001"]["id"]),
                         "qty_ordered": Decimal("40.0000"),
+                        "unit_price": Decimal("145000.00"),
                         "notes": "Sarung tangan cut-resistant",
                     },
                     {
                         "item_id": int(items["SAF-HLM-002"]["id"]),
                         "qty_ordered": Decimal("20.0000"),
+                        "unit_price": Decimal("165000.00"),
                         "notes": "Helm safety fastrac putih",
                     },
                 ],
@@ -1234,9 +1503,349 @@ def seed_demo_data(
                 ip_address="127.0.0.1",
             )
 
+        # [DEMO-PO-07] -> Status: WAITING_L1_APPROVAL (Nominal <= Rp 10jt, 1-Level Langsung ISSUED)
+        if not _get_po_by_notes_tag("[DEMO-PO-07]"):
+            po7 = po_service.create_purchase_order(
+                conn,
+                actor=pur_sup_actor,
+                supplier_id=int(suppliers["SUP-008"]["id"]),
+                warehouse_id=int(wh_sby["id"]),
+                order_date=today,
+                expected_delivery_date=today + timedelta(days=5),
+                notes="[DEMO-PO-07] [SIAP APPROVE L1 SAAT LIVE DEMO] Pengadaan label thermal 70x40mm, karton box medium & wrap Surabaya (<= Rp 10jt)",
+                lines=[
+                    {
+                        "item_id": int(items["WHS-LBL-002"]["id"]),
+                        "qty_ordered": Decimal("30.0000"),
+                        "unit_price": Decimal("65000.00"),
+                        "notes": "Label thermal 70x40mm",
+                    },
+                    {
+                        "item_id": int(items["PKG-BOX-002"]["id"]),
+                        "qty_ordered": Decimal("100.0000"),
+                        "unit_price": Decimal("24000.00"),
+                        "notes": "Karton medium 30x20x20 cm",
+                    },
+                    {
+                        "item_id": int(items["PKG-WRP-003"]["id"]),
+                        "qty_ordered": Decimal("15.0000"),
+                        "unit_price": Decimal("115000.00"),
+                        "notes": "Stretch film tambahan",
+                    },
+                ],
+                ip_address="127.0.0.1",
+            )
+            po_service.submit_purchase_order(
+                conn,
+                actor=pur_sup_actor,
+                po_id=int(po7["id"]),
+                notes="Mohon persetujuan Manager Surabaya (nominal Rp 6.075.000 <= threshold 10jt)",
+                ip_address="127.0.0.1",
+            )
+
+        # [DEMO-PO-08] -> Status: WAITING_L2_APPROVAL (Nominal > Rp 10jt, L1 Approved, Menunggu L2)
+        if not _get_po_by_notes_tag("[DEMO-PO-08]"):
+            po8 = po_service.create_purchase_order(
+                conn,
+                actor=pur_elc_actor,
+                supplier_id=int(suppliers["SUP-004"]["id"]),
+                warehouse_id=int(wh_jkt["id"]),
+                order_date=today,
+                expected_delivery_date=today + timedelta(days=10),
+                notes="[DEMO-PO-08] [SIAP APPROVE L2 SAAT LIVE DEMO] Pengadaan 20 unit Industrial DC Mini UPS 24V (Rp 25jt > threshold)",
+                lines=[
+                    {
+                        "item_id": int(items["ELC-UPS-005"]["id"]),
+                        "qty_ordered": Decimal("20.0000"),
+                        "unit_price": Decimal("1250000.00"),
+                        "notes": "Backup UPS DIN-Rail gateway ruang kontrol",
+                    },
+                ],
+                ip_address="127.0.0.1",
+            )
+            po8 = po_service.submit_purchase_order(
+                conn,
+                actor=pur_elc_actor,
+                po_id=int(po8["id"]),
+                notes="Pengajuan pengadaan UPS backup kritikal (> Rp 10jt, perlu L2)",
+                ip_address="127.0.0.1",
+            )
+            po_service.approve_purchase_order(
+                conn,
+                actor=mgr_jkt_actor,
+                po_id=int(po8["id"]),
+                notes="Disetujui Level 1; diteruskan ke Procurement Manager untuk L2 approval",
+                ip_address="127.0.0.1",
+            )
+
+        # [DEMO-PO-09] -> Status: PARTIALLY_RECEIVED (Kasus Mixed Line: 1 Baris Penuh,
+        #                1 Baris Parsial lalu Short-Close Line, 1 Baris Belum Dikirim/OPEN)
+        if not _get_po_by_notes_tag("[DEMO-PO-09]"):
+            po9 = po_service.create_purchase_order(
+                conn,
+                actor=pur_elc_actor,
+                supplier_id=int(suppliers["SUP-007"]["id"]),
+                warehouse_id=int(wh_jkt["id"]),
+                order_date=today - timedelta(days=6),
+                expected_delivery_date=today + timedelta(days=2),
+                notes="[DEMO-PO-09] Pengadaan campuran: 1 item penuh, 1 item short-close (stok pabrik habis), 1 item drop-core masih OPEN",
+                lines=[
+                    {
+                        "item_id": int(items["ELC-RLY-004"]["id"]),
+                        "qty_ordered": Decimal("40.0000"),
+                        "unit_price": Decimal("185000.00"),
+                        "notes": "Relay 8-ch dikirim penuh 40 pcs",
+                    },
+                    {
+                        "item_id": int(items["WHS-SCN-001"]["id"]),
+                        "qty_ordered": Decimal("10.0000"),
+                        "unit_price": Decimal("1850000.00"),
+                        "notes": "Hanya terkirim 6 set, sisa 4 set diskontinue -> Short-Close Line",
+                    },
+                    {
+                        "item_id": int(items["CBL-FBR-002"]["id"]),
+                        "qty_ordered": Decimal("250.5000"),
+                        "unit_price": Decimal("22000.00"),
+                        "notes": "Drop core fiber optic menunggu pengiriman kloter berikutnya (masih OPEN)",
+                    },
+                ],
+                ip_address="127.0.0.1",
+            )
+            po9 = _submit_and_approve_po(
+                po9,
+                submit_actor=pur_elc_actor,
+                l1_actor=mgr_jkt_actor,
+                l2_actor=proc_mgr_actor,
+            )
+            po9_ln_map = {
+                int(ln["item_id"]): int(ln["id"]) for ln in po9["lines"]
+            }
+
+            # GR #5 (POSTED): Hanya datang baris 1 penuh (40) & baris 2 sebagian (6), baris 3 belum datang
+            gr5 = gr_service.create_goods_receipt(
+                conn,
+                actor=stf_jkt_actor,
+                po_id=int(po9["id"]),
+                received_date=today - timedelta(days=2),
+                notes="[DEMO-GR-05] Penerimaan sebagian PO #9: Relay 40 pcs (Penuh) & Scanner 6 set (Parsial)",
+                lines=[
+                    {
+                        "po_line_id": po9_ln_map[int(items["ELC-RLY-004"]["id"])],
+                        "location_id": int(locations["JKT-RAK-B2"]["id"]),
+                        "qty_received": Decimal("40.0000"),
+                        "notes": "Diterima lengkap 40 pcs",
+                    },
+                    {
+                        "po_line_id": po9_ln_map[int(items["WHS-SCN-001"]["id"])],
+                        "location_id": int(locations["JKT-RAK-C1"]["id"]),
+                        "qty_received": Decimal("6.0000"),
+                        "notes": "Vendor konfirmasi sisa 4 unit habis produksi",
+                    },
+                ],
+                ip_address="127.0.0.1",
+            )
+            gr_service.post_goods_receipt(
+                conn,
+                actor=sup_jkt_actor,
+                gr_id=int(gr5["id"]),
+                ip_address="127.0.0.1",
+            )
+
+            # Tutup sisa baris scanner secara resmi (line-level short-close), baris Fiber tetap OPEN!
+            po_service.close_purchase_order_line(
+                conn,
+                actor=proc_mgr_actor,
+                po_id=int(po9["id"]),
+                po_line_id=po9_ln_map[int(items["WHS-SCN-001"]["id"])],
+                closed_reason="Sisa 4 set scanner tidak diproduksi lagi oleh vendor; baris ditutup agar tagihan disesuaikan 6 set.",
+                ip_address="127.0.0.1",
+            )
+
+        # [DEMO-PO-10] -> PO ISSUED direvisi menjadi DRAFT baru (`revised_from_po_id` terhubung)
+        if not _get_po_by_notes_tag("[DEMO-PO-10]"):
+            po10_orig = po_service.create_purchase_order(
+                conn,
+                actor=pur_elc_actor,
+                supplier_id=int(suppliers["SUP-007"]["id"]),
+                warehouse_id=int(wh_jkt["id"]),
+                order_date=today - timedelta(days=2),
+                expected_delivery_date=today + timedelta(days=6),
+                notes="[DEMO-PO-10] Pengadaan switch PoE & patch cord (Direvisi untuk negosiasi ulang harga & kuantitas)",
+                lines=[
+                    {
+                        "item_id": int(items["NET-SWT-002"]["id"]),
+                        "qty_ordered": Decimal("8.0000"),
+                        "unit_price": Decimal("1650000.00"),
+                        "notes": "Switch 16-Port DIN-Rail",
+                    },
+                    {
+                        "item_id": int(items["NET-PTC-003"]["id"]),
+                        "qty_ordered": Decimal("30.0000"),
+                        "unit_price": Decimal("95000.00"),
+                        "notes": "Patch cord Cat6",
+                    },
+                ],
+                ip_address="127.0.0.1",
+            )
+            po10_orig = _submit_and_approve_po(
+                po10_orig,
+                submit_actor=pur_elc_actor,
+                l1_actor=mgr_jkt_actor,
+                l2_actor=proc_mgr_actor,
+            )
+            po_service.revise_issued_po_as_draft(
+                conn,
+                actor=pur_elc_actor,
+                po_id=int(po10_orig["id"]),
+                ip_address="127.0.0.1",
+            )
+
+        # [DEMO-PO-11] -> PO Ditolak saat Review L1 & Dikembalikan ke DRAFT (dengan rejection_reason)
+        if not _get_po_by_notes_tag("[DEMO-PO-11]"):
+            po11 = po_service.create_purchase_order(
+                conn,
+                actor=pur_sup_actor,
+                supplier_id=int(suppliers["SUP-006"]["id"]),
+                warehouse_id=int(wh_bdg["id"]),
+                order_date=today - timedelta(days=1),
+                expected_delivery_date=today + timedelta(days=4),
+                notes="[DEMO-PO-11] Permintaan pengisian helm proyek & sarung tangan hub Bandung (Perlu revisi pasca-penolakan)",
+                lines=[
+                    {
+                        "item_id": int(items["SAF-HLM-002"]["id"]),
+                        "qty_ordered": Decimal("30.0000"),
+                        "unit_price": Decimal("165000.00"),
+                        "notes": "Helm proyek ANSI putih",
+                    },
+                    {
+                        "item_id": int(items["SAF-GLV-001"]["id"]),
+                        "qty_ordered": Decimal("25.0000"),
+                        "unit_price": Decimal("145000.00"),
+                        "notes": "Sarung tangan PU",
+                    },
+                ],
+                ip_address="127.0.0.1",
+            )
+            po11 = po_service.submit_purchase_order(
+                conn,
+                actor=pur_sup_actor,
+                po_id=int(po11["id"]),
+                notes="Pengajuan pengadaan APD hub Bandung",
+                ip_address="127.0.0.1",
+            )
+            po_service.reject_purchase_order(
+                conn,
+                actor=mgr_jkt_actor,
+                po_id=int(po11["id"]),
+                rejection_reason="Kapasitas rak APD hub Bandung terbatas; kurangi helm menjadi 15 pcs lalu ajukan ulang.",
+                ip_address="127.0.0.1",
+            )
+
+        # [DEMO-PO-12] -> Status: RECEIVED (Melengkapi 8 UoM: KG, LTR, PACK, BOX, PCS & Memicu Variasi Stok Kritis)
+        if not _get_po_by_notes_tag("[DEMO-PO-12]"):
+            po12 = po_service.create_purchase_order(
+                conn,
+                actor=pur_sup_actor,
+                supplier_id=int(suppliers["SUP-008"]["id"]),
+                warehouse_id=int(wh_jkt["id"]),
+                order_date=today - timedelta(days=3),
+                expected_delivery_date=today - timedelta(days=1),
+                notes="[DEMO-PO-12] Pengadaan material habis pakai (desiccant KG, cleaner LTR), kotak medium, APD & UPS",
+                lines=[
+                    {
+                        "item_id": int(items["PKG-BOX-002"]["id"]),
+                        "qty_ordered": Decimal("25.0000"),
+                        "unit_price": Decimal("24000.00"),
+                        "notes": "Jumlah sengaja di bawah min_stock (50) untuk alert Stok Kritis",
+                    },
+                    {
+                        "item_id": int(items["PKG-SLG-004"]["id"]),
+                        "qty_ordered": Decimal("18.5000"),
+                        "unit_price": Decimal("145000.00"),
+                        "notes": "Silica gel desiccant 18.5 KG (UoM desimal KG)",
+                    },
+                    {
+                        "item_id": int(items["WHS-CHM-003"]["id"]),
+                        "qty_ordered": Decimal("25.7500"),
+                        "unit_price": Decimal("92000.00"),
+                        "notes": "IPA contact cleaner 25.75 LTR (UoM desimal LTR)",
+                    },
+                    {
+                        "item_id": int(items["SAF-GLV-001"]["id"]),
+                        "qty_ordered": Decimal("16.0000"),
+                        "unit_price": Decimal("145000.00"),
+                        "notes": "Sarung tangan safety 16 pack",
+                    },
+                    {
+                        "item_id": int(items["ELC-UPS-005"]["id"]),
+                        "qty_ordered": Decimal("6.0000"),
+                        "unit_price": Decimal("1250000.00"),
+                        "notes": "6 unit Mini UPS (di bawah min_stock 10 -> alert Stok Kritis)",
+                    },
+                ],
+                ip_address="127.0.0.1",
+            )
+            po12 = _submit_and_approve_po(
+                po12,
+                submit_actor=pur_sup_actor,
+                l1_actor=mgr_jkt_actor,
+                l2_actor=proc_mgr_actor,
+            )
+            po12_ln_map = {
+                int(ln["item_id"]): int(ln["id"]) for ln in po12["lines"]
+            }
+
+            # GR #6 (POSTED): Staf buat -> Supervisor posting
+            gr6 = gr_service.create_goods_receipt(
+                conn,
+                actor=stf_jkt_actor,
+                po_id=int(po12["id"]),
+                received_date=today - timedelta(days=2),
+                notes="[DEMO-GR-06] Penerimaan lengkap PO #12 untuk stok consumables, APD & UPS cadangan",
+                lines=[
+                    {
+                        "po_line_id": po12_ln_map[int(items["PKG-BOX-002"]["id"])],
+                        "location_id": int(locations["JKT-RAK-C1"]["id"]),
+                        "qty_received": Decimal("25.0000"),
+                        "notes": "Rak Material C1",
+                    },
+                    {
+                        "po_line_id": po12_ln_map[int(items["PKG-SLG-004"]["id"])],
+                        "location_id": int(locations["JKT-RAK-C1"]["id"]),
+                        "qty_received": Decimal("18.5000"),
+                        "notes": "Silica gel 18.5 KG di Rak C1",
+                    },
+                    {
+                        "po_line_id": po12_ln_map[int(items["WHS-CHM-003"]["id"])],
+                        "location_id": int(locations["JKT-RAK-C1"]["id"]),
+                        "qty_received": Decimal("25.7500"),
+                        "notes": "IPA Cleaner 25.75 LTR di Rak C1",
+                    },
+                    {
+                        "po_line_id": po12_ln_map[int(items["SAF-GLV-001"]["id"])],
+                        "location_id": int(locations["JKT-RAK-C1"]["id"]),
+                        "qty_received": Decimal("16.0000"),
+                        "notes": "Sarung tangan K3",
+                    },
+                    {
+                        "po_line_id": po12_ln_map[int(items["ELC-UPS-005"]["id"])],
+                        "location_id": int(locations["JKT-RAK-B2"]["id"]),
+                        "qty_received": Decimal("6.0000"),
+                        "notes": "Mini UPS di Rak B2",
+                    },
+                ],
+                ip_address="127.0.0.1",
+            )
+            gr_service.post_goods_receipt(
+                conn,
+                actor=sup_jkt_actor,
+                gr_id=int(gr6["id"]),
+                ip_address="127.0.0.1",
+            )
+
         # ---------------------------------------------------------------------
-        # 6. Skenario Transaksi Stock Transfer (Semua Status: RECEIVED dg Variance,
-        #    SHIPPED in-transit, APPROVED siap ship, DRAFT siap approve, CANCELLED)
+        # 6. Skenario Transaksi Stock Transfer (Semua Status: RECEIVED dg Variance
+        #    & penuh, SHIPPED in-transit, APPROVED siap ship, DRAFT siap approve, CANCELLED)
         # ---------------------------------------------------------------------
 
         # [DEMO-TRF-01] -> Status: RECEIVED dengan Variance Reason Resmi
@@ -1265,7 +1874,7 @@ def seed_demo_data(
             )
             transfer_service.approve_transfer(
                 conn,
-                actor=mgr_jkt_actor,
+                actor=sup_jkt_actor,
                 transfer_id=int(trf1["id"]),
                 ip_address="127.0.0.1",
             )
@@ -1350,12 +1959,12 @@ def seed_demo_data(
             )
             transfer_service.approve_transfer(
                 conn,
-                actor=mgr_jkt_actor,
+                actor=sup_jkt_actor,
                 transfer_id=int(trf3["id"]),
                 ip_address="127.0.0.1",
             )
 
-        # [DEMO-TRF-04] -> Status: DRAFT (Siap di-klik "Approve" oleh Manager Surabaya saat Demo!)
+        # [DEMO-TRF-04] -> Status: DRAFT (Siap di-klik "Approve" oleh Supervisor/Manager Surabaya saat Demo!)
         if not _get_transfer_by_notes_tag("[DEMO-TRF-04]"):
             transfer_service.create_stock_transfer(
                 conn,
@@ -1407,24 +2016,83 @@ def seed_demo_data(
                 ip_address="127.0.0.1",
             )
 
+        # [DEMO-TRF-06] -> Status: RECEIVED Penuh (Tanpa Variance: Jakarta -> Hub Transit Bandung)
+        if not _get_transfer_by_notes_tag("[DEMO-TRF-06]"):
+            trf6 = transfer_service.create_stock_transfer(
+                conn,
+                actor=stf_jkt_actor,
+                source_warehouse_id=int(wh_jkt["id"]),
+                source_location_id=int(locations["JKT-RAK-B2"]["id"]),
+                destination_warehouse_id=int(wh_bdg["id"]),
+                destination_location_id=int(locations["BDG-RAK-A2"]["id"]),
+                notes="[DEMO-TRF-06] Distribusi relay & UPS cadangan ke Gudang Hub Transit Bandung (Diterima penuh)",
+                lines=[
+                    {
+                        "item_id": int(items["ELC-RLY-004"]["id"]),
+                        "qty": Decimal("12.0000"),
+                        "notes": "Modul relay untuk stok penyangga Priangan",
+                    },
+                    {
+                        "item_id": int(items["ELC-UPS-005"]["id"]),
+                        "qty": Decimal("2.0000"),
+                        "notes": "Backup mini UPS hub Bandung",
+                    },
+                ],
+                ip_address="127.0.0.1",
+            )
+            transfer_service.approve_transfer(
+                conn,
+                actor=sup_jkt_actor,
+                transfer_id=int(trf6["id"]),
+                ip_address="127.0.0.1",
+            )
+            trf6 = transfer_service.ship_transfer(
+                conn,
+                actor=stf_out_actor,
+                transfer_id=int(trf6["id"]),
+                ip_address="127.0.0.1",
+            )
+            trf6_ln_map = {
+                int(ln["item_id"]): int(ln["id"]) for ln in trf6["lines"]
+            }
+            transfer_service.receive_transfer(
+                conn,
+                actor=stf_bdg_actor,
+                transfer_id=int(trf6["id"]),
+                lines=[
+                    {
+                        "line_id": trf6_ln_map[int(items["ELC-RLY-004"]["id"])],
+                        "qty_received": Decimal("12.0000"),
+                        "variance_reason": None,
+                    },
+                    {
+                        "line_id": trf6_ln_map[int(items["ELC-UPS-005"]["id"])],
+                        "qty_received": Decimal("2.0000"),
+                        "variance_reason": None,
+                    },
+                ],
+                ip_address="127.0.0.1",
+            )
+
         # ---------------------------------------------------------------------
-        # 7. Skenario Transaksi Stock Opname (Semua Status: COMPLETED,
-        #    WAITING_APPROVAL, IN_PROGRESS, DRAFT, CANCELLED)
+        # 7. Skenario Transaksi Stock Opname (Tahap 34–38: 2-Level Approval L1->L2,
+        #    SoD Patuh, Rejection -> IN_PROGRESS, WAITING_L1, WAITING_L2, DRAFT, CANCELLED)
+        #    Catatan: dijalankan SETELAH semua GR & Transfer agar lokasi beku tidak memblokir.
         # ---------------------------------------------------------------------
 
-        # [DEMO-OPN-01] -> Status: COMPLETED (Menghasilkan Penyesuaian ADJUSTMENT_PLUS & ADJUSTMENT_MINUS)
+        # [DEMO-OPN-01] -> Status: COMPLETED (L1 Supervisor + L2 Manager, ADJUSTMENT_PLUS & ADJUSTMENT_MINUS)
         if not _get_opname_by_notes_tag("[DEMO-OPN-01]"):
             opn1 = opname_service.create_stock_opname(
                 conn,
-                actor=mgr_jkt_actor,
+                actor=sup_jkt_actor,
                 warehouse_id=int(wh_jkt["id"]),
                 location_id=int(locations["JKT-RAK-A1"]["id"]),
-                notes="[DEMO-OPN-01] Audit fisik bulanan Rak A1 Gudang Jakarta (Selesai & Disetujui)",
+                notes="[DEMO-OPN-01] Audit fisik bulanan Rak A1 Gudang Jakarta (Selesai L1 & L2)",
                 ip_address="127.0.0.1",
             )
             opn1 = opname_service.start_stock_opname(
                 conn,
-                actor=mgr_jkt_actor,
+                actor=sup_jkt_actor,
                 opname_id=int(opn1["id"]),
                 ip_address="127.0.0.1",
             )
@@ -1468,6 +2136,12 @@ def seed_demo_data(
                 opname_id=int(opn1["id"]),
                 ip_address="127.0.0.1",
             )
+            opn1 = opname_service.approve_stock_opname(
+                conn,
+                actor=sup_jkt_actor,
+                opname_id=int(opn1["id"]),
+                ip_address="127.0.0.1",
+            )
             opname_service.approve_stock_opname(
                 conn,
                 actor=mgr_jkt_actor,
@@ -1475,25 +2149,25 @@ def seed_demo_data(
                 ip_address="127.0.0.1",
             )
 
-        # [DEMO-OPN-02] -> Status: WAITING_APPROVAL (Opening Balance Saldo Awal, Lokasi Saat Ini BEKU)
+        # [DEMO-OPN-02] -> Status: WAITING_L1_APPROVAL (Opening Balance Saldo Awal, Lokasi BDG-RAK-A1 BEKU)
         if not _get_opname_by_notes_tag("[DEMO-OPN-02]"):
             opn2 = opname_service.create_stock_opname(
                 conn,
-                actor=mgr_jkt_actor,
+                actor=sup_jkt_actor,
                 warehouse_id=int(wh_bdg["id"]),
                 location_id=int(locations["BDG-RAK-A1"]["id"]),
-                notes="[DEMO-OPN-02] [SIAP APPROVE SAAT LIVE DEMO] Input saldo awal fisik Rak Transit Bandung (Lokasi Saat Ini Beku)",
+                notes="[DEMO-OPN-02] [SIAP APPROVE L1 SAAT LIVE DEMO] Input saldo awal fisik Rak Transit Bandung (Lokasi Saat Ini Beku)",
                 ip_address="127.0.0.1",
             )
-            opname_service.start_stock_opname(
+            opn2 = opname_service.start_stock_opname(
                 conn,
-                actor=mgr_jkt_actor,
+                actor=sup_jkt_actor,
                 opname_id=int(opn2["id"]),
                 ip_address="127.0.0.1",
             )
             opname_service.record_opname_counts(
                 conn,
-                actor=mgr_jkt_actor,
+                actor=stf_bdg_actor,
                 opname_id=int(opn2["id"]),
                 lines=[
                     {
@@ -1513,16 +2187,16 @@ def seed_demo_data(
             )
             opname_service.submit_stock_opname(
                 conn,
-                actor=mgr_jkt_actor,
+                actor=stf_bdg_actor,
                 opname_id=int(opn2["id"]),
                 ip_address="127.0.0.1",
             )
 
-        # [DEMO-OPN-03] -> Status: IN_PROGRESS (Lokasi JKT-RAK-A2 Sedang BEKU, Siap Input Hitung Fisik)
+        # [DEMO-OPN-03] -> Status: IN_PROGRESS (Lokasi JKT-RAK-A2 Sedang BEKU, Siap Scan Hitung Fisik)
         if not _get_opname_by_notes_tag("[DEMO-OPN-03]"):
             opn3 = opname_service.create_stock_opname(
                 conn,
-                actor=mgr_jkt_actor,
+                actor=sup_jkt_actor,
                 warehouse_id=int(wh_jkt["id"]),
                 location_id=int(locations["JKT-RAK-A2"]["id"]),
                 notes="[DEMO-OPN-03] [SIAP INPUT HITUNG FISIK SAAT LIVE DEMO] Sesi audit fisik aktif Rak A2 Sensor Jakarta (Lokasi Saat Ini Beku)",
@@ -1530,7 +2204,7 @@ def seed_demo_data(
             )
             opname_service.start_stock_opname(
                 conn,
-                actor=mgr_jkt_actor,
+                actor=sup_jkt_actor,
                 opname_id=int(opn3["id"]),
                 ip_address="127.0.0.1",
             )
@@ -1539,7 +2213,7 @@ def seed_demo_data(
         if not _get_opname_by_notes_tag("[DEMO-OPN-04]"):
             opname_service.create_stock_opname(
                 conn,
-                actor=mgr_sby_actor,
+                actor=sup_sby_actor,
                 warehouse_id=int(wh_sby["id"]),
                 location_id=int(locations["SBY-RAK-A1"]["id"]),
                 notes="[DEMO-OPN-04] [SIAP START OPNAME SAAT LIVE DEMO] Jadwal audit persediaan akhir bulan Rak Elektronik Surabaya",
@@ -1550,7 +2224,7 @@ def seed_demo_data(
         if not _get_opname_by_notes_tag("[DEMO-OPN-05]"):
             opn5 = opname_service.create_stock_opname(
                 conn,
-                actor=mgr_jkt_actor,
+                actor=sup_jkt_actor,
                 warehouse_id=int(wh_jkt["id"]),
                 location_id=int(locations["JKT-QC-HOLD"]["id"]),
                 notes="[DEMO-OPN-05] Sesi opname area karantina yang dibatalkan karena penjadwalan ulang teknis",
@@ -1558,14 +2232,105 @@ def seed_demo_data(
             )
             opname_service.cancel_stock_opname(
                 conn,
-                actor=mgr_jkt_actor,
+                actor=sup_jkt_actor,
                 opname_id=int(opn5["id"]),
+                ip_address="127.0.0.1",
+            )
+
+        # [DEMO-OPN-06] -> Status: WAITING_L2_APPROVAL (L1 Supervisor Approved, Siap Final L2 Manager Surabaya)
+        if not _get_opname_by_notes_tag("[DEMO-OPN-06]"):
+            opn6 = opname_service.create_stock_opname(
+                conn,
+                actor=sup_sby_actor,
+                warehouse_id=int(wh_sby["id"]),
+                location_id=int(locations["SBY-RAK-B1"]["id"]),
+                notes="[DEMO-OPN-06] [SIAP APPROVE L2 FINAL SAAT LIVE DEMO] Penyesuaian stok kemasan & wrap Rak B1 Surabaya (L1 Disetujui)",
+                ip_address="127.0.0.1",
+            )
+            opn6 = opname_service.start_stock_opname(
+                conn,
+                actor=sup_sby_actor,
+                opname_id=int(opn6["id"]),
+                ip_address="127.0.0.1",
+            )
+            opname_service.record_opname_counts(
+                conn,
+                actor=stf_sby_actor,
+                opname_id=int(opn6["id"]),
+                lines=[
+                    {
+                        "location_id": int(locations["SBY-RAK-B1"]["id"]),
+                        "item_id": int(items["PKG-WRP-003"]["id"]),
+                        "qty_physical": Decimal("6.0000"),
+                        "notes": "Stok awal fisik pallet wrap ditemukan di Rak Kemasan B1 Surabaya",
+                    },
+                ],
+                ip_address="127.0.0.1",
+            )
+            opname_service.submit_stock_opname(
+                conn,
+                actor=stf_sby_actor,
+                opname_id=int(opn6["id"]),
+                ip_address="127.0.0.1",
+            )
+            opname_service.approve_stock_opname(
+                conn,
+                actor=sup_sby_actor,
+                opname_id=int(opn6["id"]),
+                ip_address="127.0.0.1",
+            )
+
+        # [DEMO-OPN-07] -> Status: IN_PROGRESS Pasca-Penolakan L1 (Dengan rejection_reason)
+        if not _get_opname_by_notes_tag("[DEMO-OPN-07]"):
+            opn7 = opname_service.create_stock_opname(
+                conn,
+                actor=sup_jkt_actor,
+                warehouse_id=int(wh_bdg["id"]),
+                location_id=int(locations["BDG-RAK-B1"]["id"]),
+                notes="[DEMO-OPN-07] Audit fisik penyangga BDG-RAK-B1 (Ditolak L1 & dikembalikan untuk hitung ulang)",
+                ip_address="127.0.0.1",
+            )
+            opn7 = opname_service.start_stock_opname(
+                conn,
+                actor=sup_jkt_actor,
+                opname_id=int(opn7["id"]),
+                ip_address="127.0.0.1",
+            )
+            opname_service.record_opname_counts(
+                conn,
+                actor=stf_bdg_actor,
+                opname_id=int(opn7["id"]),
+                lines=[
+                    {
+                        "location_id": int(locations["BDG-RAK-B1"]["id"]),
+                        "item_id": int(items["PKG-BOX-002"]["id"]),
+                        "qty_physical": Decimal("8.0000"),
+                        "notes": "Hitungan awal operator sebelum verifikasi",
+                    },
+                ],
+                ip_address="127.0.0.1",
+            )
+            opname_service.submit_stock_opname(
+                conn,
+                actor=stf_bdg_actor,
+                opname_id=int(opn7["id"]),
+                ip_address="127.0.0.1",
+            )
+            opname_service.reject_stock_opname(
+                conn,
+                actor=sup_jkt_actor,
+                opname_id=int(opn7["id"]),
+                rejection_reason="Karton medium batch lama di rak paling atas belum ikut dihitung; silakan hitung ulang lalu ajukan kembali.",
                 ip_address="127.0.0.1",
             )
 
         # ---------------------------------------------------------------------
         # 8. Ringkasan Statistik Database
         # ---------------------------------------------------------------------
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) AS cnt FROM approval_logs")
+            approval_logs_total = int(cur.fetchone()["cnt"])
+
         summary = {
             "users": user_service.list_users(conn)["total"],
             "warehouses": warehouse_service.list_warehouses(
@@ -1596,54 +2361,59 @@ def seed_demo_data(
             "stock_movements": stock_service.list_stock_movements(
                 conn, actor=superadmin_actor
             )["total"],
+            "approval_logs": approval_logs_total,
             "audit_logs": audit_service.list_audit_logs(conn)["total"],
         }
         return summary
 
 
 def print_demo_guide(password: str) -> None:
-    """Mencetak panduan lengkap akun demo dan skenario aksi live presentasi."""
-    print("\n" + "=" * 90)
-    print(" " * 26 + "PANDUAN LENGKAP DEMO DATA WMS API")
-    print("=" * 90)
+    """Mencetak panduan lengkap akun demo seluruh 7 RBAC role dan skenario aksi live presentasi."""
+    print("\n" + "=" * 96)
+    print(" " * 26 + "PANDUAN LENGKAP DEMO DATA WMS API (TAHAP 1–38)")
+    print("=" * 96)
 
-    print("\n[1] DAFTAR AKUN PENGGUNA DEMO:")
+    print("\n[1] DAFTAR AKUN PENGGUNA DEMO (7 RBAC ROLES):")
     print(f"    Kata Sandi Seragam : {password}")
-    print("-" * 90)
-    print(f"{'Username':<22} {'Role':<20} {'Gudang Akses':<24} {'Keterangan'}")
-    print("-" * 90)
+    print("-" * 96)
+    print(f"{'Username':<22} {'Role':<22} {'Gudang Akses':<24} {'Keterangan'}")
+    print("-" * 96)
     for u in DEMO_USERS_SPEC:
         wh_str = ", ".join(u["warehouses"])
         if len(wh_str) > 22:
             wh_str = "Global (Semua)"
-        print(f"{u['username']:<22} {u['role']:<20} {wh_str:<24} {u['full_name']}")
+        print(f"{u['username']:<22} {u['role']:<22} {wh_str:<24} {u['full_name']}")
 
     print("\n[2] SKENARIO SIAP KLIK SAAT LIVE DEMO / PRESENTASI:")
-    print("-" * 90)
-    print("Modul               | Status Saat Ini     | Aksi Live Demo yang Disiapkan")
-    print("-" * 90)
-    print("Purchase Order      | DRAFT               | [PO #4] Klik 'Issue Purchase Order'")
-    print("Goods Receipt       | DRAFT               | [GR #3] Klik 'Post Goods Receipt' (PO #2 tahap 2)")
-    print("Stock Transfer      | APPROVED            | [TRF #3] Klik 'Ship Transfer' (Jakarta -> Bandung)")
-    print("Stock Transfer      | SHIPPED (In-Transit)| [TRF #2] Klik 'Receive Transfer' di Surabaya")
-    print("Stock Transfer      | DRAFT               | [TRF #4] Klik 'Approve Transfer' oleh Manager Surabaya")
-    print("Stock Opname        | WAITING_APPROVAL    | [OPN #2] Klik 'Approve Opname' (Lokasi BDG-RAK-A1 beku)")
-    print("Stock Opname        | IN_PROGRESS         | [OPN #3] Klik 'Record Counts' lalu Submit (JKT-RAK-A2 beku)")
-    print("Stock Opname        | DRAFT               | [OPN #4] Klik 'Start Opname' di Surabaya")
-    print("-" * 90)
+    print("-" * 96)
+    print("Modul               | Status Saat Ini      | Aksi Live Demo yang Disiapkan")
+    print("-" * 96)
+    print("Purchase Order      | DRAFT                | [PO #4] Edit nominal/ETA lalu Ajukan Persetujuan")
+    print("Purchase Order      | DRAFT (Revisi)       | [PO #10-REV] Draft hasil revisi PO ISSUED lama")
+    print("Purchase Order      | DRAFT (Ditolak)      | [PO #11] Lihat rejection_reason & ajukan ulang")
+    print("Purchase Order      | WAITING_L1_APPROVAL  | [PO #7] Approve L1 oleh manager.surabaya (<=10jt)")
+    print("Purchase Order      | WAITING_L2_APPROVAL  | [PO #8] Approve L2 oleh procurement.manager (>10jt)")
+    print("Purchase Order      | PARTIAL + SHORT-CLOSE| [PO #9] 1 baris penuh, 1 short-close, 1 masih OPEN")
+    print("Goods Receipt       | DRAFT                | [GR #3] Post oleh warehouse.supervisor / manager (SoD)")
+    print("Stock Transfer      | APPROVED             | [TRF #3] Ship Transfer oleh staff.outbound (JKT -> BDG)")
+    print("Stock Transfer      | SHIPPED (In-Transit) | [TRF #2] Receive Transfer oleh staff.surabaya (SBY)")
+    print("Stock Transfer      | DRAFT                | [TRF #4] Approve Transfer oleh supervisor/manager SBY")
+    print("Stock Opname        | WAITING_L1_APPROVAL  | [OPN #2] Approve L1 oleh warehouse.supervisor (BDG)")
+    print("Stock Opname        | WAITING_L2_APPROVAL  | [OPN #6] Approve L2 Final oleh manager.surabaya (SBY)")
+    print("Stock Opname        | IN_PROGRESS          | [OPN #3] Scan/Input Hitung Fisik lalu Submit (JKT)")
+    print("Stock Opname        | IN_PROGRESS (Ditolak)| [OPN #7] Lihat rejection_reason lalu hitung ulang")
+    print("Stock Opname        | DRAFT                | [OPN #4] Start Opname di Surabaya (SBY-RAK-A1)")
+    print("-" * 96)
 
-    print("\n[3] FITUR & INVARIAN PRD YANG SUDAH TERVERIFIKASI DALAM DATA:")
-    print("  * Seluruh 6 status PO (DRAFT, ISSUED, PARTIALLY_RECEIVED, RECEIVED, CLOSED, CANCELLED)")
-    print("  * Seluruh 3 status GR (DRAFT, POSTED, CANCELLED)")
-    print("  * Seluruh 5 status Transfer (DRAFT, APPROVED, SHIPPED, RECEIVED dg variance, CANCELLED)")
-    print("  * Seluruh 5 status Opname (DRAFT, IN_PROGRESS, WAITING_APPROVAL, COMPLETED, CANCELLED)")
-    print("  * Seluruh 5 tipe pergerakan stok (IN_PURCHASE, OUT_TRANSFER, IN_TRANSFER, ADJUSTMENT_PLUS, ADJUSTMENT_MINUS)")
-    print("  * Kuantitas desimal teruji pada kabel (UoM meter desimal: 300.5m -> 150.25m)")
-    print("  * Selisih penerimaan transfer tercatat resmi dengan variance_reason")
-    print("  * Penutupan PO resmi dengan closed_reason wajib")
-    print("  * Pembekuan lokasi aktif (LOCATION_FROZEN) pada sesi opname OPN #2 & OPN #3")
-    print("  * Stok in-transit aktif dan dapat dipantau pada Router NET-RTR-001")
-    print("=" * 90 + "\n")
+    print("\n[3] FITUR & INVARIAN PRD TAHAP 1–38 YANG SUDAH TERVERIFIKASI DALAM DATA:")
+    print("  * Seluruh 7 RBAC role aktif + 1 akun nonaktif (termasuk Warehouse Supervisor & Procurement Manager)")
+    print("  * Seluruh 8 status PO (DRAFT, WAITING_L1_APPROVAL, WAITING_L2_APPROVAL, ISSUED, PARTIAL, RECEIVED, CLOSED, CANCELLED)")
+    print("  * Fitur PO modern: harga satuan/total nominal, expected_delivery_date (Overdue ETA), PO Revisi, Reject & Short-Close per baris")
+    print("  * Segregation of Duties (SoD): Staf buat GR/Transfer/Opname, Supervisor/Manager menyetujui atau mem-posting")
+    print("  * Master data lengkap: 8 supplier (rekening bank, fax, NPWP, payment terms) & 19 barang (EAN-13 barcode, min_stock kritis)")
+    print("  * Seluruh 8 UoM terpakai (termasuk desimal MTR, KG, LTR) dan seluruh 5 tipe stock_movements tercatat")
+    print("  * Dashboard Stok Kritis teruji: item di bawah min_stock & stok 0 terfilter akurat per gudang")
+    print("=" * 96 + "\n")
 
 
 def main() -> int:
