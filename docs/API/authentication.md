@@ -284,7 +284,7 @@ Mengembalikan profil pengguna pemilik *Access Token*, termasuk daftar permission
   "role_name": "Warehouse Staff",
   "is_active": true,
   "permissions": [
-    "gr:manage", "gr:read", "ledger:read", "master:read", "opname:count", "opname:read",
+    "gr:create", "gr:read", "ledger:read", "master:read", "opname:count", "opname:read",
     "po:read", "stock:read", "transfer:create", "transfer:read", "transfer:receive", "transfer:ship"
   ],
   "warehouse_ids": [1],

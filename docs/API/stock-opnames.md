@@ -31,10 +31,12 @@ stateDiagram-v2
     DRAFT --> IN_PROGRESS: POST /{id}/start (opname:manage, snapshot & bekukan lokasi)
     DRAFT --> CANCELLED: POST /{id}/cancel (opname:manage)
     IN_PROGRESS --> IN_PROGRESS: POST /{id}/count | /lines (opname:count, input hitung fisik)
-    IN_PROGRESS --> WAITING_APPROVAL: POST /{id}/submit (opname:count, seluruh baris terisi)
+    IN_PROGRESS --> WAITING_L1_APPROVAL: POST /{id}/submit (opname:count, seluruh baris terisi)
     IN_PROGRESS --> CANCELLED: POST /{id}/cancel (opname:manage, lepas pembekuan)
-    WAITING_APPROVAL --> COMPLETED: POST /{id}/approve (opname:approve, terapkan selisih & lepas beku)
-    WAITING_APPROVAL --> IN_PROGRESS: POST /{id}/reject (opname:approve, alasan wajib)
+    WAITING_L1_APPROVAL --> WAITING_L2_APPROVAL: POST /{id}/approve (opname:approve_l1 + SoD)
+    WAITING_L1_APPROVAL --> IN_PROGRESS: POST /{id}/reject (opname:approve_l1, alasan wajib)
+    WAITING_L2_APPROVAL --> COMPLETED: POST /{id}/approve (opname:approve_l2 + SoD, terapkan selisih & lepas beku)
+    WAITING_L2_APPROVAL --> IN_PROGRESS: POST /{id}/reject (opname:approve_l2, alasan wajib)
 ```
 
 | Status Saat Ini | Pemicu | Status Berikutnya | Syarat & Efek |
@@ -44,13 +46,14 @@ stateDiagram-v2
 | `DRAFT` | `POST /api/v1/stock-opnames/{id}/start` | `IN_PROGRESS` | Mengunci lokasi (`FOR UPDATE`), memastikan tidak ada sesi aktif lain yang tumpang tindih (`409 LOCATION_FROZEN`), mengambil *snapshot* `qty_system` dari `inventory_balances`, dan **membekukan lokasi**. |
 | `DRAFT` / `IN_PROGRESS` | `POST /api/v1/stock-opnames/{id}/cancel` | `CANCELLED` | Membatalkan sesi; bila dari `IN_PROGRESS`, pembekuan lokasi dilepas tanpa mengubah saldo. Status final. |
 | `IN_PROGRESS` | `POST .../{id}/count` (atau `POST`/`PUT .../{id}/lines`) | `IN_PROGRESS` | Petugas mengisi `qty_physical >= 0` pada baris snapshot atau menambahkan baris barang fisik baru (`qty_system = 0`). |
-| `IN_PROGRESS` | `POST /api/v1/stock-opnames/{id}/submit` | `WAITING_APPROVAL` | Seluruh baris wajib sudah memiliki `qty_physical >= 0`. Pembekuan lokasi tetap berlaku. |
-| `WAITING_APPROVAL` | `POST /api/v1/stock-opnames/{id}/approve` | `COMPLETED` | Untuk setiap baris dengan `qty_variance != 0`, menyamakan saldo dengan `qty_physical` dan menulis ledger `ADJUSTMENT_PLUS` / `ADJUSTMENT_MINUS`; baris dengan `qty_variance == 0` tidak menulis ledger. Pembekuan dilepas. Status final. |
-| `WAITING_APPROVAL` | `POST /api/v1/stock-opnames/{id}/reject` | `IN_PROGRESS` | `rejection_reason` wajib diisi; sesi kembali ke `IN_PROGRESS` untuk dihitung ulang. Pembekuan lokasi tetap berlaku. |
+| `IN_PROGRESS` | `POST /api/v1/stock-opnames/{id}/submit` | `WAITING_L1_APPROVAL` | Seluruh baris wajib sudah memiliki `qty_physical >= 0`. Pembekuan lokasi tetap berlaku dan entri diajukan ke `approval_logs`. |
+| `WAITING_L1_APPROVAL` | `POST /api/v1/stock-opnames/{id}/approve` | `WAITING_L2_APPROVAL` | Membutuhkan `opname:approve_l1` + aturan SoD (penyetuju L1 bukan penghitung `counted_by` atau pengaju `submitted_by`, kecuali *Super Admin*). Pembekuan tetap aktif hingga Level 2 selesai. |
+| `WAITING_L2_APPROVAL` | `POST /api/v1/stock-opnames/{id}/approve` | `COMPLETED` | Membutuhkan `opname:approve_l2` + aturan SoD (bukan `submitted_by`, penghitung `counted_by`, maupun `l1_approved_by`, kecuali *Super Admin*). Menyamakan saldo dengan `qty_physical`, menulis ledger `ADJUSTMENT_PLUS`/`ADJUSTMENT_MINUS`, dan melepas pembekuan lokasi. Status final. |
+| `WAITING_L1_APPROVAL` / `WAITING_L2_APPROVAL` | `POST /api/v1/stock-opnames/{id}/reject` | `IN_PROGRESS` | `rejection_reason` wajib diisi; sesi kembali ke `IN_PROGRESS` untuk dihitung ulang dan dicatat ke `approval_logs`. Pembekuan lokasi tetap berlaku. |
 
 ### 2.3 Pembekuan Lokasi (*Location Freeze* — PRD 6.6 & AC-10)
 
-* Selama sesi berstatus `IN_PROGRESS` atau `WAITING_APPROVAL`:
+* Selama sesi berstatus `IN_PROGRESS`, `WAITING_L1_APPROVAL`, atau `WAITING_L2_APPROVAL` (serta status historis `WAITING_APPROVAL`):
   1. Tidak boleh ada sesi Opname lain yang dimulai pada lokasi yang tumpang tindih (`409 LOCATION_FROZEN`).
   2. Operasi mutasi stok normal — yaitu posting GR ke lokasi tersebut, pengiriman Transfer dari lokasi tersebut, dan penerimaan Transfer ke lokasi tersebut — ditolak oleh `inventory_service.apply_movement()` dengan `409 LOCATION_FROZEN`.
   3. Saat persetujuan Opname (`approve`), `apply_movement()` dipanggil dengan tipe `ADJUSTMENT_PLUS` / `ADJUSTMENT_MINUS` yang secara desain melewati pemeriksaan pembekuan karena penyesuaian justru dieksekusi sebelum sesi ditandai `COMPLETED`.
@@ -73,10 +76,11 @@ stateDiagram-v2
 
 | Permission | Aksi | Peran Bawaan (Matriks 3.1) | Warehouse Scoping `(g)` |
 | --- | --- | --- | --- |
-| `opname:read` | Daftar & detail sesi Opname | *Super Admin*, *Warehouse Manager*, *Warehouse Staff*, *Auditor* | **Ya `(g)`** untuk *Warehouse Staff* dan *Warehouse Manager* (hanya melihat sesi pada gudang yang ditugaskan; gudang lain → `403 WAREHOUSE_NOT_ASSIGNED`). *Super Admin* dan *Auditor* tidak dibatasi (unscoped). |
-| `opname:manage` | Buat `DRAFT`, revisi `DRAFT`, mulai (`start`), dan batalkan (`cancel`) sesi | *Super Admin*, *Warehouse Manager* | **Ya `(g)`** (`ensure_warehouse_access` pada `warehouse_id` sesi). |
-| `opname:count` | Input hasil hitung fisik (`count`) & ajukan persetujuan (`submit`) | *Super Admin*, *Warehouse Staff* | **Ya `(g)`** (`ensure_warehouse_access` pada `warehouse_id` sesi). |
-| `opname:approve` | Setujui (`approve`) atau tolak (`reject`) hasil Opname | *Super Admin*, *Warehouse Manager* | **Ya `(g)`** (`ensure_warehouse_access` pada `warehouse_id` sesi). |
+| `opname:read` | Daftar & detail sesi Opname | *Super Admin*, *Warehouse Manager*, *Warehouse Supervisor*, *Warehouse Staff*, *Auditor* | **Ya `(g)`** untuk role terlingkup gudang (hanya melihat sesi pada gudang yang ditugaskan; gudang lain → `403 WAREHOUSE_NOT_ASSIGNED`). *Super Admin* dan *Auditor* tidak dibatasi (unscoped). |
+| `opname:manage` | Buat `DRAFT`, revisi `DRAFT`, mulai (`start`), dan batalkan (`cancel`) sesi | *Super Admin*, *Warehouse Manager*, *Warehouse Supervisor* | **Ya `(g)`** (`ensure_warehouse_access` pada `warehouse_id` sesi). |
+| `opname:count` | Input hasil hitung fisik (`count`) & ajukan persetujuan (`submit`) | *Super Admin*, *Warehouse Supervisor*, *Warehouse Staff* | **Ya `(g)`** (`ensure_warehouse_access` pada `warehouse_id` sesi). |
+| `opname:approve_l1` | Setujui / tolak hasil Opname Level 1 | *Super Admin*, *Warehouse Manager*, *Warehouse Supervisor* | **Ya `(g)`** (`ensure_warehouse_access` pada `warehouse_id` sesi) + SoD (`actor != submitted_by` & penghitung baris). |
+| `opname:approve_l2` | Setujui final / tolak hasil Opname Level 2 | *Super Admin*, *Warehouse Manager* | **Ya `(g)`** (`ensure_warehouse_access` pada `warehouse_id` sesi) + SoD (`actor != submitted_by`, penghitung baris, & `l1_approved_by`). |
 
 ---
 
@@ -90,9 +94,9 @@ stateDiagram-v2
 | 4 | PATCH | `/api/v1/stock-opnames/{opname_id}` | Revisi cakupan lokasi atau catatan sesi `DRAFT` | Bearer | `opname:manage` `(g)` |
 | 5 | POST | `/api/v1/stock-opnames/{opname_id}/start` | Mulai sesi, ambil *snapshot* `qty_system`, dan bekukan lokasi (`DRAFT → IN_PROGRESS`) | Bearer | `opname:manage` `(g)` |
 | 6 | POST | `/api/v1/stock-opnames/{opname_id}/count` | Input/perbarui `qty_physical` atau tambah baris barang baru | Bearer | `opname:count` `(g)` |
-| 7 | POST | `/api/v1/stock-opnames/{opname_id}/submit` | Ajukan hasil hitung untuk ditinjau (`IN_PROGRESS → WAITING_APPROVAL`) | Bearer | `opname:count` `(g)` |
-| 8 | POST | `/api/v1/stock-opnames/{opname_id}/approve` | Setujui hasil Opname & sesuaikan saldo stok (`WAITING_APPROVAL → COMPLETED`) | Bearer | `opname:approve` `(g)` |
-| 9 | POST | `/api/v1/stock-opnames/{opname_id}/reject` | Tolak hasil Opname dengan alasan wajib (`WAITING_APPROVAL → IN_PROGRESS`) | Bearer | `opname:approve` `(g)` |
+| 7 | POST | `/api/v1/stock-opnames/{opname_id}/submit` | Ajukan hasil hitung untuk ditinjau (`IN_PROGRESS → WAITING_L1_APPROVAL`) | Bearer | `opname:count` `(g)` |
+| 8 | POST | `/api/v1/stock-opnames/{opname_id}/approve` | Setujui hasil Opname berjenjang (`WAITING_L1_APPROVAL → WAITING_L2_APPROVAL → COMPLETED`) | Bearer | `opname:approve_l1` / `opname:approve_l2` `(g)` + SoD |
+| 9 | POST | `/api/v1/stock-opnames/{opname_id}/reject` | Tolak hasil Opname dengan alasan wajib (`WAITING_L1/L2_APPROVAL → IN_PROGRESS`) | Bearer | `opname:approve_l1` / `opname:approve_l2` `(g)` |
 | 10 | POST | `/api/v1/stock-opnames/{opname_id}/cancel` | Batalkan sesi (`DRAFT`/`IN_PROGRESS → CANCELLED`) | Bearer | `opname:manage` `(g)` |
 
 ---
@@ -114,7 +118,7 @@ Mengambil daftar ringkasan sesi Stock Opname dengan dukungan pagination, filter,
 | `offset` | integer | Tidak | `0` | Minimal `0`. |
 | `warehouse_id` | integer | Tidak | `null` | Filter gudang. Untuk *Warehouse Staff*, wajib termasuk gudang yang ditugaskan (`403 WAREHOUSE_NOT_ASSIGNED` bila di luar cakupan). |
 | `location_id` | integer | Tidak | `null` | Filter cakupan lokasi spesifik. |
-| `status` | string | Tidak | `null` | Salah satu dari: `DRAFT`, `IN_PROGRESS`, `WAITING_APPROVAL`, `COMPLETED`, `CANCELLED`. |
+| `status` | string | Tidak | `null` | Salah satu dari: `DRAFT`, `IN_PROGRESS`, `WAITING_L1_APPROVAL`, `WAITING_L2_APPROVAL`, `COMPLETED`, `CANCELLED`. |
 | `date_from` | date (`YYYY-MM-DD`) | Tidak | `null` | Batas awal tanggal pembuatan (`created_at::date >= date_from`). |
 | `date_to` | date (`YYYY-MM-DD`) | Tidak | `null` | Batas akhir tanggal pembuatan (`created_at::date <= date_to`). Tidak boleh `< date_from`. |
 | `search` | string | Tidak | `null` | Pencarian `ILIKE` pada `opname_number` atau `notes`. |
@@ -228,7 +232,7 @@ Memulai sesi Opname (`DRAFT → IN_PROGRESS`), mengambil potret saldo (`qty_syst
 * **Aturan Bisnis & Audit:**
   * Mengunci header Opname (`FOR UPDATE`), memastikan status `DRAFT`.
   * Mengunci seluruh baris lokasi dalam cakupan dengan `SELECT ... FOR UPDATE` (diurutkan berdasarkan `id` sesuai PRD 6.5).
-  * Memastikan tidak ada sesi Opname lain berstatus `IN_PROGRESS` atau `WAITING_APPROVAL` yang menyentuh lokasi dalam cakupan (`409 LOCATION_FROZEN` bila tumpang tindih).
+  * Memastikan tidak ada sesi Opname lain berstatus `IN_PROGRESS`, `WAITING_L1_APPROVAL`, `WAITING_L2_APPROVAL`, atau `WAITING_APPROVAL` yang menyentuh lokasi dalam cakupan (`409 LOCATION_FROZEN` bila tumpang tindih).
   * Mengambil *snapshot* seluruh baris `inventory_balances` pada lokasi cakupan dan membuat baris `stock_opname_lines` dengan `qty_system = qty_on_hand`, `qty_physical = null`, `qty_variance = null`.
   * Menyimpan `started_at`, `started_by`, dan mencatat `OPNAME_STARTED` pada `audit_logs`.
 * **Response Berhasil:** `200 OK` (`StockOpnameOut` dengan `status: "IN_PROGRESS"` beserta baris *snapshot*).
@@ -287,7 +291,7 @@ Mengisi atau memperbarui hasil hitung fisik (`qty_physical`) pada baris *snapsho
 
 ### 5.7 POST `/api/v1/stock-opnames/{opname_id}/submit` — Ajukan Persetujuan
 
-Mengajukan hasil hitung fisik kepada *Warehouse Manager* (`IN_PROGRESS → WAITING_APPROVAL`).
+Mengajukan hasil hitung fisik ke antrean persetujuan Level 1 (`IN_PROGRESS → WAITING_L1_APPROVAL`).
 
 * **HTTP Method & URL:** `POST /api/v1/stock-opnames/{opname_id}/submit`
 * **Autentikasi & Permission:** Bearer Token, `opname:count` + **Warehouse Scoping `(g)`**
@@ -295,39 +299,35 @@ Mengajukan hasil hitung fisik kepada *Warehouse Manager* (`IN_PROGRESS → WAITI
 * **Aturan Bisnis & Audit:**
   * Mengunci header Opname (`FOR UPDATE`); wajib berstatus `IN_PROGRESS`.
   * Sesi wajib memiliki minimal 1 baris dan **seluruh baris wajib sudah memiliki `qty_physical >= 0`** (`422 VALIDATION_ERROR` dengan daftar `uncounted_line_ids` bila masih ada baris yang `qty_physical IS NULL`).
-  * Menyimpan `submitted_at`, `submitted_by`, dan mencatat `OPNAME_SUBMITTED` pada `audit_logs`. Pembekuan lokasi tetap aktif.
-* **Response Berhasil:** `200 OK` (`StockOpnameOut` dengan `status: "WAITING_APPROVAL"`).
+  * Menyimpan `submitted_at`, `submitted_by`, menulis ke `approval_logs` (`SUBMITTED`), dan mencatat `OPNAME_SUBMITTED` pada `audit_logs`. Pembekuan lokasi tetap aktif.
+* **Response Berhasil:** `200 OK` (`StockOpnameOut` dengan `status: "WAITING_L1_APPROVAL"`).
 * **Kemungkinan Error:** `401 AUTH_TOKEN_INVALID`, `403 PERMISSION_DENIED`, `403 WAREHOUSE_NOT_ASSIGNED`, `404 NOT_FOUND`, `409 INVALID_STATE_TRANSITION`, `422 VALIDATION_ERROR`.
 
 ---
 
-### 5.8 POST `/api/v1/stock-opnames/{opname_id}/approve` — Setujui
+### 5.8 POST `/api/v1/stock-opnames/{opname_id}/approve` — Setujui (Level 1 / Level 2)
 
-Menyetujui hasil Stock Opname (`WAITING_APPROVAL → COMPLETED`), menyamakan saldo stok dengan `qty_physical`, menulis ledger penyesuaian, dan melepas pembekuan lokasi dalam satu transaksi atomik.
+Menyetujui hasil Stock Opname secara berjenjang (`WAITING_L1_APPROVAL → WAITING_L2_APPROVAL`, lalu `WAITING_L2_APPROVAL → COMPLETED`). Pada Level 2, sistem menyamakan saldo stok dengan `qty_physical`, menulis ledger penyesuaian, dan melepas pembekuan lokasi dalam satu transaksi atomik.
 
 * **HTTP Method & URL:** `POST /api/v1/stock-opnames/{opname_id}/approve`
-* **Autentikasi & Permission:** Bearer Token, `opname:approve` + **Warehouse Scoping `(g)`**
+* **Autentikasi & Permission:** Bearer Token, `opname:approve_l1` (untuk `WAITING_L1_APPROVAL`) atau `opname:approve_l2` (untuk `WAITING_L2_APPROVAL`) + **Warehouse Scoping `(g)`** + **Segregation of Duties (SoD)**
 * **Request Body:** Tidak ada.
 * **Aturan Bisnis & Audit (FR-07 & AC-04):**
-  * Mengunci header Opname (`FOR UPDATE`); wajib berstatus `WAITING_APPROVAL`.
-  * Baris Opname diurutkan berdasarkan `(location_id, item_id, id)`.
-  * Untuk setiap baris:
-    * `qty_variance = qty_physical - qty_system`.
-    * Bila `qty_variance > 0`: memanggil `inventory_service.apply_movement()` dengan tipe `ADJUSTMENT_PLUS` (`reference_type = "STOCK_OPNAME"`).
-    * Bila `qty_variance < 0`: memanggil `inventory_service.apply_movement()` dengan tipe `ADJUSTMENT_MINUS` (`reference_type = "STOCK_OPNAME"`).
-    * Bila `qty_variance == 0`: **tidak memanggil `apply_movement()` dan tidak menghasilkan baris `stock_movements`**.
-  * Menandai status sesi menjadi `COMPLETED` (sehingga lokasi otomatis tidak lagi dibekukan), menyimpan `approved_by`, `approved_at`, dan mencatat `OPNAME_APPROVED` pada `audit_logs`.
-* **Response Berhasil:** `200 OK` (`StockOpnameOut` dengan `status: "COMPLETED"`).
-* **Kemungkinan Error:** `401 AUTH_TOKEN_INVALID`, `403 PERMISSION_DENIED`, `403 WAREHOUSE_NOT_ASSIGNED`, `404 NOT_FOUND`, `409 INVALID_STATE_TRANSITION`, `422 VALIDATION_ERROR`.
+  * Mengunci header Opname (`FOR UPDATE`); wajib berstatus `WAITING_L1_APPROVAL` atau `WAITING_L2_APPROVAL`.
+  * Menegakkan SoD (kecuali *Super Admin* yang dicatat `"sod_override": true` di `audit_logs`): aktor Level 1 tidak boleh sama dengan `submitted_by` atau penghitung baris (`counted_by`); aktor Level 2 tidak boleh sama dengan `submitted_by`, `counted_by`, maupun `l1_approved_by` (`403 PERMISSION_DENIED` dengan `details.code = "SOD_VIOLATION"`).
+  * Bila dari `WAITING_L1_APPROVAL`: menyimpan `l1_approved_by`/`l1_approved_at`, memindahkan status ke `WAITING_L2_APPROVAL`, dan mencatat `OPNAME_APPROVED_L1` (pembekuan lokasi tetap aktif).
+  * Bila dari `WAITING_L2_APPROVAL`: mengurutkan baris `(location_id, item_id, id)` → menerapkan `ADJUSTMENT_PLUS` / `ADJUSTMENT_MINUS` (selisih `0` tidak menulis ledger), menandai `COMPLETED`, melepas pembekuan lokasi, mengisi `l2_approved_by`/`l2_approved_at`/`approved_by`/`approved_at`, serta mencatat `OPNAME_APPROVED`.
+* **Response Berhasil:** `200 OK` (`StockOpnameOut` dengan `status: "WAITING_L2_APPROVAL"` atau `"COMPLETED"`).
+* **Kemungkinan Error:** `401 AUTH_TOKEN_INVALID`, `403 PERMISSION_DENIED` (termasuk `SOD_VIOLATION`), `403 WAREHOUSE_NOT_ASSIGNED`, `404 NOT_FOUND`, `409 INVALID_STATE_TRANSITION`, `422 VALIDATION_ERROR`.
 
 ---
 
 ### 5.9 POST `/api/v1/stock-opnames/{opname_id}/reject` — Tolak
 
-Menolak pengajuan hasil hitung fisik (`WAITING_APPROVAL → IN_PROGRESS`) dengan alasan wajib agar petugas dapat melakukan penghitungan ulang.
+Menolak pengajuan hasil hitung fisik (`WAITING_L1_APPROVAL` / `WAITING_L2_APPROVAL → IN_PROGRESS`) dengan alasan wajib agar petugas dapat melakukan penghitungan ulang.
 
 * **HTTP Method & URL:** `POST /api/v1/stock-opnames/{opname_id}/reject`
-* **Autentikasi & Permission:** Bearer Token, `opname:approve` + **Warehouse Scoping `(g)`**
+* **Autentikasi & Permission:** Bearer Token, `opname:approve_l1` (pada `WAITING_L1_APPROVAL`) atau `opname:approve_l2` (pada `WAITING_L2_APPROVAL`) + **Warehouse Scoping `(g)`**
 * **Request Body (`StockOpnameRejectRequest`):**
   * `rejection_reason` (string, wajib, tidak boleh kosong setelah *trim*).
 
@@ -340,8 +340,8 @@ Menolak pengajuan hasil hitung fisik (`WAITING_APPROVAL → IN_PROGRESS`) dengan
 ```
 
 * **Aturan Bisnis & Audit:**
-  * Hanya diizinkan dari status `WAITING_APPROVAL` (`409 INVALID_STATE_TRANSITION` bila bukan).
-  * Mengembalikan status ke `IN_PROGRESS`, menyimpan `rejection_reason`, dan mencatat `OPNAME_REJECTED` pada `audit_logs`. Lokasi tetap dibekukan.
+  * Hanya diizinkan dari status `WAITING_L1_APPROVAL` atau `WAITING_L2_APPROVAL` (`409 INVALID_STATE_TRANSITION` bila bukan).
+  * Mengembalikan status ke `IN_PROGRESS`, menyimpan `rejection_reason`, menulis ke `approval_logs` (`REJECTED`), dan mencatat `OPNAME_REJECTED` pada `audit_logs`. Lokasi tetap dibekukan.
 * **Response Berhasil:** `200 OK` (`StockOpnameOut` dengan `status: "IN_PROGRESS"`).
 * **Kemungkinan Error:** `401 AUTH_TOKEN_INVALID`, `403 PERMISSION_DENIED`, `403 WAREHOUSE_NOT_ASSIGNED`, `404 NOT_FOUND`, `409 INVALID_STATE_TRANSITION`, `422 VALIDATION_ERROR`.
 
@@ -355,7 +355,7 @@ Membatalkan sesi Stock Opname berstatus `DRAFT` atau `IN_PROGRESS` menjadi `CANC
 * **Autentikasi & Permission:** Bearer Token, `opname:manage` + **Warehouse Scoping `(g)`**
 * **Request Body:** Tidak ada.
 * **Aturan Bisnis & Audit:**
-  * Hanya sesi berstatus `DRAFT` atau `IN_PROGRESS` yang dapat dibatalkan (`409 INVALID_STATE_TRANSITION` untuk `WAITING_APPROVAL`, `COMPLETED`, atau `CANCELLED`).
+  * Hanya sesi berstatus `DRAFT` atau `IN_PROGRESS` yang dapat dibatalkan (`409 INVALID_STATE_TRANSITION` untuk `WAITING_L1_APPROVAL`, `WAITING_L2_APPROVAL`, `COMPLETED`, atau `CANCELLED`).
   * Jika dibatalkan dari `IN_PROGRESS`, pembekuan lokasi dilepas seketika dan tidak ada perubahan pada saldo stok.
   * Mencatat `OPNAME_CANCELLED` pada `audit_logs`.
 * **Response Berhasil:** `200 OK` (`StockOpnameOut` dengan `status: "CANCELLED"`).
@@ -365,11 +365,11 @@ Membatalkan sesi Stock Opname berstatus `DRAFT` atau `IN_PROGRESS` menjadi `CANC
 
 ## 6. Relasi dan Ketergantungan
 
-| Objek / Tabel | Kunci & Constraint Utama (`005_create_transfer_opname.sql`) | Relasi & Dampak |
+| Objek / Tabel | Kunci & Constraint Utama (`005_create_transfer_opname.sql` & `018`) | Relasi & Dampak |
 | --- | --- | --- |
-| `stock_opnames` | `pk_stock_opnames (id)`, `uq_stock_opnames_opname_number (opname_number)`, `fk_stock_opnames_location_warehouse (location_id, warehouse_id)`, `uq_stock_opnames_id_warehouse (id, warehouse_id)` | *Composite FK* memastikan apabila `location_id` diisi, lokasi tersebut pasti milik `warehouse_id` sesi. Indeks parsial `ix_stock_opnames_active_warehouse` mempercepat pengecekan pembekuan lokasi (`status IN ('IN_PROGRESS', 'WAITING_APPROVAL')`). |
+| `stock_opnames` | `pk_stock_opnames (id)`, `uq_stock_opnames_opname_number (opname_number)`, `fk_stock_opnames_location_warehouse (location_id, warehouse_id)`, `uq_stock_opnames_id_warehouse (id, warehouse_id)` | *Composite FK* memastikan apabila `location_id` diisi, lokasi tersebut pasti milik `warehouse_id` sesi. Indeks parsial `ix_stock_opnames_active_scope` mempercepat pengecekan pembekuan lokasi (`status IN ('IN_PROGRESS', 'WAITING_L1_APPROVAL', 'WAITING_L2_APPROVAL', 'WAITING_APPROVAL')`). |
 | `stock_opname_lines` | `pk_stock_opname_lines (id)`, `fk_stock_opname_lines_opname_warehouse (opname_id, warehouse_id)`, `fk_stock_opname_lines_location_warehouse (location_id, warehouse_id)`, `uq_stock_opname_lines_opname_location_item (opname_id, location_id, item_id)`, `ck_stock_opname_lines_variance_consistency` | Constraint `CHECK` di database menjamin `qty_variance = qty_physical - qty_system` saat `qty_physical IS NOT NULL`. |
-| `opname_repo.is_location_frozen` | Dipanggil oleh `inventory_service.apply_movement` | Memeriksa apakah suatu lokasi sedang tercakup dalam sesi Opname berstatus `IN_PROGRESS` atau `WAITING_APPROVAL` (baik sesi spesifik lokasi maupun sesi seluruh gudang `location_id IS NULL`). |
+| `opname_repo.is_location_frozen` | Dipanggil oleh `inventory_service.apply_movement` | Memeriksa apakah suatu lokasi sedang tercakup dalam sesi Opname berstatus `IN_PROGRESS`, `WAITING_L1_APPROVAL`, `WAITING_L2_APPROVAL`, atau `WAITING_APPROVAL` (baik sesi spesifik lokasi maupun sesi seluruh gudang `location_id IS NULL`). |
 
 Alur lapisan: `routes/stock_opnames.py` → `opname_service.py` (`with conn.transaction():` + `access_service` + `inventory_service.apply_movement` + `audit_service`) → `opname_repo.py` → PostgreSQL.
 
@@ -404,11 +404,15 @@ curl -s -X POST "$BASE/stock-opnames/3/count" \
     ]
   }'
 
-# 4. Ajukan hasil hitung untuk persetujuan (IN_PROGRESS -> WAITING_APPROVAL)
+# 4. Ajukan hasil hitung untuk persetujuan (IN_PROGRESS -> WAITING_L1_APPROVAL)
 curl -s -X POST "$BASE/stock-opnames/3/submit" \
   -H "Authorization: Bearer <STAFF_TOKEN>"
 
-# 5. Setujui hasil Opname oleh Warehouse Manager (WAITING_APPROVAL -> COMPLETED)
+# 5a. Setujui hasil Opname Level 1 oleh Warehouse Supervisor (WAITING_L1_APPROVAL -> WAITING_L2_APPROVAL)
+curl -s -X POST "$BASE/stock-opnames/3/approve" \
+  -H "Authorization: Bearer <SUPERVISOR_TOKEN>"
+
+# 5b. Setujui final hasil Opname Level 2 oleh Warehouse Manager (WAITING_L2_APPROVAL -> COMPLETED)
 curl -s -X POST "$BASE/stock-opnames/3/approve" \
   -H "Authorization: Bearer <MANAGER_TOKEN>"
 ```
@@ -420,5 +424,5 @@ curl -s -X POST "$BASE/stock-opnames/3/approve" \
 | # | Status | Catatan |
 | --- | --- | --- |
 | 1 | ✅ Terverifikasi | Rekonsiliasi Stock Opname (`qty_variance = -3` menghasilkan `ADJUSTMENT_MINUS`, penyesuaian saldo stok menjadi `97.0000`, input saldo awal `ADJUSTMENT_PLUS`, serta baris dengan `qty_variance == 0` tidak menghasilkan baris `stock_movements`) telah diuji di `test_ac04_stock_opname_reconciliation_variance_and_zero_variance_no_ledger` (`tests/test_stock_opname.py` — **AC-04**). |
-| 2 | ✅ Terverifikasi | Pembekuan lokasi selama sesi Opname berstatus `IN_PROGRESS` / `WAITING_APPROVAL` (menolak posting GR dan pengiriman/penerimaan Transfer dengan `409 LOCATION_FROZEN`) serta pelepasan pembekuan setelah sesi `COMPLETED` atau `CANCELLED` telah diuji di `test_ac10_location_freeze_during_opname_and_unfreeze_on_complete_or_cancel` (**AC-10**). |
+| 2 | ✅ Terverifikasi | Pembekuan lokasi selama sesi Opname berstatus `IN_PROGRESS` / `WAITING_L1_APPROVAL` / `WAITING_L2_APPROVAL` (menolak posting GR dan pengiriman/penerimaan Transfer dengan `409 LOCATION_FROZEN`) serta pelepasan pembekuan setelah sesi `COMPLETED` atau `CANCELLED` telah diuji di `test_ac10_location_freeze_during_opname_and_unfreeze_on_complete_or_cancel` (**AC-10**). |
 | 3 | ✅ Terverifikasi | Penolakan persetujuan Stock Opname oleh peran *Warehouse Staff* (`403 PERMISSION_DENIED`) telah diuji di `test_ac05_rbac_enforcement_and_audit_log_recording` (`tests/test_rbac_scoping.py` — **AC-05**). |

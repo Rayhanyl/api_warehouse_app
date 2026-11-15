@@ -30,8 +30,8 @@ Modul Master Data menyediakan pengelolaan entitas referensi dasar yang digunakan
 * **Tanpa *Hard Delete* (Invarian 9 & PRD 6.8):** Tidak ada endpoint `DELETE` pada seluruh entitas master data. Penonaktifan dilakukan melalui `PATCH` dengan mengirimkan `{"is_active": false}`.
 * **Perlindungan Penonaktifan (`409 ENTITY_IN_USE` — PRD 6.8):**
   * **Kategori & UoM:** Tidak dapat dinonaktifkan apabila masih dipakai oleh barang (`items`) yang berstatus `is_active = true`.
-  * **Pemasok:** Tidak dapat dinonaktifkan apabila masih memiliki *Purchase Order* dengan status belum final (`DRAFT`, `ISSUED`, atau `PARTIALLY_RECEIVED`).
-  * **Barang:** Tidak dapat dinonaktifkan apabila masih memiliki saldo fisik (`inventory_balances.qty_on_hand <> 0`) atau masih tercantum pada dokumen operasional yang belum final (PO `DRAFT`/`ISSUED`/`PARTIALLY_RECEIVED`, GR `DRAFT`, Transfer `DRAFT`/`APPROVED`/`SHIPPED`, atau Opname `DRAFT`/`IN_PROGRESS`/`WAITING_APPROVAL`).
+  * **Pemasok:** Tidak dapat dinonaktifkan apabila masih memiliki *Purchase Order* dengan status belum final (`DRAFT`, `WAITING_L1_APPROVAL`, `WAITING_L2_APPROVAL`, `ISSUED`, atau `PARTIALLY_RECEIVED`).
+  * **Barang:** Tidak dapat dinonaktifkan apabila masih memiliki saldo fisik (`inventory_balances.qty_on_hand <> 0`) atau masih tercantum pada dokumen operasional yang belum final (PO `DRAFT`/`WAITING_L1_APPROVAL`/`WAITING_L2_APPROVAL`/`ISSUED`/`PARTIALLY_RECEIVED`, GR `DRAFT`, Transfer `DRAFT`/`APPROVED`/`SHIPPED`, atau Opname `DRAFT`/`IN_PROGRESS`/`WAITING_L1_APPROVAL`/`WAITING_L2_APPROVAL`).
 * **Imutabilitas SKU & UoM Dasar Barang (`409 ENTITY_IN_USE` — FR-02 & PRD 6.8):**
   * Sebelum barang pernah dipakai di transaksi mana pun, `sku` dan `uom_id` masih dapat diperbarui.
   * Setelah barang tercatat pada `po_lines`, `stock_transfer_lines`, `stock_opname_lines`, `stock_movements`, atau memiliki `inventory_balances.qty_on_hand <> 0`, perubahan terhadap `sku` maupun `uom_id` ditolak dengan `409 ENTITY_IN_USE`.

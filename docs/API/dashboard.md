@@ -24,7 +24,7 @@ Endpoint Dashboard menyediakan ringkasan data operasional real-time dalam satu p
    * `draft_gr_count`: Goods Receipt berstatus `DRAFT`.
    * `pending_transfer_ship_count`: Transfer stok berstatus `APPROVED` siap kirim.
    * `pending_transfer_receive_count`: Transfer stok berstatus `SHIPPED` menunggu penerimaan tujuan.
-   * `active_opname_count`: Sesi Stock Opname aktif (`IN_PROGRESS` atau `WAITING_APPROVAL`).
+   * `active_opname_count`: Sesi Stock Opname aktif (`IN_PROGRESS`, `WAITING_L1_APPROVAL`, `WAITING_L2_APPROVAL`, atau `WAITING_APPROVAL`).
 3. **Aktivitas Mutasi Terkini (`recent_activities`):** Hingga 8 pergerakan stok terakhir (`stock_movements`) lengkap dengan referensi dokumen, gudang, item, kuantitas, dan nama pelaku.
 4. **Gudang Terakses (`assigned_warehouses`):** Daftar gudang aktif yang dapat diakses oleh pengguna (digunakan frontend sebagai opsi filter gudang di Dashboard & Topbar).
 
