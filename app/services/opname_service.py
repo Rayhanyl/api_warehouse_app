@@ -16,7 +16,13 @@ from app.core.exceptions import (
     InvalidStateTransition,
     LocationFrozen,
     NotFoundError,
+    PermissionDenied,
     ValidationDomainError,
+)
+from app.core.permissions import (
+    OPNAME_APPROVE_L1,
+    OPNAME_APPROVE_L2,
+    check_sod_actor,
 )
 from app.core.validation import (
     FOUR_PLACES,
@@ -25,7 +31,7 @@ from app.core.validation import (
     clean_optional_str as _clean_text,
     normalize_decimal_qty,
 )
-from app.repositories import inventory_repo, opname_repo, warehouse_repo
+from app.repositories import approval_repo, inventory_repo, opname_repo, warehouse_repo
 from app.services import (
     access_service,
     audit_service,
@@ -611,7 +617,7 @@ def submit_stock_opname(
     opname_id: int,
     ip_address: str | None = None,
 ) -> dict[str, Any]:
-    """IN_PROGRESS -> WAITING_APPROVAL: seluruh baris wajib memiliki qty_physical >= 0 (FR-07, PRD 5.1)."""
+    """IN_PROGRESS -> WAITING_L1_APPROVAL: seluruh baris wajib memiliki qty_physical >= 0 (FR-07, PRD 5.1, Tahap 34)."""
     with conn.transaction():
         locked = opname_repo.lock_opname_by_id(conn, opname_id)
         if not locked:
@@ -625,7 +631,7 @@ def submit_stock_opname(
                 details={
                     "opname_id": opname_id,
                     "current_status": locked["status"],
-                    "target_status": OpnameStatus.WAITING_APPROVAL.value,
+                    "target_status": OpnameStatus.WAITING_L1_APPROVAL.value,
                 },
             )
 
@@ -648,6 +654,17 @@ def submit_stock_opname(
         opname_repo.update_opname_submitted(
             conn, opname_id, submitted_by=int(actor["id"])
         )
+        approval_repo.insert_approval_log(
+            conn,
+            doc_type="OPNAME",
+            doc_id=opname_id,
+            approval_level=0,
+            action="SUBMITTED",
+            actor_id=int(actor["id"]),
+            actor_name=str(actor["full_name"]),
+            actor_role=str(actor["role_name"]),
+            notes=None,
+        )
         submitted = opname_repo.get_opname_by_id(conn, opname_id)
         assert submitted is not None
 
@@ -659,7 +676,7 @@ def submit_stock_opname(
             entity_id=opname_id,
             old_values={"status": OpnameStatus.IN_PROGRESS.value},
             new_values={
-                "status": OpnameStatus.WAITING_APPROVAL.value,
+                "status": OpnameStatus.WAITING_L1_APPROVAL.value,
                 "submitted_by": submitted["submitted_by"],
                 "submitted_at": submitted["submitted_at"].isoformat()
                 if submitted["submitted_at"]
@@ -677,28 +694,95 @@ def approve_stock_opname(
     opname_id: int,
     ip_address: str | None = None,
 ) -> dict[str, Any]:
-    """WAITING_APPROVAL -> COMPLETED secara atomik: samakan saldo dengan qty_physical, tulis ledger ADJUSTMENT_PLUS/MINUS untuk baris berselisih, dan lepas pembekuan (AC-04, AC-07, AC-10, AC-13)."""
+    """Approval berjenjang Stock Opname (L1 -> WAITING_L2_APPROVAL; L2 -> COMPLETED & penyesuaian stok) beserta SoD guard."""
+    actor_perms: set[str] = set(actor.get("permissions", []))
+
     with conn.transaction():
-        # 1. Kunci header Opname (FOR UPDATE) & pastikan status WAITING_APPROVAL
+        # 1. Kunci header Opname (FOR UPDATE) & periksa status L1 / L2
         locked = opname_repo.lock_opname_by_id(conn, opname_id)
         if not locked:
             raise NotFoundError(
                 "Sesi Stock Opname tidak ditemukan.",
                 details={"opname_id": opname_id},
             )
-        if locked["status"] != OpnameStatus.WAITING_APPROVAL.value:
-            raise InvalidStateTransition(
-                f"Stock Opname berstatus '{locked['status']}' tidak dapat disetujui (harus berstatus WAITING_APPROVAL).",
-                details={
-                    "opname_id": opname_id,
-                    "current_status": locked["status"],
-                    "target_status": OpnameStatus.COMPLETED.value,
-                },
-            )
 
+        current_status = str(locked["status"])
         warehouse_id = int(locked["warehouse_id"])
         # 2. Periksa penugasan gudang (AC-12)
         access_service.ensure_warehouse_access(conn, actor, warehouse_id)
+
+        if current_status in {
+            OpnameStatus.WAITING_L1_APPROVAL.value,
+            OpnameStatus.WAITING_APPROVAL.value,
+        }:
+            if OPNAME_APPROVE_L1 not in actor_perms:
+                raise PermissionDenied(
+                    f"Anda tidak memiliki izin '{OPNAME_APPROVE_L1}' untuk menyetujui Stock Opname Level 1.",
+                    details={"required_permission": OPNAME_APPROVE_L1},
+                )
+            lines = opname_repo.list_opname_lines(conn, opname_id)
+            if not lines or any(ln["qty_physical"] is None for ln in lines):
+                raise ValidationDomainError(
+                    "Seluruh baris Stock Opname wajib memiliki qty_physical sebelum disetujui.",
+                    details={"opname_id": opname_id},
+                )
+
+            is_sod_override = check_sod_actor(
+                actor,
+                [
+                    locked.get("submitted_by"),
+                    *[ln.get("counted_by") for ln in lines],
+                ],
+                action_label="menyetujui Stock Opname Level 1 yang dihitung atau diajukan sendiri",
+            )
+
+            opname_repo.update_opname_l1_approved(
+                conn, opname_id, approved_by=int(actor["id"])
+            )
+            approval_repo.insert_approval_log(
+                conn,
+                doc_type="OPNAME",
+                doc_id=opname_id,
+                approval_level=1,
+                action="APPROVED",
+                actor_id=int(actor["id"]),
+                actor_name=str(actor["full_name"]),
+                actor_role=str(actor["role_name"]),
+                notes=None,
+            )
+            l1_updated = opname_repo.get_opname_by_id(conn, opname_id)
+            assert l1_updated is not None
+
+            audit_service.record(
+                conn,
+                user_id=int(actor["id"]),
+                action="OPNAME_APPROVED_L1",
+                entity_type=ENTITY_TYPE,
+                entity_id=opname_id,
+                old_values={"status": current_status},
+                new_values={
+                    "status": OpnameStatus.WAITING_L2_APPROVAL.value,
+                    "l1_approved_by": l1_updated["l1_approved_by"],
+                },
+                details={"sod_override": True} if is_sod_override else None,
+                ip_address=ip_address,
+            )
+            return l1_updated
+
+        if current_status != OpnameStatus.WAITING_L2_APPROVAL.value:
+            raise InvalidStateTransition(
+                f"Stock Opname berstatus '{current_status}' tidak dapat disetujui (harus WAITING_L1_APPROVAL atau WAITING_L2_APPROVAL).",
+                details={
+                    "opname_id": opname_id,
+                    "current_status": current_status,
+                },
+            )
+
+        if OPNAME_APPROVE_L2 not in actor_perms:
+            raise PermissionDenied(
+                f"Anda tidak memiliki izin '{OPNAME_APPROVE_L2}' untuk menyetujui Stock Opname Level 2.",
+                details={"required_permission": OPNAME_APPROVE_L2},
+            )
 
         lines = opname_repo.list_opname_lines(conn, opname_id)
         if not lines or any(ln["qty_physical"] is None for ln in lines):
@@ -706,6 +790,16 @@ def approve_stock_opname(
                 "Seluruh baris Stock Opname wajib memiliki qty_physical sebelum disetujui.",
                 details={"opname_id": opname_id},
             )
+
+        is_sod_override = check_sod_actor(
+            actor,
+            [
+                locked.get("submitted_by"),
+                locked.get("l1_approved_by"),
+                *[ln.get("counted_by") for ln in lines],
+            ],
+            action_label="menyetujui Stock Opname Level 2 atas dokumen yang dihitung, diajukan, atau disetujui Level 1 oleh dirinya sendiri",
+        )
 
         # 3. Kunci lokasi penyimpanan dalam urutan id ASC (PRD 6.5 langkah 3)
         unique_loc_ids = sorted({int(ln["location_id"]) for ln in lines})
@@ -750,6 +844,17 @@ def approve_stock_opname(
         opname_repo.update_opname_completed(
             conn, opname_id, approved_by=int(actor["id"])
         )
+        approval_repo.insert_approval_log(
+            conn,
+            doc_type="OPNAME",
+            doc_id=opname_id,
+            approval_level=2,
+            action="APPROVED",
+            actor_id=int(actor["id"]),
+            actor_name=str(actor["full_name"]),
+            actor_role=str(actor["role_name"]),
+            notes=None,
+        )
         completed = opname_repo.get_opname_by_id(conn, opname_id)
         assert completed is not None
 
@@ -760,8 +865,9 @@ def approve_stock_opname(
             action="OPNAME_APPROVED",
             entity_type=ENTITY_TYPE,
             entity_id=opname_id,
-            old_values={"status": OpnameStatus.WAITING_APPROVAL.value},
+            old_values={"status": current_status},
             new_values=_serialize_snapshot(completed),
+            details={"sod_override": True} if is_sod_override else None,
             ip_address=ip_address,
         )
         return completed
@@ -775,13 +881,15 @@ def reject_stock_opname(
     rejection_reason: str,
     ip_address: str | None = None,
 ) -> dict[str, Any]:
-    """WAITING_APPROVAL -> IN_PROGRESS dengan alasan penolakan wajib untuk dihitung ulang (FR-07, PRD 5.1)."""
+    """WAITING_L1_APPROVAL / WAITING_L2_APPROVAL -> IN_PROGRESS dengan alasan penolakan wajib untuk dihitung ulang (FR-07, Tahap 34)."""
     clean_reason = _clean_text(rejection_reason)
     if not clean_reason:
         raise ValidationDomainError(
             "Alasan penolakan (rejection_reason) wajib diisi.",
             details={"field": "rejection_reason"},
         )
+
+    actor_perms: set[str] = set(actor.get("permissions", []))
 
     with conn.transaction():
         locked = opname_repo.lock_opname_by_id(conn, opname_id)
@@ -790,12 +898,31 @@ def reject_stock_opname(
                 "Sesi Stock Opname tidak ditemukan.",
                 details={"opname_id": opname_id},
             )
-        if locked["status"] != OpnameStatus.WAITING_APPROVAL.value:
+
+        current_status = str(locked["status"])
+        if current_status in {
+            OpnameStatus.WAITING_L1_APPROVAL.value,
+            OpnameStatus.WAITING_APPROVAL.value,
+        }:
+            if OPNAME_APPROVE_L1 not in actor_perms:
+                raise PermissionDenied(
+                    f"Anda tidak memiliki izin '{OPNAME_APPROVE_L1}' untuk menolak Stock Opname Level 1.",
+                    details={"required_permission": OPNAME_APPROVE_L1},
+                )
+            approval_level = 1
+        elif current_status == OpnameStatus.WAITING_L2_APPROVAL.value:
+            if OPNAME_APPROVE_L2 not in actor_perms:
+                raise PermissionDenied(
+                    f"Anda tidak memiliki izin '{OPNAME_APPROVE_L2}' untuk menolak Stock Opname Level 2.",
+                    details={"required_permission": OPNAME_APPROVE_L2},
+                )
+            approval_level = 2
+        else:
             raise InvalidStateTransition(
-                f"Stock Opname berstatus '{locked['status']}' tidak dapat ditolak (harus berstatus WAITING_APPROVAL).",
+                f"Stock Opname berstatus '{current_status}' tidak dapat ditolak (harus WAITING_L1_APPROVAL atau WAITING_L2_APPROVAL).",
                 details={
                     "opname_id": opname_id,
-                    "current_status": locked["status"],
+                    "current_status": current_status,
                     "target_status": OpnameStatus.IN_PROGRESS.value,
                 },
             )
@@ -804,6 +931,17 @@ def reject_stock_opname(
 
         opname_repo.update_opname_rejected(
             conn, opname_id, rejection_reason=clean_reason
+        )
+        approval_repo.insert_approval_log(
+            conn,
+            doc_type="OPNAME",
+            doc_id=opname_id,
+            approval_level=approval_level,
+            action="REJECTED",
+            actor_id=int(actor["id"]),
+            actor_name=str(actor["full_name"]),
+            actor_role=str(actor["role_name"]),
+            notes=clean_reason,
         )
         rejected = opname_repo.get_opname_by_id(conn, opname_id)
         assert rejected is not None
@@ -814,7 +952,7 @@ def reject_stock_opname(
             action="OPNAME_REJECTED",
             entity_type=ENTITY_TYPE,
             entity_id=opname_id,
-            old_values={"status": OpnameStatus.WAITING_APPROVAL.value},
+            old_values={"status": current_status},
             new_values={
                 "status": OpnameStatus.IN_PROGRESS.value,
                 "rejection_reason": clean_reason,

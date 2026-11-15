@@ -2,25 +2,30 @@
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Body, Depends, Query, Request, status
 from psycopg import Connection
 
 from app.api.deps import get_client_ip, get_current_user
 from app.core.database import get_conn
 from app.core.exceptions import PermissionDenied
 from app.core.permissions import (
+    PO_APPROVE_L1,
+    PO_APPROVE_L2,
     PO_CANCEL,
     PO_CLOSE,
     PO_CREATE,
     PO_ISSUE,
     PO_READ,
+    require_any_permission,
     require_permission,
 )
 from app.schemas.common import OptDateQuery, OptIntQuery, OptStrQuery, Page
 from app.schemas.purchase_order import (
+    PurchaseOrderApproveRequest,
     PurchaseOrderCloseRequest,
     PurchaseOrderCreate,
     PurchaseOrderOut,
+    PurchaseOrderRejectRequest,
     PurchaseOrderSummaryOut,
     PurchaseOrderUpdate,
 )
@@ -137,11 +142,65 @@ def update_purchase_order(
     return PurchaseOrderOut(**updated)
 
 
+@router.post("/{po_id}/submit", response_model=PurchaseOrderOut)
+def submit_purchase_order(
+    po_id: int,
+    request: Request,
+    payload: PurchaseOrderApproveRequest | None = Body(default=None),
+    actor: dict[str, Any] = Depends(require_any_permission(PO_CREATE, PO_ISSUE)),
+    conn: Connection[dict[str, Any]] = Depends(get_conn),
+) -> PurchaseOrderOut:
+    updated = po_service.submit_purchase_order(
+        conn,
+        actor=actor,
+        po_id=po_id,
+        notes=payload.notes if payload else None,
+        ip_address=get_client_ip(request),
+    )
+    return PurchaseOrderOut(**updated)
+
+
+@router.post("/{po_id}/approve", response_model=PurchaseOrderOut)
+def approve_purchase_order(
+    po_id: int,
+    request: Request,
+    payload: PurchaseOrderApproveRequest | None = Body(default=None),
+    actor: dict[str, Any] = Depends(require_any_permission(PO_APPROVE_L1, PO_APPROVE_L2)),
+    conn: Connection[dict[str, Any]] = Depends(get_conn),
+) -> PurchaseOrderOut:
+    updated = po_service.approve_purchase_order(
+        conn,
+        actor=actor,
+        po_id=po_id,
+        notes=payload.notes if payload else None,
+        ip_address=get_client_ip(request),
+    )
+    return PurchaseOrderOut(**updated)
+
+
+@router.post("/{po_id}/reject", response_model=PurchaseOrderOut)
+def reject_purchase_order(
+    po_id: int,
+    payload: PurchaseOrderRejectRequest,
+    request: Request,
+    actor: dict[str, Any] = Depends(require_any_permission(PO_APPROVE_L1, PO_APPROVE_L2)),
+    conn: Connection[dict[str, Any]] = Depends(get_conn),
+) -> PurchaseOrderOut:
+    updated = po_service.reject_purchase_order(
+        conn,
+        actor=actor,
+        po_id=po_id,
+        rejection_reason=payload.rejection_reason,
+        ip_address=get_client_ip(request),
+    )
+    return PurchaseOrderOut(**updated)
+
+
 @router.post("/{po_id}/issue", response_model=PurchaseOrderOut)
 def issue_purchase_order(
     po_id: int,
     request: Request,
-    actor: dict[str, Any] = Depends(require_permission(PO_ISSUE)),
+    actor: dict[str, Any] = Depends(require_permission(PO_APPROVE_L1)),
     conn: Connection[dict[str, Any]] = Depends(get_conn),
 ) -> PurchaseOrderOut:
     updated = po_service.issue_purchase_order(

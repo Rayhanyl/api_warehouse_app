@@ -21,7 +21,7 @@ from app.core.exceptions import (
     ValidationDomainError,
     WarehouseNotAssigned,
 )
-from app.core.permissions import TRANSFER_APPROVE, TRANSFER_CREATE
+from app.core.permissions import TRANSFER_APPROVE, TRANSFER_CREATE, check_sod_actor
 from app.core.validation import (
     FOUR_PLACES,
     MAX_QTY,
@@ -564,6 +564,11 @@ def approve_transfer(
         access_service.ensure_warehouse_access(
             conn, actor, int(locked["source_warehouse_id"])
         )
+        is_sod_override = check_sod_actor(
+            actor,
+            [int(locked["created_by"])],
+            action_label="menyetujui Stock Transfer yang dibuatnya sendiri",
+        )
 
         _validate_header(
             conn,
@@ -607,6 +612,7 @@ def approve_transfer(
                 if updated["approved_at"]
                 else None,
             },
+            details={"sod_override": True} if is_sod_override else None,
             ip_address=ip_address,
         )
         return updated

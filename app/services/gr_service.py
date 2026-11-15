@@ -15,6 +15,7 @@ from app.core.exceptions import (
     OverReceipt,
     ValidationDomainError,
 )
+from app.core.permissions import check_sod_actor
 from app.core.validation import FOUR_PLACES, MAX_QTY, normalize_decimal_qty
 from app.repositories import gr_repo, inventory_repo, po_repo
 from app.services import (
@@ -536,8 +537,13 @@ def post_goods_receipt(
         warehouse_id = int(gr["warehouse_id"])
         po_id = int(gr["po_id"])
 
-        # 2. Periksa penugasan gudang (AC-12)
+        # 2. Periksa penugasan gudang (AC-12) & Segregation of Duties (Tahap 38)
         access_service.ensure_warehouse_access(conn, actor, warehouse_id)
+        is_sod_override = check_sod_actor(
+            actor,
+            [int(gr["created_by"])],
+            action_label="mem-posting Goods Receipt yang dibuatnya sendiri",
+        )
 
         # 3. Kunci baris header PO terkait (FOR UPDATE) & pastikan status ISSUED / PARTIALLY_RECEIVED
         po = po_repo.lock_po_by_id(conn, po_id)
@@ -649,6 +655,7 @@ def post_goods_receipt(
                 "po_id": po_id,
                 "po_status_after": new_po_status,
             },
+            details={"sod_override": True} if is_sod_override else None,
             ip_address=ip_address,
         )
         return posted_gr

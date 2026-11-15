@@ -32,6 +32,11 @@ DecimalStr = Annotated[
     PlainSerializer(lambda v: f"{v:.4f}", return_type=str, when_used="json"),
 ]
 
+MoneyStr = Annotated[
+    Decimal,
+    PlainSerializer(lambda v: f"{v:.2f}", return_type=str, when_used="json"),
+]
+
 _OptNone = Annotated[None, BeforeValidator(_empty_str_to_none)]
 
 OptStrQuery = (
@@ -73,4 +78,17 @@ class Page(BaseModel, Generic[T]):
     total: int
     limit: int
     offset: int
+
+
+class ApprovalLogOut(BaseModel):
+    id: int
+    doc_type: str
+    doc_id: int
+    approval_level: int
+    action: str
+    actor_id: int | None = None
+    actor_name: str
+    actor_role: str
+    notes: str | None = None
+    created_at: datetime
 

@@ -213,17 +213,17 @@ def get_pending_actions(
         int(trf_recv_row["total"]) if trf_recv_row else 0
     )
 
-    # Opname aktif (IN_PROGRESS / WAITING_APPROVAL)
+    # Opname aktif (IN_PROGRESS / WAITING_L1_APPROVAL / WAITING_L2_APPROVAL)
     if warehouse_ids is None:
         opn_row = conn.execute(
-            "SELECT COUNT(*)::INT AS total FROM stock_opnames WHERE status IN ('IN_PROGRESS', 'WAITING_APPROVAL')"
+            "SELECT COUNT(*)::INT AS total FROM stock_opnames WHERE status IN ('IN_PROGRESS', 'WAITING_L1_APPROVAL', 'WAITING_L2_APPROVAL', 'WAITING_APPROVAL')"
         ).fetchone()
     else:
         opn_row = conn.execute(
             """
             SELECT COUNT(*)::INT AS total
             FROM stock_opnames
-            WHERE status IN ('IN_PROGRESS', 'WAITING_APPROVAL') AND warehouse_id = ANY(%s)
+            WHERE status IN ('IN_PROGRESS', 'WAITING_L1_APPROVAL', 'WAITING_L2_APPROVAL', 'WAITING_APPROVAL') AND warehouse_id = ANY(%s)
             """,
             (warehouse_ids,),
         ).fetchone()

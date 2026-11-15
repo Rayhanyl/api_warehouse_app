@@ -1109,7 +1109,7 @@ def is_item_in_use(
                 FROM stock_opname_lines sol
                 JOIN stock_opnames so ON so.id = sol.opname_id
                 WHERE sol.item_id = %s
-                  AND so.status IN ('DRAFT', 'IN_PROGRESS', 'WAITING_APPROVAL')
+                  AND so.status IN ('DRAFT', 'IN_PROGRESS', 'WAITING_L1_APPROVAL', 'WAITING_L2_APPROVAL', 'WAITING_APPROVAL')
             )
         ) AS in_use
         """,

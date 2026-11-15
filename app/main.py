@@ -21,6 +21,7 @@ from app.api.routes import (
     master,
     menus,
     purchase_orders,
+    settings as settings_route,
     stock,
     stock_opnames,
     stock_transfers,
@@ -212,6 +213,7 @@ def create_app() -> FastAPI:
     application.include_router(audit_logs.router, prefix=settings.api_v1_prefix)
     application.include_router(dashboard.router, prefix=settings.api_v1_prefix)
     application.include_router(document_templates.router, prefix=settings.api_v1_prefix)
+    application.include_router(settings_route.router, prefix=settings.api_v1_prefix)
 
     return application
 

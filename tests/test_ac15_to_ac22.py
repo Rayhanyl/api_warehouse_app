@@ -399,7 +399,7 @@ def test_ac21_invalid_state_transition_documents(
     # PO yang CANCELLED tidak bisa di-issue kembali -> 409 INVALID_STATE_TRANSITION
     bad_issue = client.post(
         f"/api/v1/purchase-orders/{po['id']}/issue",
-        headers=purchasing_user["auth_headers"],
+        headers=manager_user["auth_headers"],
     )
     assert bad_issue.status_code == 409
     assert bad_issue.json()["error"]["code"] == "INVALID_STATE_TRANSITION"

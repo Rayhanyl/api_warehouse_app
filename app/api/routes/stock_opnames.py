@@ -8,10 +8,12 @@ from psycopg import Connection
 from app.api.deps import get_client_ip
 from app.core.database import get_conn
 from app.core.permissions import (
-    OPNAME_APPROVE,
+    OPNAME_APPROVE_L1,
+    OPNAME_APPROVE_L2,
     OPNAME_COUNT,
     OPNAME_MANAGE,
     OPNAME_READ,
+    require_any_permission,
     require_permission,
 )
 from app.schemas.common import OptDateQuery, OptIntQuery, OptStrQuery, Page
@@ -164,7 +166,9 @@ def submit_stock_opname(
 def approve_stock_opname(
     opname_id: int,
     request: Request,
-    actor: dict[str, Any] = Depends(require_permission(OPNAME_APPROVE)),
+    actor: dict[str, Any] = Depends(
+        require_any_permission(OPNAME_APPROVE_L1, OPNAME_APPROVE_L2)
+    ),
     conn: Connection[dict[str, Any]] = Depends(get_conn),
 ) -> StockOpnameOut:
     approved = opname_service.approve_stock_opname(
@@ -181,7 +185,9 @@ def reject_stock_opname(
     opname_id: int,
     payload: StockOpnameRejectRequest,
     request: Request,
-    actor: dict[str, Any] = Depends(require_permission(OPNAME_APPROVE)),
+    actor: dict[str, Any] = Depends(
+        require_any_permission(OPNAME_APPROVE_L1, OPNAME_APPROVE_L2)
+    ),
     conn: Connection[dict[str, Any]] = Depends(get_conn),
 ) -> StockOpnameOut:
     rejected = opname_service.reject_stock_opname(

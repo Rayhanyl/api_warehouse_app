@@ -13,15 +13,32 @@ from app.core.exceptions import (
     PermissionDenied,
     ValidationDomainError,
 )
-from app.core.permissions import PO_CANCEL, PO_CREATE
+from app.core.permissions import (
+    PO_APPROVE_L1,
+    PO_APPROVE_L2,
+    PO_CANCEL,
+    PO_CREATE,
+    check_sod_actor,
+)
 from app.core.validation import (
     FOUR_PLACES,
     MAX_QTY,
     clean_optional_str,
     normalize_decimal_qty,
 )
-from app.repositories import inventory_repo, master_repo, po_repo, warehouse_repo
-from app.services import access_service, audit_service, numbering_service
+from app.repositories import (
+    approval_repo,
+    inventory_repo,
+    master_repo,
+    po_repo,
+    warehouse_repo,
+)
+from app.services import (
+    access_service,
+    audit_service,
+    numbering_service,
+    settings_service,
+)
 from app.utils.enums import DocType, POStatus
 from app.utils.pagination import build_order_by, normalize_pagination
 
@@ -124,15 +141,73 @@ def _validate_and_normalize_po_lines(
             if line.get("notes") is not None and str(line["notes"]).strip()
             else None
         )
+        raw_price = line.get("unit_price")
+        unit_price = (
+            Decimal("0.00")
+            if raw_price is None or raw_price == ""
+            else Decimal(str(raw_price)).quantize(Decimal("0.01"))
+        )
+        if unit_price < Decimal("0"):
+            raise ValidationDomainError(
+                "Harga satuan barang pada baris Purchase Order tidak boleh negatif.",
+                details={"item_id": item_id, "unit_price": str(unit_price), "line_index": idx},
+            )
         normalized_lines.append(
             {
                 "item_id": item_id,
                 "qty_ordered": qty_ordered,
+                "unit_price": unit_price,
                 "notes": clean_notes,
             }
         )
 
     return normalized_lines
+
+
+def _compute_po_total_amount(lines: list[dict[str, Any]]) -> Decimal:
+    total = Decimal("0.00")
+    for ln in lines:
+        qty = Decimal(ln["qty_ordered"])
+        price = Decimal(ln.get("unit_price", Decimal("0.00"))).quantize(Decimal("0.01"))
+        total += (qty * price).quantize(Decimal("0.01"))
+    return total.quantize(Decimal("0.01"))
+
+
+def _validate_po_lines_ready_for_approval(
+    conn: Connection[dict[str, Any]],
+    po_id: int,
+    *,
+    empty_error_message: str,
+) -> list[dict[str, Any]]:
+    po_repo.lock_po_lines(conn, po_id)
+    lines = po_repo.list_po_lines(conn, po_id)
+    if not lines:
+        raise ValidationDomainError(
+            empty_error_message,
+            details={"po_id": po_id},
+        )
+
+    for ln in lines:
+        qty_ordered = _normalize_positive_qty(
+            Decimal(ln["qty_ordered"]), field_name="qty_ordered"
+        )
+        if not ln["item_is_active"]:
+            raise InactiveReferenceError(
+                f"Barang '{ln['item_sku']}' pada baris PO berstatus tidak aktif.",
+                details={"po_id": po_id, "item_id": ln["item_id"], "sku": ln["item_sku"]},
+            )
+        if not bool(ln["allow_decimal"]) and qty_ordered != qty_ordered.to_integral_value():
+            raise ValidationDomainError(
+                f"Barang '{ln['item_sku']}' menggunakan UoM '{ln['uom_code']}' yang harus berupa bilangan bulat.",
+                details={
+                    "po_id": po_id,
+                    "item_id": ln["item_id"],
+                    "sku": ln["item_sku"],
+                    "uom_code": ln["uom_code"],
+                    "qty_ordered": str(qty_ordered),
+                },
+            )
+    return lines
 
 
 def _validate_delivery_date(order_date: date, expected_delivery_date: date | None) -> None:
@@ -162,6 +237,8 @@ def _serialize_po_snapshot(po_detail: dict[str, Any]) -> dict[str, Any]:
         if isinstance(exp_date, date)
         else exp_date,
         "revised_from_po_id": po_detail.get("revised_from_po_id"),
+        "total_amount": f"{Decimal(po_detail.get('total_amount', 0)):.2f}",
+        "rejection_reason": po_detail.get("rejection_reason"),
         "notes": po_detail["notes"],
         "closed_reason": po_detail.get("closed_reason"),
         "lines": [
@@ -170,6 +247,7 @@ def _serialize_po_snapshot(po_detail: dict[str, Any]) -> dict[str, Any]:
                 "item_id": ln["item_id"],
                 "item_sku": ln["item_sku"],
                 "qty_ordered": f"{Decimal(ln['qty_ordered']):.4f}",
+                "unit_price": f"{Decimal(ln.get('unit_price', 0)):.2f}",
                 "qty_received": f"{Decimal(ln['qty_received']):.4f}",
                 "qty_closed": f"{Decimal(ln.get('qty_closed', 0)):.4f}",
                 "line_status": ln.get("line_status", "OPEN"),
@@ -309,6 +387,7 @@ def create_purchase_order(
             warehouse_id=warehouse_id,
             order_date=order_date,
             expected_delivery_date=expected_delivery_date,
+            total_amount=_compute_po_total_amount(normalized_lines),
             notes=clean_notes,
             created_by=int(actor["id"]),
         )
@@ -436,6 +515,310 @@ def update_purchase_order(
         return updated
 
 
+def submit_purchase_order(
+    conn: Connection[dict[str, Any]],
+    *,
+    actor: dict[str, Any],
+    po_id: int,
+    notes: str | None = None,
+    ip_address: str | None = None,
+) -> dict[str, Any]:
+    """Mengajukan Purchase Order untuk persetujuan berjenjang (DRAFT -> WAITING_L1_APPROVAL)."""
+    clean_notes = clean_optional_str(notes)
+    with conn.transaction():
+        locked = po_repo.lock_po_by_id(conn, po_id)
+        if not locked:
+            raise NotFoundError(
+                "Purchase Order tidak ditemukan.",
+                details={"po_id": po_id},
+            )
+        access_service.ensure_warehouse_access(conn, actor, int(locked["warehouse_id"]))
+        if locked["status"] != POStatus.DRAFT.value:
+            raise InvalidStateTransition(
+                f"Purchase Order berstatus '{locked['status']}' tidak dapat diajukan persetujuan (harus berstatus DRAFT).",
+                details={
+                    "po_id": po_id,
+                    "current_status": locked["status"],
+                    "target_status": POStatus.WAITING_L1_APPROVAL.value,
+                },
+            )
+
+        _validate_supplier_and_warehouse(
+            conn,
+            supplier_id=int(locked["supplier_id"]),
+            warehouse_id=int(locked["warehouse_id"]),
+        )
+        _validate_po_lines_ready_for_approval(
+            conn,
+            po_id,
+            empty_error_message="Purchase Order tidak dapat diajukan karena belum memiliki baris barang.",
+        )
+
+        po_repo.update_po_submitted(conn, po_id, submitted_by=int(actor["id"]))
+        approval_repo.insert_approval_log(
+            conn,
+            doc_type="PO",
+            doc_id=po_id,
+            approval_level=0,
+            action="SUBMITTED",
+            actor_id=int(actor["id"]),
+            actor_name=str(actor["full_name"]),
+            actor_role=str(actor["role_name"]),
+            notes=clean_notes,
+        )
+        updated = po_repo.get_po_by_id(conn, po_id)
+        assert updated is not None
+
+        audit_service.record(
+            conn,
+            user_id=int(actor["id"]),
+            action="PO_SUBMITTED",
+            entity_type="purchase_orders",
+            entity_id=po_id,
+            old_values={"status": POStatus.DRAFT.value},
+            new_values={
+                "status": POStatus.WAITING_L1_APPROVAL.value,
+                "submitted_by": updated["submitted_by"],
+                "total_amount": f"{Decimal(updated.get('total_amount', 0)):.2f}",
+            },
+            ip_address=ip_address,
+        )
+        return updated
+
+
+def approve_purchase_order(
+    conn: Connection[dict[str, Any]],
+    *,
+    actor: dict[str, Any],
+    po_id: int,
+    notes: str | None = None,
+    ip_address: str | None = None,
+) -> dict[str, Any]:
+    """Menyetujui PO secara berjenjang (L1 -> ISSUED atau WAITING_L2_APPROVAL -> ISSUED) beserta SoD guard."""
+    clean_notes = clean_optional_str(notes)
+    actor_perms: set[str] = set(actor.get("permissions", []))
+
+    with conn.transaction():
+        locked = po_repo.lock_po_by_id(conn, po_id)
+        if not locked:
+            raise NotFoundError(
+                "Purchase Order tidak ditemukan.",
+                details={"po_id": po_id},
+            )
+        access_service.ensure_warehouse_access(conn, actor, int(locked["warehouse_id"]))
+
+        current_status = str(locked["status"])
+        if current_status == POStatus.WAITING_L1_APPROVAL.value:
+            if PO_APPROVE_L1 not in actor_perms:
+                raise PermissionDenied(
+                    f"Anda tidak memiliki izin '{PO_APPROVE_L1}' untuk menyetujui Purchase Order Level 1.",
+                    details={"required_permission": PO_APPROVE_L1},
+                )
+            is_sod_override = check_sod_actor(
+                actor,
+                [locked.get("created_by"), locked.get("submitted_by")],
+                action_label="menyetujui Purchase Order Level 1 yang dibuat atau diajukan sendiri",
+            )
+            _validate_supplier_and_warehouse(
+                conn,
+                supplier_id=int(locked["supplier_id"]),
+                warehouse_id=int(locked["warehouse_id"]),
+            )
+            _validate_po_lines_ready_for_approval(
+                conn,
+                po_id,
+                empty_error_message="Purchase Order tidak dapat disetujui karena belum memiliki baris barang.",
+            )
+
+            threshold = settings_service.get_po_l2_threshold(conn)
+            total_amount = Decimal(locked.get("total_amount") or 0).quantize(Decimal("0.01"))
+            needs_l2 = total_amount > threshold
+            next_status = (
+                POStatus.WAITING_L2_APPROVAL.value
+                if needs_l2
+                else POStatus.ISSUED.value
+            )
+
+            po_repo.update_po_l1_approved(
+                conn,
+                po_id,
+                approved_by=int(actor["id"]),
+                next_status=next_status,
+            )
+            approval_repo.insert_approval_log(
+                conn,
+                doc_type="PO",
+                doc_id=po_id,
+                approval_level=1,
+                action="APPROVED",
+                actor_id=int(actor["id"]),
+                actor_name=str(actor["full_name"]),
+                actor_role=str(actor["role_name"]),
+                notes=clean_notes,
+            )
+            updated = po_repo.get_po_by_id(conn, po_id)
+            assert updated is not None
+
+            audit_service.record(
+                conn,
+                user_id=int(actor["id"]),
+                action="PO_APPROVED_L1",
+                entity_type="purchase_orders",
+                entity_id=po_id,
+                old_values={"status": current_status},
+                new_values={
+                    "status": next_status,
+                    "l1_approved_by": updated["l1_approved_by"],
+                    "total_amount": f"{total_amount:.2f}",
+                    "threshold": f"{threshold:.2f}",
+                },
+                details={"sod_override": True} if is_sod_override else None,
+                ip_address=ip_address,
+            )
+            return updated
+
+        if current_status == POStatus.WAITING_L2_APPROVAL.value:
+            if PO_APPROVE_L2 not in actor_perms:
+                raise PermissionDenied(
+                    f"Anda tidak memiliki izin '{PO_APPROVE_L2}' untuk menyetujui Purchase Order Level 2.",
+                    details={"required_permission": PO_APPROVE_L2},
+                )
+            is_sod_override = check_sod_actor(
+                actor,
+                [
+                    locked.get("created_by"),
+                    locked.get("submitted_by"),
+                    locked.get("l1_approved_by"),
+                ],
+                action_label="menyetujui Purchase Order Level 2 atas dokumen yang dibuat, diajukan, atau disetujui Level 1 oleh dirinya sendiri",
+            )
+            _validate_supplier_and_warehouse(
+                conn,
+                supplier_id=int(locked["supplier_id"]),
+                warehouse_id=int(locked["warehouse_id"]),
+            )
+            _validate_po_lines_ready_for_approval(
+                conn,
+                po_id,
+                empty_error_message="Purchase Order tidak dapat disetujui karena belum memiliki baris barang.",
+            )
+
+            po_repo.update_po_l2_approved(conn, po_id, approved_by=int(actor["id"]))
+            approval_repo.insert_approval_log(
+                conn,
+                doc_type="PO",
+                doc_id=po_id,
+                approval_level=2,
+                action="APPROVED",
+                actor_id=int(actor["id"]),
+                actor_name=str(actor["full_name"]),
+                actor_role=str(actor["role_name"]),
+                notes=clean_notes,
+            )
+            updated = po_repo.get_po_by_id(conn, po_id)
+            assert updated is not None
+
+            audit_service.record(
+                conn,
+                user_id=int(actor["id"]),
+                action="PO_APPROVED_L2",
+                entity_type="purchase_orders",
+                entity_id=po_id,
+                old_values={"status": current_status},
+                new_values={
+                    "status": POStatus.ISSUED.value,
+                    "l2_approved_by": updated["l2_approved_by"],
+                    "issued_by": updated["issued_by"],
+                },
+                details={"sod_override": True} if is_sod_override else None,
+                ip_address=ip_address,
+            )
+            return updated
+
+        raise InvalidStateTransition(
+            f"Purchase Order berstatus '{current_status}' tidak dapat disetujui (harus WAITING_L1_APPROVAL atau WAITING_L2_APPROVAL).",
+            details={"po_id": po_id, "current_status": current_status},
+        )
+
+
+def reject_purchase_order(
+    conn: Connection[dict[str, Any]],
+    *,
+    actor: dict[str, Any],
+    po_id: int,
+    rejection_reason: str,
+    ip_address: str | None = None,
+) -> dict[str, Any]:
+    """Menolak PO yang menunggu persetujuan L1/L2 dan mengembalikannya ke status DRAFT dengan alasan wajib."""
+    reason = rejection_reason.strip()
+    if not reason:
+        raise ValidationDomainError(
+            "Alasan penolakan Purchase Order wajib diisi.",
+            details={"field": "rejection_reason"},
+        )
+
+    actor_perms: set[str] = set(actor.get("permissions", []))
+    with conn.transaction():
+        locked = po_repo.lock_po_by_id(conn, po_id)
+        if not locked:
+            raise NotFoundError(
+                "Purchase Order tidak ditemukan.",
+                details={"po_id": po_id},
+            )
+        access_service.ensure_warehouse_access(conn, actor, int(locked["warehouse_id"]))
+
+        current_status = str(locked["status"])
+        if current_status == POStatus.WAITING_L1_APPROVAL.value:
+            if PO_APPROVE_L1 not in actor_perms:
+                raise PermissionDenied(
+                    f"Anda tidak memiliki izin '{PO_APPROVE_L1}' untuk menolak Purchase Order Level 1.",
+                    details={"required_permission": PO_APPROVE_L1},
+                )
+            approval_level = 1
+        elif current_status == POStatus.WAITING_L2_APPROVAL.value:
+            if PO_APPROVE_L2 not in actor_perms:
+                raise PermissionDenied(
+                    f"Anda tidak memiliki izin '{PO_APPROVE_L2}' untuk menolak Purchase Order Level 2.",
+                    details={"required_permission": PO_APPROVE_L2},
+                )
+            approval_level = 2
+        else:
+            raise InvalidStateTransition(
+                f"Purchase Order berstatus '{current_status}' tidak dapat ditolak.",
+                details={"po_id": po_id, "current_status": current_status},
+            )
+
+        po_repo.update_po_rejected(conn, po_id, rejection_reason=reason)
+        approval_repo.insert_approval_log(
+            conn,
+            doc_type="PO",
+            doc_id=po_id,
+            approval_level=approval_level,
+            action="REJECTED",
+            actor_id=int(actor["id"]),
+            actor_name=str(actor["full_name"]),
+            actor_role=str(actor["role_name"]),
+            notes=reason,
+        )
+        updated = po_repo.get_po_by_id(conn, po_id)
+        assert updated is not None
+
+        audit_service.record(
+            conn,
+            user_id=int(actor["id"]),
+            action="PO_REJECTED",
+            entity_type="purchase_orders",
+            entity_id=po_id,
+            old_values={"status": current_status},
+            new_values={
+                "status": POStatus.DRAFT.value,
+                "rejection_reason": reason,
+            },
+            ip_address=ip_address,
+        )
+        return updated
+
+
 def issue_purchase_order(
     conn: Connection[dict[str, Any]],
     *,
@@ -443,7 +826,14 @@ def issue_purchase_order(
     po_id: int,
     ip_address: str | None = None,
 ) -> dict[str, Any]:
-    """Transisi DRAFT -> ISSUED (PRD 5.1, po:issue)."""
+    """Transisi langsung DRAFT -> ISSUED untuk PO <= ambang L2 (memerlukan po:approve_l1 dan mematuhi SoD Tahap 38)."""
+    actor_perms: set[str] = set(actor.get("permissions", []))
+    if PO_APPROVE_L1 not in actor_perms:
+        raise PermissionDenied(
+            f"Anda tidak memiliki izin '{PO_APPROVE_L1}' untuk menerbitkan Purchase Order secara langsung.",
+            details={"required_permission": PO_APPROVE_L1},
+        )
+
     with conn.transaction():
         locked = po_repo.lock_po_by_id(conn, po_id)
         if not locked:
@@ -462,40 +852,47 @@ def issue_purchase_order(
                 },
             )
 
+        is_sod_override = check_sod_actor(
+            actor,
+            [locked.get("created_by"), locked.get("submitted_by")],
+            action_label="menerbitkan Purchase Order yang dibuat sendiri",
+        )
+
+        threshold = settings_service.get_po_l2_threshold(conn)
+        total_amount = Decimal(locked.get("total_amount") or 0).quantize(Decimal("0.01"))
+        if total_amount > threshold:
+            raise InvalidStateTransition(
+                f"Total PO Rp {total_amount:,.2f} melebihi ambang persetujuan Level 2 (Rp {threshold:,.2f}); wajib diajukan melalui alur persetujuan berjenjang (/submit -> /approve).",
+                details={
+                    "po_id": po_id,
+                    "total_amount": f"{total_amount:.2f}",
+                    "threshold": f"{threshold:.2f}",
+                },
+            )
+
         _validate_supplier_and_warehouse(
             conn,
             supplier_id=int(locked["supplier_id"]),
             warehouse_id=int(locked["warehouse_id"]),
         )
-
-        po_repo.lock_po_lines(conn, po_id)
-        lines = po_repo.list_po_lines(conn, po_id)
-        if not lines:
-            raise ValidationDomainError(
-                "Purchase Order tidak dapat diterbitkan karena belum memiliki baris barang.",
-                details={"po_id": po_id},
-            )
-
-        for ln in lines:
-            qty_ordered = _normalize_positive_qty(
-                Decimal(ln["qty_ordered"]), field_name="qty_ordered"
-            )
-            if not ln["item_is_active"]:
-                raise InactiveReferenceError(
-                    f"Barang '{ln['item_sku']}' pada baris PO berstatus tidak aktif.",
-                    details={"po_id": po_id, "item_id": ln["item_id"], "sku": ln["item_sku"]},
-                )
-            if not bool(ln["allow_decimal"]) and qty_ordered != qty_ordered.to_integral_value():
-                raise ValidationDomainError(
-                    f"Barang '{ln['item_sku']}' menggunakan UoM '{ln['uom_code']}' yang harus berupa bilangan bulat.",
-                    details={
-                        "po_id": po_id,
-                        "item_id": ln["item_id"],
-                        "qty_ordered": str(qty_ordered),
-                    },
-                )
+        _validate_po_lines_ready_for_approval(
+            conn,
+            po_id,
+            empty_error_message="Purchase Order tidak dapat diterbitkan karena belum memiliki baris barang.",
+        )
 
         po_repo.update_po_issued(conn, po_id, issued_by=int(actor["id"]))
+        approval_repo.insert_approval_log(
+            conn,
+            doc_type="PO",
+            doc_id=po_id,
+            approval_level=1,
+            action="APPROVED",
+            actor_id=int(actor["id"]),
+            actor_name=str(actor["full_name"]),
+            actor_role=str(actor["role_name"]),
+            notes="Penerbitan langsung (di bawah ambang approval L2)",
+        )
         updated = po_repo.get_po_by_id(conn, po_id)
         assert updated is not None
 
@@ -513,6 +910,7 @@ def issue_purchase_order(
                 if updated["issued_at"]
                 else None,
             },
+            details={"sod_override": True} if is_sod_override else None,
             ip_address=ip_address,
         )
         return updated
@@ -543,6 +941,15 @@ def cancel_purchase_order(
                 raise PermissionDenied(
                     f"Anda tidak memiliki izin '{PO_CREATE}' untuk membatalkan PO berstatus DRAFT.",
                     details={"required_permission": PO_CREATE},
+                )
+        elif current_status in {
+            POStatus.WAITING_L1_APPROVAL.value,
+            POStatus.WAITING_L2_APPROVAL.value,
+        }:
+            if PO_CREATE not in actor_perms and PO_CANCEL not in actor_perms:
+                raise PermissionDenied(
+                    f"Anda tidak memiliki izin '{PO_CREATE}' atau '{PO_CANCEL}' untuk membatalkan PO berstatus {current_status}.",
+                    details={"required_permissions": [PO_CREATE, PO_CANCEL]},
                 )
         elif current_status == POStatus.ISSUED.value:
             if PO_CANCEL not in actor_perms:
@@ -726,6 +1133,15 @@ def revise_issued_po_as_draft(
         new_po_number = numbering_service.generate_document_number(
             conn, DocType.PO, reference_date=ref_date
         )
+        cloned_lines = [
+            {
+                "item_id": int(ln["item_id"]),
+                "qty_ordered": Decimal(ln["qty_ordered"]),
+                "unit_price": Decimal(ln.get("unit_price", Decimal("0.00"))).quantize(Decimal("0.01")),
+                "notes": ln.get("notes"),
+            }
+            for ln in old_lines
+        ]
         new_header = po_repo.insert_po_header(
             conn,
             po_number=new_po_number,
@@ -734,19 +1150,12 @@ def revise_issued_po_as_draft(
             order_date=ref_date,
             expected_delivery_date=locked.get("expected_delivery_date"),
             revised_from_po_id=po_id,
+            total_amount=_compute_po_total_amount(cloned_lines),
             notes=locked.get("notes"),
             created_by=int(actor["id"]),
         )
         new_po_id = int(new_header["id"])
 
-        cloned_lines = [
-            {
-                "item_id": int(ln["item_id"]),
-                "qty_ordered": Decimal(ln["qty_ordered"]),
-                "notes": ln.get("notes"),
-            }
-            for ln in old_lines
-        ]
         if cloned_lines:
             po_repo.replace_po_lines(
                 conn,

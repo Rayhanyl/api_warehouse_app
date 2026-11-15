@@ -11,7 +11,7 @@ from app.core.validation import (
     pydantic_required_str,
     pydantic_validate_decimal_qty,
 )
-from app.schemas.common import DecimalStr
+from app.schemas.common import ApprovalLogOut, DecimalStr
 
 
 class StockOpnameCreate(BaseModel):
@@ -114,6 +114,10 @@ class StockOpnameSummaryOut(BaseModel):
     started_by: int | None = None
     submitted_at: datetime | None = None
     submitted_by: int | None = None
+    l1_approved_by: int | None = None
+    l1_approved_at: datetime | None = None
+    l2_approved_by: int | None = None
+    l2_approved_at: datetime | None = None
     approved_by: int | None = None
     approved_at: datetime | None = None
     rejection_reason: str | None = None
@@ -124,4 +128,5 @@ class StockOpnameSummaryOut(BaseModel):
 
 class StockOpnameOut(StockOpnameSummaryOut):
     lines: list[StockOpnameLineOut] = Field(default_factory=list)
+    approval_logs: list[ApprovalLogOut] = Field(default_factory=list)
 

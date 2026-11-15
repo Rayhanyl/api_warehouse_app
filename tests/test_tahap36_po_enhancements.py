@@ -119,7 +119,7 @@ def test_po_expected_delivery_date_validation_overdue_filter_and_draft_edit(
 
     issue_res = client.post(
         f"/api/v1/purchase-orders/{po_id}/issue",
-        headers=purchasing_user["auth_headers"],
+        headers=manager_user["auth_headers"],
     )
     assert issue_res.status_code == 200
     assert issue_res.json()["is_overdue"] is True
@@ -140,7 +140,7 @@ def test_po_expected_delivery_date_validation_overdue_filter_and_draft_edit(
     assert ontime_res.status_code == 201
     client.post(
         f"/api/v1/purchase-orders/{ontime_res.json()['id']}/issue",
-        headers=purchasing_user["auth_headers"],
+        headers=manager_user["auth_headers"],
     )
 
     overdue_list = client.get(
@@ -187,7 +187,7 @@ def test_po_issued_revise_as_draft_and_block_when_gr_exists(
     assert (
         client.post(
             f"/api/v1/purchase-orders/{po1_id}/issue",
-            headers=purchasing_user["auth_headers"],
+            headers=manager_user["auth_headers"],
         ).status_code
         == 200
     )
@@ -218,7 +218,7 @@ def test_po_issued_revise_as_draft_and_block_when_gr_exists(
     assert (
         client.post(
             f"/api/v1/purchase-orders/{po2_id}/issue",
-            headers=purchasing_user["auth_headers"],
+            headers=manager_user["auth_headers"],
         ).status_code
         == 200
     )
@@ -281,7 +281,7 @@ def test_po_line_level_short_close_partial_delivery_and_auto_close_header(
 
     issue_line_test = client.post(
         f"/api/v1/purchase-orders/{po_id}/issue",
-        headers=purchasing_user["auth_headers"],
+        headers=manager_user["auth_headers"],
     )
     assert issue_line_test.status_code == 200
 
@@ -301,7 +301,7 @@ def test_po_line_level_short_close_partial_delivery_and_auto_close_header(
     assert (
         client.post(
             f"/api/v1/goods-receipts/{gr1.json()['id']}/post",
-            headers=staff_user["auth_headers"],
+            headers=manager_user["auth_headers"],
         ).status_code
         == 200
     )
@@ -358,7 +358,7 @@ def test_po_line_level_short_close_partial_delivery_and_auto_close_header(
     assert (
         client.post(
             f"/api/v1/goods-receipts/{gr2.json()['id']}/post",
-            headers=staff_user["auth_headers"],
+            headers=manager_user["auth_headers"],
         ).status_code
         == 200
     )

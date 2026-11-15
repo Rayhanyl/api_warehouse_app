@@ -210,7 +210,7 @@ def is_warehouse_in_use(
             OR EXISTS (
                 SELECT 1 FROM stock_opnames
                 WHERE warehouse_id = %s
-                  AND status IN ('DRAFT', 'IN_PROGRESS', 'WAITING_APPROVAL')
+                  AND status IN ('DRAFT', 'IN_PROGRESS', 'WAITING_L1_APPROVAL', 'WAITING_L2_APPROVAL', 'WAITING_APPROVAL')
             )
         ) AS in_use
         """,
@@ -439,14 +439,14 @@ def is_location_in_use(
                 SELECT 1 FROM stock_opnames
                 WHERE warehouse_id = %s
                   AND (location_id IS NULL OR location_id = %s)
-                  AND status IN ('DRAFT', 'IN_PROGRESS', 'WAITING_APPROVAL')
+                  AND status IN ('DRAFT', 'IN_PROGRESS', 'WAITING_L1_APPROVAL', 'WAITING_L2_APPROVAL', 'WAITING_APPROVAL')
             )
             OR EXISTS (
                 SELECT 1
                 FROM stock_opname_lines sol
                 JOIN stock_opnames so ON so.id = sol.opname_id
                 WHERE sol.location_id = %s
-                  AND so.status IN ('DRAFT', 'IN_PROGRESS', 'WAITING_APPROVAL')
+                  AND so.status IN ('DRAFT', 'IN_PROGRESS', 'WAITING_L1_APPROVAL', 'WAITING_L2_APPROVAL', 'WAITING_APPROVAL')
             )
         ) AS in_use
         """,

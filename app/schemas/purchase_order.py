@@ -1,7 +1,7 @@
 """Schema Pydantic untuk Purchase Order (PO) dan PO Lines (FR-04, PRD 5.1, 6.9, Tahap 36)."""
 
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -11,18 +11,32 @@ from app.core.validation import (
     pydantic_required_str,
     pydantic_validate_decimal_qty,
 )
-from app.schemas.common import DecimalStr
+from app.schemas.common import ApprovalLogOut, DecimalStr, MoneyStr
 
 
 class POLineInput(BaseModel):
     item_id: int = Field(..., gt=0)
     qty_ordered: Decimal
+    unit_price: Decimal = Field(default=Decimal("0.00"))
     notes: str | None = Field(default=None, max_length=500)
 
     @field_validator("qty_ordered", mode="before")
     @classmethod
     def _validate_qty_ordered(cls, v: Any) -> Decimal:
         return pydantic_validate_decimal_qty(v, label="Jumlah pesan", allow_zero=False)
+
+    @field_validator("unit_price", mode="before")
+    @classmethod
+    def _validate_unit_price(cls, v: Any) -> Decimal:
+        if v is None or v == "":
+            return Decimal("0.00")
+        try:
+            dec = Decimal(str(v).strip())
+        except (InvalidOperation, ValueError) as exc:
+            raise ValueError("Harga satuan harus berupa angka yang valid.") from exc
+        if dec < Decimal("0"):
+            raise ValueError("Harga satuan tidak boleh negatif.")
+        return dec.quantize(Decimal("0.01"))
 
     @field_validator("notes")
     @classmethod
@@ -41,6 +55,8 @@ class POLineOut(BaseModel):
     uom_code: str
     allow_decimal: bool
     qty_ordered: DecimalStr
+    unit_price: MoneyStr = Decimal("0.00")
+    line_subtotal: MoneyStr = Decimal("0.00")
     qty_received: DecimalStr
     qty_closed: DecimalStr = Decimal("0.0000")
     qty_remaining: DecimalStr = Decimal("0.0000")
@@ -106,6 +122,24 @@ class PurchaseOrderCloseRequest(BaseModel):
         return pydantic_required_str(v, label="Alasan penutupan PO")
 
 
+class PurchaseOrderApproveRequest(BaseModel):
+    notes: str | None = Field(default=None, max_length=500)
+
+    @field_validator("notes")
+    @classmethod
+    def _val_notes(cls, v: Any) -> str | None:
+        return pydantic_optional_str(v)
+
+
+class PurchaseOrderRejectRequest(BaseModel):
+    rejection_reason: str = Field(..., min_length=1, max_length=500)
+
+    @field_validator("rejection_reason")
+    @classmethod
+    def _val_rejection_reason(cls, v: Any) -> str:
+        return pydantic_required_str(v, label="Alasan penolakan PO")
+
+
 class PurchaseOrderSummaryOut(BaseModel):
     id: int
     po_number: str
@@ -122,8 +156,16 @@ class PurchaseOrderSummaryOut(BaseModel):
     days_overdue: int = 0
     revised_from_po_id: int | None = None
     revised_from_po_number: str | None = None
+    total_amount: MoneyStr = Decimal("0.00")
+    rejection_reason: str | None = None
     notes: str | None = None
     line_count: int = 0
+    submitted_by: int | None = None
+    submitted_at: datetime | None = None
+    l1_approved_by: int | None = None
+    l1_approved_at: datetime | None = None
+    l2_approved_by: int | None = None
+    l2_approved_at: datetime | None = None
     issued_at: datetime | None = None
     issued_by: int | None = None
     closed_reason: str | None = None
@@ -145,3 +187,4 @@ class PurchaseOrderOut(PurchaseOrderSummaryOut):
     supplier_bank_account_holder: str | None = None
     supplier_payment_terms: str | None = None
     lines: list[POLineOut] = Field(default_factory=list)
+    approval_logs: list[ApprovalLogOut] = Field(default_factory=list)

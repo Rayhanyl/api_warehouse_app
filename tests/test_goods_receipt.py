@@ -62,6 +62,11 @@ def test_purchase_order_lifecycle_validations_rbac_and_audit(
         headers=superadmin_user["auth_headers"],
         json={"warehouse_ids": [wh_a["id"], wh_b["id"]]},
     )
+    client.put(
+        f"/api/v1/users/{manager_user['id']}/warehouses",
+        headers=superadmin_user["auth_headers"],
+        json={"warehouse_ids": [wh_a["id"], wh_b["id"]]},
+    )
 
     # 1. Validasi referensi nonaktif: membuat PO dengan pemasok nonaktif -> 422 INACTIVE_REFERENCE
     inact_res = client.post(
@@ -127,7 +132,7 @@ def test_purchase_order_lifecycle_validations_rbac_and_audit(
 
     issue_empty = client.post(
         f"/api/v1/purchase-orders/{po_empty['id']}/issue",
-        headers=purchasing_user["auth_headers"],
+        headers=manager_user["auth_headers"],
     )
     assert issue_empty.status_code == 422
     assert issue_empty.json()["error"]["code"] == "VALIDATION_ERROR"
@@ -158,16 +163,16 @@ def test_purchase_order_lifecycle_validations_rbac_and_audit(
     assert staff_issue.status_code == 403
     assert staff_issue.json()["error"]["code"] == "PERMISSION_DENIED"
 
-    # 7. Purchasing Staff menerbitkan PO (DRAFT -> ISSUED) -> 200 OK
+    # 7. Warehouse Manager menerbitkan PO (DRAFT -> ISSUED, mematuhi SoD terhadap Purchasing Staff) -> 200 OK
     issue_ok = client.post(
         f"/api/v1/purchase-orders/{po_empty['id']}/issue",
-        headers=purchasing_user["auth_headers"],
+        headers=manager_user["auth_headers"],
     )
     assert issue_ok.status_code == 200
     po_issued = issue_ok.json()
     assert po_issued["status"] == "ISSUED"
     assert po_issued["issued_at"] is not None
-    assert po_issued["issued_by"] == purchasing_user["id"]
+    assert po_issued["issued_by"] == manager_user["id"]
 
     # 8. Setelah ISSUED, mengubah PO ditolak dengan 409 INVALID_STATE_TRANSITION
     patch_after_issue = client.patch(
@@ -241,7 +246,7 @@ def test_purchase_order_lifecycle_validations_rbac_and_audit(
     ).json()
     client.post(
         f"/api/v1/purchase-orders/{po_b['id']}/issue",
-        headers=purchasing_user["auth_headers"],
+        headers=manager_user["auth_headers"],
     )
 
     # Warehouse Staff (ditugaskan hanya ke Gudang A) tidak melihat PO Gudang B di daftar & ditolak 403 bila baca langsung
@@ -271,6 +276,7 @@ def test_ac01_partial_receipt_over_receipt_and_po_fulfillment(
     db_conn: Connection[dict[str, Any]],
     superadmin_user: dict[str, Any],
     purchasing_user: dict[str, Any],
+    manager_user: dict[str, Any],
     staff_user: dict[str, Any],
 ) -> None:
     """AC-01, AC-12, FR-05, PRD 5.1, 6.2, 6.3, 6.6:
@@ -311,6 +317,11 @@ def test_ac01_partial_receipt_over_receipt_and_po_fulfillment(
     )
     client.put(
         f"/api/v1/users/{purchasing_user['id']}/warehouses",
+        headers=superadmin_user["auth_headers"],
+        json={"warehouse_ids": [wh_a["id"], wh_b["id"]]},
+    )
+    client.put(
+        f"/api/v1/users/{manager_user['id']}/warehouses",
         headers=superadmin_user["auth_headers"],
         json={"warehouse_ids": [wh_a["id"], wh_b["id"]]},
     )
@@ -366,7 +377,7 @@ def test_ac01_partial_receipt_over_receipt_and_po_fulfillment(
     # Terbitkan PO -> ISSUED
     issue_res = client.post(
         f"/api/v1/purchase-orders/{po['id']}/issue",
-        headers=purchasing_user["auth_headers"],
+        headers=manager_user["auth_headers"],
     )
     assert issue_res.status_code == 200
 
@@ -422,7 +433,7 @@ def test_ac01_partial_receipt_over_receipt_and_po_fulfillment(
     ).json()
     client.post(
         f"/api/v1/purchase-orders/{po_b['id']}/issue",
-        headers=purchasing_user["auth_headers"],
+        headers=manager_user["auth_headers"],
     )
     unassigned_gr = client.post(
         "/api/v1/goods-receipts",
@@ -492,11 +503,11 @@ def test_ac01_partial_receipt_over_receipt_and_po_fulfillment(
     # Post GR #1 (qty_received = 60)
     gr1_post = client.post(
         f"/api/v1/goods-receipts/{gr1['id']}/post",
-        headers=staff_user["auth_headers"],
+        headers=manager_user["auth_headers"],
     )
     assert gr1_post.status_code == 200
     assert gr1_post.json()["status"] == "POSTED"
-    assert gr1_post.json()["posted_by"] == staff_user["id"]
+    assert gr1_post.json()["posted_by"] == manager_user["id"]
 
     # Verifikasi status PO -> PARTIALLY_RECEIVED dan po_line.qty_received = 60.0000
     po_after_gr1 = client.get(
@@ -588,14 +599,14 @@ def test_ac01_partial_receipt_over_receipt_and_po_fulfillment(
     # Post GR_A (60 + 30 = 90 <= 100) -> berhasil (PARTIALLY_RECEIVED, qty_received = 90)
     post_gr_a = client.post(
         f"/api/v1/goods-receipts/{gr_a['id']}/post",
-        headers=staff_user["auth_headers"],
+        headers=manager_user["auth_headers"],
     )
     assert post_gr_a.status_code == 200
 
     # Sekarang post GR_B (90 + 20 = 110 > 100) -> ditolak saat evaluasi ulang di dalam lock!
     post_gr_b = client.post(
         f"/api/v1/goods-receipts/{gr_b['id']}/post",
-        headers=staff_user["auth_headers"],
+        headers=manager_user["auth_headers"],
     )
     assert post_gr_b.status_code == 409
     assert post_gr_b.json()["error"]["code"] == "OVER_RECEIPT"
@@ -634,7 +645,7 @@ def test_ac01_partial_receipt_over_receipt_and_po_fulfillment(
     ).json()
     post_final = client.post(
         f"/api/v1/goods-receipts/{gr_final['id']}/post",
-        headers=staff_user["auth_headers"],
+        headers=manager_user["auth_headers"],
     )
     assert post_final.status_code == 200
     assert post_final.json()["status"] == "POSTED"
@@ -668,6 +679,7 @@ def test_ac07_gr_post_transaction_atomicity_rollback_on_failure(
     db_conn: Connection[dict[str, Any]],
     superadmin_user: dict[str, Any],
     purchasing_user: dict[str, Any],
+    manager_user: dict[str, Any],
     staff_user: dict[str, Any],
     monkeypatch: Any,
 ) -> None:
@@ -705,6 +717,11 @@ def test_ac07_gr_post_transaction_atomicity_rollback_on_failure(
         headers=superadmin_user["auth_headers"],
         json={"warehouse_ids": [wh["id"]]},
     )
+    client.put(
+        f"/api/v1/users/{manager_user['id']}/warehouses",
+        headers=superadmin_user["auth_headers"],
+        json={"warehouse_ids": [wh["id"]]},
+    )
 
     po = client.post(
         "/api/v1/purchase-orders",
@@ -721,7 +738,7 @@ def test_ac07_gr_post_transaction_atomicity_rollback_on_failure(
     ).json()
     client.post(
         f"/api/v1/purchase-orders/{po['id']}/issue",
-        headers=purchasing_user["auth_headers"],
+        headers=manager_user["auth_headers"],
     )
 
     gr = client.post(
@@ -764,7 +781,7 @@ def test_ac07_gr_post_transaction_atomicity_rollback_on_failure(
     no_raise_client = TestClient(client.app, raise_server_exceptions=False)
     post_res = no_raise_client.post(
         f"/api/v1/goods-receipts/{gr['id']}/post",
-        headers=staff_user["auth_headers"],
+        headers=manager_user["auth_headers"],
     )
     assert post_res.status_code == 500
     assert post_res.json()["error"]["code"] == "INTERNAL_ERROR"
@@ -810,6 +827,7 @@ def test_ac13_concurrent_gr_post_prevents_double_posting(
     db_conn: Connection[dict[str, Any]],
     superadmin_user: dict[str, Any],
     purchasing_user: dict[str, Any],
+    manager_user: dict[str, Any],
     staff_user: dict[str, Any],
 ) -> None:
     """AC-13 (Idempotensi / Pencegahan Double-Post Konkuren):
@@ -845,6 +863,11 @@ def test_ac13_concurrent_gr_post_prevents_double_posting(
             headers=superadmin_user["auth_headers"],
             json={"warehouse_ids": [wh["id"]]},
         )
+        main_client.put(
+            f"/api/v1/users/{manager_user['id']}/warehouses",
+            headers=superadmin_user["auth_headers"],
+            json={"warehouse_ids": [wh["id"]]},
+        )
 
         po = main_client.post(
             "/api/v1/purchase-orders",
@@ -858,7 +881,7 @@ def test_ac13_concurrent_gr_post_prevents_double_posting(
         ).json()
         main_client.post(
             f"/api/v1/purchase-orders/{po['id']}/issue",
-            headers=purchasing_user["auth_headers"],
+            headers=manager_user["auth_headers"],
         )
 
         gr = main_client.post(
@@ -886,7 +909,7 @@ def test_ac13_concurrent_gr_post_prevents_double_posting(
                 barrier.wait()
                 resp = thread_client.post(
                     f"/api/v1/goods-receipts/{gr['id']}/post",
-                    headers=staff_user["auth_headers"],
+                    headers=manager_user["auth_headers"],
                 )
                 with lock:
                     results.append((resp.status_code, resp.json()))

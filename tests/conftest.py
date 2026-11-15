@@ -79,6 +79,7 @@ def reset_test_data(setup_test_database: str) -> Generator[None, None, None]:
         conn.execute(
             """
             TRUNCATE TABLE
+                approval_logs,
                 audit_logs,
                 document_sequences,
                 stock_opname_lines,
@@ -101,6 +102,13 @@ def reset_test_data(setup_test_database: str) -> Generator[None, None, None]:
                 refresh_tokens,
                 users
             RESTART IDENTITY CASCADE
+            """
+        )
+        conn.execute(
+            """
+            UPDATE app_settings
+            SET value = '10000000', updated_by = NULL
+            WHERE key = 'po_l2_approval_threshold'
             """
         )
         # Put test-created nodes at the root before deleting so self-FK RESTRICT
@@ -146,6 +154,32 @@ def manager_user(db_conn: psycopg.Connection[dict[str, Any]]) -> dict[str, Any]:
         password="Password123!",
         full_name="Warehouse Manager User",
         role_name="Warehouse Manager",
+    )
+
+
+@pytest.fixture()
+def supervisor_user(db_conn: psycopg.Connection[dict[str, Any]]) -> dict[str, Any]:
+    return factories.create_user(
+        db_conn,
+        username="supervisor1",
+        email="supervisor1@wms.test",
+        password="Password123!",
+        full_name="Warehouse Supervisor User",
+        role_name="Warehouse Supervisor",
+    )
+
+
+@pytest.fixture()
+def procurement_manager_user(
+    db_conn: psycopg.Connection[dict[str, Any]],
+) -> dict[str, Any]:
+    return factories.create_user(
+        db_conn,
+        username="procmanager1",
+        email="procmanager1@wms.test",
+        password="Password123!",
+        full_name="Procurement Manager User",
+        role_name="Procurement Manager",
     )
 
 

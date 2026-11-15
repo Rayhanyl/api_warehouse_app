@@ -41,6 +41,7 @@ def test_ac04_stock_opname_reconciliation_variance_and_zero_variance_no_ledger(
     client: TestClient,
     db_conn: Connection[dict[str, Any]],
     superadmin_user: dict[str, Any],
+    supervisor_user: dict[str, Any],
     manager_user: dict[str, Any],
     staff_user: dict[str, Any],
 ) -> None:
@@ -77,7 +78,7 @@ def test_ac04_stock_opname_reconciliation_variance_and_zero_variance_no_ledger(
         db_conn, sku="OP-NEW", name="Ring Plat M10", category_id=cat["id"], uom_id=uom["id"]
     )
 
-    for usr in (manager_user, staff_user):
+    for usr in (supervisor_user, manager_user, staff_user):
         client.put(
             f"/api/v1/users/{usr['id']}/warehouses",
             headers=superadmin_user["auth_headers"],
@@ -185,15 +186,15 @@ def test_ac04_stock_opname_reconciliation_variance_and_zero_variance_no_ledger(
     assert count_res.status_code == 200
     assert count_res.json()["line_count"] == 3
 
-    # 4. Submit sesi Opname (IN_PROGRESS -> WAITING_APPROVAL)
+    # 4. Submit sesi Opname (IN_PROGRESS -> WAITING_L1_APPROVAL)
     submit_res = client.post(
         f"/api/v1/stock-opnames/{opname['id']}/submit",
         headers=staff_user["auth_headers"],
     )
     assert submit_res.status_code == 200
-    assert submit_res.json()["status"] == "WAITING_APPROVAL"
+    assert submit_res.json()["status"] == "WAITING_L1_APPROVAL"
 
-    # 5. AC-05: Warehouse Staff mencoba menyetujui akhir Stock Opname -> 403 PERMISSION_DENIED
+    # 5. AC-05: Warehouse Staff mencoba menyetujui Stock Opname -> 403 PERMISSION_DENIED
     staff_approve = client.post(
         f"/api/v1/stock-opnames/{opname['id']}/approve",
         headers=staff_user["auth_headers"],
@@ -201,11 +202,11 @@ def test_ac04_stock_opname_reconciliation_variance_and_zero_variance_no_ledger(
     assert staff_approve.status_code == 403
     assert staff_approve.json()["error"]["code"] == "PERMISSION_DENIED"
 
-    # 6. Warehouse Manager menolak (WAITING_APPROVAL -> IN_PROGRESS) untuk hitung ulang item_1:
+    # 6. Warehouse Supervisor menolak Level 1 (WAITING_L1_APPROVAL -> IN_PROGRESS) untuk hitung ulang item_1:
     #    Tanpa alasan ditolak 422 VALIDATION_ERROR; dengan alasan berhasil kembali ke IN_PROGRESS.
     reject_blank = client.post(
         f"/api/v1/stock-opnames/{opname['id']}/reject",
-        headers=manager_user["auth_headers"],
+        headers=supervisor_user["auth_headers"],
         json={"rejection_reason": "   "},
     )
     assert reject_blank.status_code == 422
@@ -213,7 +214,7 @@ def test_ac04_stock_opname_reconciliation_variance_and_zero_variance_no_ledger(
 
     reject_ok = client.post(
         f"/api/v1/stock-opnames/{opname['id']}/reject",
-        headers=manager_user["auth_headers"],
+        headers=supervisor_user["auth_headers"],
         json={"rejection_reason": "Mohon hitung ulang Baut M10 di Rak 04-1"},
     )
     assert reject_ok.status_code == 200
@@ -244,9 +245,16 @@ def test_ac04_stock_opname_reconciliation_variance_and_zero_variance_no_ledger(
         headers=staff_user["auth_headers"],
     )
     assert resubmit_res.status_code == 200
-    assert resubmit_res.json()["status"] == "WAITING_APPROVAL"
+    assert resubmit_res.json()["status"] == "WAITING_L1_APPROVAL"
 
-    # 8. Warehouse Manager menyetujui Stock Opname (WAITING_APPROVAL -> COMPLETED)
+    # 8. Warehouse Supervisor menyetujui L1 -> WAITING_L2_APPROVAL, lalu Warehouse Manager menyetujui L2 -> COMPLETED
+    l1_approve_res = client.post(
+        f"/api/v1/stock-opnames/{opname['id']}/approve",
+        headers=supervisor_user["auth_headers"],
+    )
+    assert l1_approve_res.status_code == 200
+    assert l1_approve_res.json()["status"] == "WAITING_L2_APPROVAL"
+
     approve_res = client.post(
         f"/api/v1/stock-opnames/{opname['id']}/approve",
         headers=manager_user["auth_headers"],
@@ -309,6 +317,7 @@ def test_ac10_location_freeze_during_opname_and_unfreeze_on_complete_or_cancel(
     db_conn: Connection[dict[str, Any]],
     superadmin_user: dict[str, Any],
     purchasing_user: dict[str, Any],
+    supervisor_user: dict[str, Any],
     manager_user: dict[str, Any],
     staff_user: dict[str, Any],
 ) -> None:
@@ -337,7 +346,7 @@ def test_ac10_location_freeze_during_opname_and_unfreeze_on_complete_or_cancel(
         db_conn, sku="FRZ-001", name="Barang Uji Freeze", category_id=cat["id"], uom_id=uom["id"]
     )
 
-    for usr in (manager_user, staff_user, purchasing_user):
+    for usr in (supervisor_user, manager_user, staff_user, purchasing_user):
         client.put(
             f"/api/v1/users/{usr['id']}/warehouses",
             headers=superadmin_user["auth_headers"],
@@ -378,7 +387,7 @@ def test_ac10_location_freeze_during_opname_and_unfreeze_on_complete_or_cancel(
     ).json()
     client.post(
         f"/api/v1/purchase-orders/{po['id']}/issue",
-        headers=purchasing_user["auth_headers"],
+        headers=manager_user["auth_headers"],
     )
     gr = client.post(
         "/api/v1/goods-receipts",
@@ -464,7 +473,7 @@ def test_ac10_location_freeze_during_opname_and_unfreeze_on_complete_or_cancel(
     #    - Posting GR ke Lokasi X ditolak 409 LOCATION_FROZEN
     gr_frozen = client.post(
         f"/api/v1/goods-receipts/{gr['id']}/post",
-        headers=staff_user["auth_headers"],
+        headers=manager_user["auth_headers"],
     )
     assert gr_frozen.status_code == 409
     assert gr_frozen.json()["error"]["code"] == "LOCATION_FROZEN"
@@ -531,12 +540,19 @@ def test_ac10_location_freeze_during_opname_and_unfreeze_on_complete_or_cancel(
     )
     gr_still_frozen = client.post(
         f"/api/v1/goods-receipts/{gr['id']}/post",
-        headers=staff_user["auth_headers"],
+        headers=manager_user["auth_headers"],
     )
     assert gr_still_frozen.status_code == 409
     assert gr_still_frozen.json()["error"]["code"] == "LOCATION_FROZEN"
 
-    # Setujui Opname menjadi COMPLETED -> pembekuan dilepas
+    # Setujui Opname Level 1 -> WAITING_L2_APPROVAL (masih beku), lalu Level 2 -> COMPLETED -> pembekuan dilepas
+    approve_l1_opn2 = client.post(
+        f"/api/v1/stock-opnames/{opn_dup['id']}/approve",
+        headers=supervisor_user["auth_headers"],
+    )
+    assert approve_l1_opn2.status_code == 200
+    assert approve_l1_opn2.json()["status"] == "WAITING_L2_APPROVAL"
+
     approve_opn2 = client.post(
         f"/api/v1/stock-opnames/{opn_dup['id']}/approve",
         headers=manager_user["auth_headers"],
@@ -547,7 +563,7 @@ def test_ac10_location_freeze_during_opname_and_unfreeze_on_complete_or_cancel(
     # Sekarang posting GR dan penerimaan Transfer ke Lokasi X berhasil (200 OK)!
     gr_post_ok = client.post(
         f"/api/v1/goods-receipts/{gr['id']}/post",
-        headers=staff_user["auth_headers"],
+        headers=manager_user["auth_headers"],
     )
     assert gr_post_ok.status_code == 200
     assert gr_post_ok.json()["status"] == "POSTED"
@@ -576,6 +592,7 @@ def test_ac02_opname_negative_stock_prevention(
     client: TestClient,
     db_conn: Connection[dict[str, Any]],
     superadmin_user: dict[str, Any],
+    supervisor_user: dict[str, Any],
     manager_user: dict[str, Any],
     staff_user: dict[str, Any],
 ) -> None:
@@ -588,7 +605,7 @@ def test_ac02_opname_negative_stock_prevention(
     uom = factories.create_uom(db_conn, code="PCS-OP2", name="Pieces", allow_decimal=False)
     item = factories.create_item(db_conn, sku="SKU-NEG-OP", name="Barang Uji Negatif", category_id=cat["id"], uom_id=uom["id"])
 
-    for usr in (manager_user, staff_user):
+    for usr in (supervisor_user, manager_user, staff_user):
         client.put(
             f"/api/v1/users/{usr['id']}/warehouses",
             headers=superadmin_user["auth_headers"],
@@ -626,15 +643,16 @@ def test_ac02_opname_negative_stock_prevention(
         json={"lines": [{"line_id": line_id, "qty_physical": "2.0000"}]},
     )
     client.post(f"/api/v1/stock-opnames/{opn['id']}/submit", headers=staff_user["auth_headers"])
+    client.post(f"/api/v1/stock-opnames/{opn['id']}/approve", headers=supervisor_user["auth_headers"])
 
-    # Simulasikan stok berkurang di database secara langsung menjadi 1 unit sebelum approve
+    # Simulasikan stok berkurang di database secara langsung menjadi 1 unit sebelum approve Level 2
     # sehingga penyesuaian -3 akan menghasilkan 1 - 3 = -2 (< 0)
     db_conn.execute(
         "UPDATE inventory_balances SET qty_on_hand = 1.0000 WHERE warehouse_id = %s AND location_id = %s AND item_id = %s",
         (wh["id"], loc["id"], item["id"]),
     )
 
-    # Warehouse Manager mencoba menyetujui -> Ditolak 409 INSUFFICIENT_STOCK
+    # Warehouse Manager mencoba menyetujui Level 2 -> Ditolak 409 INSUFFICIENT_STOCK
     approve_res = client.post(
         f"/api/v1/stock-opnames/{opn['id']}/approve",
         headers=manager_user["auth_headers"],
@@ -642,9 +660,9 @@ def test_ac02_opname_negative_stock_prevention(
     assert approve_res.status_code == 409
     assert approve_res.json()["error"]["code"] == "INSUFFICIENT_STOCK"
 
-    # Status opname tetap WAITING_APPROVAL (rollback)
+    # Status opname tetap WAITING_L2_APPROVAL (rollback)
     opn_check = client.get(f"/api/v1/stock-opnames/{opn['id']}", headers=manager_user["auth_headers"]).json()
-    assert opn_check["status"] == "WAITING_APPROVAL"
+    assert opn_check["status"] == "WAITING_L2_APPROVAL"
 
 
 def test_ac12_opname_warehouse_scoping_enforcement(
