@@ -83,7 +83,17 @@ jobs:
 
             echo "5. Verifikasi Healthcheck..."
             docker compose -f docker-compose.prod.yml ps backend
-            curl -f http://127.0.0.1:8000/health
+            for attempt in $(seq 1 30); do
+              if curl --fail --silent --show-error http://127.0.0.1:8000/health; then
+                break
+              fi
+              if [ "$attempt" -eq 30 ]; then
+                echo "Healthcheck gagal setelah menunggu container siap."
+                exit 1
+              fi
+              echo "Healthcheck belum siap (percobaan $attempt/30), menunggu 2 detik..."
+              sleep 2
+            done
 
             echo "6. Pembersihan Docker Image Gantung..."
             docker image prune -af --filter "until=72h"
