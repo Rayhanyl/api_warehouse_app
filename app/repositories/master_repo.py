@@ -709,14 +709,21 @@ def list_items(
     if search:
         kw = f"%{search.strip()}%"
         conditions.append(
-            "(i.sku ILIKE %s OR COALESCE(i.barcode, '') ILIKE %s OR i.name ILIKE %s OR COALESCE(i.description, '') ILIKE %s)"
+            "(i.sku ILIKE %s OR COALESCE(i.barcode, '') ILIKE %s OR i.name ILIKE %s "
+            "OR COALESCE(i.description, '') ILIKE %s OR c.name ILIKE %s OR u.code ILIKE %s)"
         )
-        params.extend([kw, kw, kw, kw])
+        params.extend([kw, kw, kw, kw, kw, kw])
 
     where_sql = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
     count_row = conn.execute(
-        f"SELECT COUNT(*) AS total FROM items i {where_sql}",
+        f"""
+        SELECT COUNT(*) AS total
+        FROM items i
+        JOIN categories c ON c.id = i.category_id
+        JOIN uoms u ON u.id = i.uom_id
+        {where_sql}
+        """,
         tuple(params),
     ).fetchone()
     total = int(count_row["total"]) if count_row else 0

@@ -269,8 +269,10 @@ def list_locations(
 
     if search:
         kw = f"%{search.strip()}%"
-        conditions.append("(sl.code ILIKE %s OR sl.name ILIKE %s)")
-        params.extend([kw, kw])
+        conditions.append(
+            "(sl.code ILIKE %s OR sl.name ILIKE %s OR w.code ILIKE %s OR w.name ILIKE %s)"
+        )
+        params.extend([kw, kw, kw, kw])
 
     where_sql = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 

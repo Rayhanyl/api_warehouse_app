@@ -323,7 +323,7 @@ Modul Master Data menyediakan pengelolaan entitas referensi dasar yang digunakan
   * `category_id` (integer, opsional) — Filter berdasarkan ID kategori.
   * `uom_id` (integer, opsional) — Filter berdasarkan ID satuan ukur.
   * `is_active` (boolean, opsional) — Filter status aktif.
-  * `search` (string, opsional) — Pencarian `ILIKE` pada `sku`, `barcode`, `name`, atau `description`.
+  * `search` (string, opsional) — Pencarian `ILIKE` pada `sku`, `barcode`, `name`, `description`, nama kategori (`c.name`), atau kode UoM (`u.code`).
   * `barcode` (string, opsional) — Pencarian eksak kode barcode/EAN/UPC/QR barang.
   * `sort_by` (string, default `"id"`) — Whitelist: `"id"`, `"sku"`, `"barcode"`, `"name"`, `"created_at"`.
   * `sort_dir` (`"asc"` | `"desc"`, default `"asc"`).

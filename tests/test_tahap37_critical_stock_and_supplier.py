@@ -402,3 +402,68 @@ def test_tahap39_dashboard_accuracy_across_warehouses_and_multi_warehouse_scope(
         headers=manager_user["auth_headers"],
     )
     assert mgr_whc.status_code == 403
+
+
+def test_tahap40_master_data_server_side_search_and_pagination(
+    client: TestClient,
+    db_conn: Connection[dict[str, Any]],
+    superadmin_user: dict[str, Any],
+) -> None:
+    """Tahap 40:
+    - GET /api/v1/items?search= mencari berdasarkan SKU, nama barang, nama kategori (`c.name`), dan kode UoM (`u.code`), serta mendukung filter `category_id` + `uom_id` + paginasi server-side.
+    - GET /api/v1/locations?search= mencari berdasarkan kode/nama rak maupun kode/nama gudang (`w.code`, `w.name`).
+    """
+    cat_khusus = factories.create_category(db_conn, name="ElektronikPresisi40")
+    uom_khusus = factories.create_uom(db_conn, code="ROLL40", name="Roll Tahap 40")
+    item_a = factories.create_item(
+        db_conn,
+        sku="SKU-40-A",
+        name="Kabel Sensor",
+        category_id=cat_khusus["id"],
+        uom_id=uom_khusus["id"],
+    )
+
+    wh_khusus = factories.create_warehouse(db_conn, code="WH40KHS", name="Gudang Logistik Terpadu 40")
+    loc_a = factories.create_location(
+        db_conn,
+        warehouse_id=wh_khusus["id"],
+        code="RAK-40-01",
+        name="Lorong Utama 40",
+    )
+
+    # Search items by category name
+    res_cat_search = client.get(
+        "/api/v1/items?search=ElektronikPresisi40",
+        headers=superadmin_user["auth_headers"],
+    )
+    assert res_cat_search.status_code == 200
+    body_cat = res_cat_search.json()
+    assert body_cat["total"] == 1
+    assert body_cat["items"][0]["id"] == item_a["id"]
+
+    # Search items by UoM code
+    res_uom_search = client.get(
+        "/api/v1/items?search=ROLL40",
+        headers=superadmin_user["auth_headers"],
+    )
+    assert res_uom_search.status_code == 200
+    assert res_uom_search.json()["total"] == 1
+    assert res_uom_search.json()["items"][0]["sku"] == "SKU-40-A"
+
+    # Search locations by warehouse code & warehouse name
+    res_loc_wh_code = client.get(
+        "/api/v1/locations?search=WH40KHS",
+        headers=superadmin_user["auth_headers"],
+    )
+    assert res_loc_wh_code.status_code == 200
+    assert res_loc_wh_code.json()["total"] == 1
+    assert res_loc_wh_code.json()["items"][0]["id"] == loc_a["id"]
+
+    res_loc_wh_name = client.get(
+        "/api/v1/locations?search=Logistik Terpadu 40",
+        headers=superadmin_user["auth_headers"],
+    )
+    assert res_loc_wh_name.status_code == 200
+    assert res_loc_wh_name.json()["total"] == 1
+    assert res_loc_wh_name.json()["items"][0]["code"] == "RAK-40-01"
+

@@ -154,7 +154,7 @@ Aplikasi menyediakan dua rute ekuivalen untuk membaca daftar dan membuat lokasi 
 #### GET `/api/v1/warehouses/{warehouse_id}/locations` — Daftar Lokasi pada Satu Gudang
 * **Autentikasi & Permission:** Bearer Token, `master:read` + **Warehouse Scoping `(g)`**
 * **Path Parameter:** `warehouse_id` (integer, wajib — diverifikasi keberadaannya; jika gudang tidak ada, mengembalikan `404 NOT_FOUND`; jika di luar penugasan, `403 WAREHOUSE_NOT_ASSIGNED`).
-* **Query Parameter:** `limit` (`1..200`, default `50`), `offset` (`>= 0`, default `0`), `is_active` (boolean, opsional), `purpose` (string, opsional — `"transfer_destination"`), `search` (string, opsional — `ILIKE` pada `code` atau `name`), `sort_by` (`"id"`, `"code"`, `"name"`, `"warehouse_id"`, `"created_at"`), `sort_dir` (`"asc"` | `"desc"`).
+* **Query Parameter:** `limit` (`1..200`, default `50`), `offset` (`>= 0`, default `0`), `is_active` (boolean, opsional), `purpose` (string, opsional — `"transfer_destination"`), `search` (string, opsional — `ILIKE` pada `code` atau `name` lokasi maupun kode/nama gudang `w.code`, `w.name`), `sort_by` (`"id"`, `"code"`, `"name"`, `"warehouse_id"`, `"created_at"`), `sort_dir` (`"asc"` | `"desc"`).
 * **Response Berhasil (`200 OK` — `Page[StorageLocationOut]`):**
 ```json
 {
