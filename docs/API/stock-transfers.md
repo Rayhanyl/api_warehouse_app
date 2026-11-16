@@ -57,9 +57,10 @@ stateDiagram-v2
 * **Surat Jalan Transfer Stok Fisik (AC-32):**
   * Surat Jalan resmi tersedia untuk dicetak (`window.print()` / styling cetak `@media print` A4) pada dokumen Transfer berstatus **`APPROVED`**, **`SHIPPED`**, maupun **`RECEIVED`**.
   * Lembar cetak memuat identitas perusahaan, nomor transfer, tanggal dokumen, gudang & lokasi asal, gudang & lokasi tujuan, tabel rincian barang (SKU, barcode produk, nama barang, kuantitas dikirim, kuantitas diterima, catatan), serta 3 blok tanda tangan resmi: *"Diserahkan Oleh (Gudang Asal)"*, *"Dibawa Oleh (Ekspedisi/Driver)"*, dan *"Diterima Oleh (Gudang/Toko Cabang Tujuan)"*.
-* **Pemindai Barcode / QR Scanner (AC-33):**
+* **Pemindai Barcode / QR Scanner (AC-33) & Informasi Stok Tersedia Lokasi Asal (Tahap 42):**
   * Antarmuka penyusunan transfer (`TransferForm`) menyediakan bilah pemindaian barcode (`BarcodeScanBar`) yang mendukung kamera perangkat (`BarcodeDetector`) dan pemindai fisik *USB/Bluetooth HID barcode gun*.
   * Memindai barcode atau SKU barang secara otomatis menambahkan baris transfer baru dengan kuantitas `1` atau menambah kuantitas (`+1`) apabila barang tersebut sudah ada di dalam daftar transfer.
+  * Saat **Gudang Asal** dan **Lokasi Asal** dipilih pada `TransferForm`, antarmuka secara otomatis memuat saldo `inventory_balances` lokasi tersebut (`GET /api/v1/stock/by-location`) serta status Stock Opname aktif (`GET /api/v1/stock-opnames`), menampilkan badge **`Stok tersedia: X <UoM>`** pada setiap baris barang, memperingatkan jika lokasi asal sedang dibekukan oleh Stock Opname, dan memvalidasi langsung bila kuantitas transfer melebihi stok tersedia di lokasi asal.
 
 ---
 

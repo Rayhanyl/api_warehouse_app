@@ -18,7 +18,7 @@
 
 ### 2.1 Tujuan
 
-Modul Purchase Order (PO) mengelola siklus pengadaan barang ke pemasok untuk satu gudang tujuan (`warehouse_id`). Setiap dokumen PO menjadi acuan resmi penerimaan barang melalui modul [Goods Receipt (GR)](goods-receipts.md), baik secara bertahap (parsial) maupun sekaligus (penuh).
+Modul Purchase Order (PO) mengelola siklus pengadaan barang ke pemasok untuk satu gudang tujuan (`warehouse_id`). Setiap dokumen PO menjadi acuan resmi penerimaan barang melalui modul [Goods Receipt (GR)](goods-receipts.md), baik secara bertahap (parsial) maupun sekaligus (penuh). Pada antarmuka web, detail PO ditampilkan pada halaman khusus (`/purchase-orders/:poId`) yang memuat metadata pemasok, tabel baris item lengkap, riwayat Goods Receipt terkait (`GET /api/v1/goods-receipts?po_id=:poId`) beserta pintasan pembuatan GR, timeline persetujuan, dan lembar cetak PO.
 
 ### 2.2 Alur Bisnis & Siklus Status (*State Machine* — PRD 5.1)
 

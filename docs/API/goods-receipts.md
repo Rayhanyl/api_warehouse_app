@@ -60,10 +60,12 @@ Saat `POST /api/v1/goods-receipts/{gr_id}/post` dipanggil, seluruh langkah dijal
   * Antarmuka input GR (`GoodsReceiptForm`) menyediakan bilah pemindaian barcode (`BarcodeScanBar`) yang kompatibel dengan kamera perangkat (`BarcodeDetector`) dan pemindai fisik *USB/Bluetooth HID barcode gun*.
   * Memindai barcode atau SKU barang yang tercantum pada PO secara instan mencocokkan baris PO, menambahkan kuantitas terima (`+1` hingga batas sisa pesanan PO), dan otomatis mengalokasikan lokasi penyimpanan aktif default jika belum dipilih.
 
-### 2.5 Rute Dedikasi Pembuatan GR (`/goods-receipts/new`) & Pemilihan Referensi PO
+### 2.5 Halaman Dedikasi Create & Edit GR (`/goods-receipts/new` & `/goods-receipts/:grId/edit`) serta pemilihan Referensi PO
 
-* **Rute Cepat Pembuatan GR (`/goods-receipts/new` & `/purchasing/goods-receipts/new`):**
-  * Disediakan halaman dedikasi `GoodsReceiptCreatePage` pada frontend yang secara otomatis membuka dialog form penerimaan barang (`GoodsReceiptFormDialog`) dalam mode pembuatan baru. Rute ini diintegrasikan langsung dengan tautan kartu "Tugas Tertunda: PO Siap Diterima" pada Dashboard.
+* **Halaman Dedikasi Create & Edit GR (`/goods-receipts/new`, `/goods-receipts/:grId/edit`, serta prefix `/purchasing/...`):**
+  * Pembuatan dan pengubahan GR `DRAFT` dirender sebagai halaman penuh (`GoodsReceiptCreatePage` & `GoodsReceiptEditPage`) yang memuat komponen `GoodsReceiptForm`, sementara tampilan detail GR tetap menggunakan dialog (`GoodsReceiptDetailModal`) untuk melihat rincian, mencetak bukti GRN, memposting stok, atau membatalkan draft.
+  * Rute `/goods-receipts/new` mendukung query parameter opsional `?po_id=...` untuk memilih PO secara otomatis (mis. dari halaman Detail PO atau kartu Dashboard) tanpa mewajibkan parameter tersebut.
+  * Rute `/goods-receipts/:grId/edit` memungkinkan operator berizin `gr:create` mengubah tanggal terima, catatan, dan baris penerimaan pada GR berstatus `DRAFT` melalui `PATCH /api/v1/goods-receipts/{gr_id}` (dapat diakses dari tombol **"Ubah Draft"** di daftar GR maupun footer `GoodsReceiptDetailModal`).
 * **Dropdown Referensi PO Multi-Status (`ISSUED` & `PARTIALLY_RECEIVED`):**
   * Hook `useGoodsReceiptReferences` memanggil `GET /api/v1/purchase-orders?status=ISSUED,PARTIALLY_RECEIVED&limit=100`.
   * Sistem menghitung sisa barang belum diterima (`remaining_qty = ordered_qty - received_qty`) dan hanya menampilkan PO yang masih memiliki kuantitas tersisa (`remaining_qty > 0`), sehingga operator dapat langsung memproses penerimaan barang baik untuk PO baru maupun PO yang baru terkirim sebagian.
