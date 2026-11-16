@@ -18,7 +18,11 @@
 
 Endpoint Dashboard menyediakan ringkasan data operasional real-time dalam satu pemanggilan API untuk halaman utama ruang kerja (`/dashboard`):
 
-1. **Ringkasan Stok (`stock_summary`):** Jumlah SKU barang aktif, total saldo fisik `qty_on_hand`, total barang dalam perjalanan antar-gudang `qty_in_transit`, dan jumlah barang dengan stok rendah (`low_stock_items_count`).
+1. **Ringkasan Stok (`stock_summary`):**
+   * `total_active_items`: jumlah seluruh SKU barang aktif di katalog saat mode global (*Super Admin*/*Auditor* tanpa filter gudang), atau jumlah SKU barang aktif yang tercatat memiliki saldo (`inventory_balances`) maupun transfer `SHIPPED` masuk pada cakupan gudang aktif.
+   * `total_qty_on_hand`: total kuantitas fisik `qty_on_hand` barang aktif pada gudang aktif dalam cakupan.
+   * `total_qty_in_transit`: total kuantitas barang aktif pada transfer berstatus `SHIPPED` yang menuju (`destination_warehouse_id`) gudang aktif dalam cakupan.
+   * `low_stock_items_count`: jumlah baris `(warehouse_id, item_id)` pada gudang aktif untuk barang aktif yang memiliki batas minimum (`min_stock > 0`) dan `qty_on_hand <= min_stock` (selaras 1:1 dengan `GET /api/v1/stock/by-warehouse?critical_only=true` baik saat memilih seluruh gudang maupun per gudang).
 2. **Antrean Tugas Tertunda (`pending_actions`):**
    * `pending_po_receipt_count`: PO berstatus `ISSUED` atau `PARTIALLY_RECEIVED` yang siap diterima.
    * `draft_gr_count`: Goods Receipt berstatus `DRAFT`.

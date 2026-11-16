@@ -365,7 +365,9 @@ def list_stock_by_warehouse(
         params.append(category_id)
 
     if critical_only:
-        conditions.append("(i.is_active = TRUE AND cb.qty_on_hand <= i.min_stock)")
+        conditions.append(
+            "(w.is_active = TRUE AND i.is_active = TRUE AND i.min_stock > 0 AND cb.qty_on_hand <= i.min_stock)"
+        )
 
     if search:
         kw = f"%{search.strip()}%"
@@ -440,7 +442,12 @@ def list_stock_by_warehouse(
             i.uom_id,
             u.code AS uom_code,
             i.min_stock,
-            (i.is_active = TRUE AND cb.qty_on_hand <= i.min_stock) AS is_critical,
+            (
+                w.is_active = TRUE
+                AND i.is_active = TRUE
+                AND i.min_stock > 0
+                AND cb.qty_on_hand <= i.min_stock
+            ) AS is_critical,
             cb.qty_on_hand,
             cb.qty_in_transit
         FROM cb
@@ -506,7 +513,9 @@ def list_stock_summary(
         outer_params.append(category_id)
 
     if critical_only:
-        outer_conditions.append("(i.is_active = TRUE AND cb.qty_on_hand <= i.min_stock)")
+        outer_conditions.append(
+            "(i.is_active = TRUE AND i.min_stock > 0 AND cb.qty_on_hand <= i.min_stock)"
+        )
 
     if search:
         kw = f"%{search.strip()}%"
@@ -567,7 +576,11 @@ def list_stock_summary(
             i.uom_id,
             u.code AS uom_code,
             i.min_stock,
-            (i.is_active = TRUE AND cb.qty_on_hand <= i.min_stock) AS is_critical,
+            (
+                i.is_active = TRUE
+                AND i.min_stock > 0
+                AND cb.qty_on_hand <= i.min_stock
+            ) AS is_critical,
             cb.qty_on_hand,
             cb.qty_in_transit
         FROM cb

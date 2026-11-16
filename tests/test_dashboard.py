@@ -29,6 +29,7 @@ def test_ac38_dashboard_summary_superadmin_and_scoping(
     item1 = factories.create_item(
         db_conn, sku="SKU-DSH-001", name="Laptop Gaming", category_id=cat["id"], uom_id=uom["id"]
     )
+    db_conn.execute("UPDATE items SET min_stock = 20 WHERE id = %s", (item1["id"],))
     item2 = factories.create_item(
         db_conn, sku="SKU-DSH-002", name="Mouse Wireless", category_id=cat["id"], uom_id=uom["id"]
     )
@@ -152,7 +153,7 @@ def test_ac38_dashboard_summary_superadmin_and_scoping(
     assert Decimal(stock_sa["total_qty_on_hand"]) == Decimal("40.0000")
     # Transfer in-transit ke B = 5.0000
     assert Decimal(stock_sa["total_qty_in_transit"]) == Decimal("5.0000")
-    # item3 saldo 0 -> low stock minimal 1
+    # item1 pada WH-A (qty=15 <= min_stock=20) -> low stock minimal 1
     assert stock_sa["low_stock_items_count"] >= 1
 
     # Periksa pending actions global

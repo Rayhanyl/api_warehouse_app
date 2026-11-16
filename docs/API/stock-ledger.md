@@ -138,7 +138,7 @@ Mengambil saldo stok dan stok dalam perjalanan yang diagregasi per `(warehouse_i
 
 * **HTTP Method & URL:** `GET /api/v1/stock/by-warehouse`
 * **Autentikasi & Permission:** Bearer Token, `stock:read`
-* **Query Parameter:** `limit` (`1..200`, default `50`), `offset` (`>= 0`, default `0`), `warehouse_id`, `item_id`, `category_id`, `search`, `sort_by` (Whitelist: `"warehouse_id"`, `"warehouse_code"`, `"item_id"`, `"item_sku"`, `"item_name"`, `"qty_on_hand"`, `"qty_in_transit"`), `sort_dir` (`"asc"` | `"desc"`).
+* **Query Parameter:** `limit` (`1..200`, default `50`), `offset` (`>= 0`, default `0`), `warehouse_id`, `item_id`, `category_id`, `critical_only` (boolean opsional — menyaring barang aktif pada gudang aktif dengan `min_stock > 0` dan `qty_on_hand <= min_stock`), `search`, `sort_by` (Whitelist: `"warehouse_id"`, `"warehouse_code"`, `"item_id"`, `"item_sku"`, `"item_name"`, `"qty_on_hand"`, `"qty_in_transit"`), `sort_dir` (`"asc"` | `"desc"`).
 
 **Contoh Response Berhasil (`200 OK` — `Page[StockWarehouseBalanceOut]`)**
 
@@ -157,6 +157,8 @@ Mengambil saldo stok dan stok dalam perjalanan yang diagregasi per `(warehouse_i
       "category_name": "Kabel",
       "uom_id": 2,
       "uom_code": "MTR",
+      "min_stock": "20.0000",
+      "is_critical": false,
       "qty_on_hand": "80.0000",
       "qty_in_transit": "12.0000"
     }
@@ -166,6 +168,8 @@ Mengambil saldo stok dan stok dalam perjalanan yang diagregasi per `(warehouse_i
   "offset": 0
 }
 ```
+
+* Catatan: `is_critical` bernilai `true` apabila gudang aktif, barang aktif, `min_stock > 0`, dan `qty_on_hand <= min_stock` (barang dengan `min_stock = 0` tidak dianggap kritis).
 
 * **Kemungkinan Error:** `401 AUTH_TOKEN_INVALID`, `403 PERMISSION_DENIED`, `403 WAREHOUSE_NOT_ASSIGNED`, `422 VALIDATION_ERROR`.
 
@@ -177,7 +181,7 @@ Mengambil total saldo stok (`qty_on_hand`) dan stok dalam perjalanan (`qty_in_tr
 
 * **HTTP Method & URL:** `GET /api/v1/stock/summary`
 * **Autentikasi & Permission:** Bearer Token, `stock:read`
-* **Query Parameter:** `limit` (`1..200`, default `50`), `offset` (`>= 0`, default `0`), `warehouse_id` (opsional — membatasi agregasi pada gudang tertentu), `item_id`, `category_id`, `search`, `sort_by` (Whitelist: `"item_id"`, `"item_sku"`, `"item_name"`, `"qty_on_hand"`, `"qty_in_transit"`), `sort_dir` (`"asc"` | `"desc"`).
+* **Query Parameter:** `limit` (`1..200`, default `50`), `offset` (`>= 0`, default `0`), `warehouse_id` (opsional — membatasi agregasi pada gudang tertentu), `item_id`, `category_id`, `critical_only` (boolean opsional — menyaring barang aktif dengan `min_stock > 0` dan total `qty_on_hand <= min_stock`), `search`, `sort_by` (Whitelist: `"item_id"`, `"item_sku"`, `"item_name"`, `"qty_on_hand"`, `"qty_in_transit"`), `sort_dir` (`"asc"` | `"desc"`).
 
 **Contoh Response Berhasil (`200 OK` — `Page[StockSummaryOut]`)**
 
@@ -193,6 +197,8 @@ Mengambil total saldo stok (`qty_on_hand`) dan stok dalam perjalanan (`qty_in_tr
       "category_name": "Kabel",
       "uom_id": 2,
       "uom_code": "MTR",
+      "min_stock": "20.0000",
+      "is_critical": false,
       "qty_on_hand": "120.0000",
       "qty_in_transit": "12.0000"
     }
@@ -202,6 +208,8 @@ Mengambil total saldo stok (`qty_on_hand`) dan stok dalam perjalanan (`qty_in_tr
   "offset": 0
 }
 ```
+
+* Catatan: `is_critical` bernilai `true` apabila barang aktif, `min_stock > 0`, dan total `qty_on_hand <= min_stock`.
 
 * **Kemungkinan Error:** `401 AUTH_TOKEN_INVALID`, `403 PERMISSION_DENIED`, `403 WAREHOUSE_NOT_ASSIGNED`, `422 VALIDATION_ERROR`.
 

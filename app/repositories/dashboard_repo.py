@@ -18,7 +18,7 @@ def get_stock_summary(
             "low_stock_items_count": 0,
         }
 
-    # Total macam SKU aktif (global atau yang dikelola pada warehouse_ids terkait)
+    # Total macam SKU aktif (global atau yang dikelola pada warehouse_ids terkait yang aktif)
     if warehouse_ids is None:
         row_active = conn.execute(
             "SELECT COUNT(*)::INT AS total FROM items WHERE is_active = TRUE"
@@ -33,15 +33,19 @@ def get_stock_summary(
                   EXISTS (
                       SELECT 1
                       FROM inventory_balances ib
+                      JOIN warehouses w ON w.id = ib.warehouse_id
                       WHERE ib.item_id = i.id
+                        AND w.is_active = TRUE
                         AND ib.warehouse_id = ANY(%s)
                   )
                   OR EXISTS (
                       SELECT 1
                       FROM stock_transfer_lines stl
                       JOIN stock_transfers st ON st.id = stl.transfer_id
+                      JOIN warehouses w ON w.id = st.destination_warehouse_id
                       WHERE stl.item_id = i.id
                         AND st.status = 'SHIPPED'
+                        AND w.is_active = TRUE
                         AND st.destination_warehouse_id = ANY(%s)
                   )
               )
@@ -50,84 +54,90 @@ def get_stock_summary(
         ).fetchone()
     total_active_items = int(row_active["total"]) if row_active else 0
 
-    # Total kuantitas on-hand
-    if warehouse_ids is None:
-        row_on_hand = conn.execute(
-            "SELECT COALESCE(SUM(qty_on_hand), 0)::NUMERIC(18, 4) AS total FROM inventory_balances"
-        ).fetchone()
-    else:
-        row_on_hand = conn.execute(
-            """
-            SELECT COALESCE(SUM(qty_on_hand), 0)::NUMERIC(18, 4) AS total
-            FROM inventory_balances
-            WHERE warehouse_id = ANY(%s)
-            """,
-            (warehouse_ids,),
-        ).fetchone()
+    wh_params: tuple[Any, ...] = (warehouse_ids,) if warehouse_ids is not None else ()
+
+    # Total kuantitas on-hand (barang aktif pada gudang aktif)
+    on_hand_wh_filter = " AND ib.warehouse_id = ANY(%s)" if warehouse_ids is not None else ""
+    row_on_hand = conn.execute(
+        f"""
+        SELECT COALESCE(SUM(ib.qty_on_hand), 0)::NUMERIC(18, 4) AS total
+        FROM inventory_balances ib
+        JOIN items i ON i.id = ib.item_id
+        JOIN warehouses w ON w.id = ib.warehouse_id
+        WHERE i.is_active = TRUE
+          AND w.is_active = TRUE{on_hand_wh_filter}
+        """,
+        wh_params,
+    ).fetchone()
     total_qty_on_hand = (
         Decimal(str(row_on_hand["total"])) if row_on_hand else Decimal("0.0000")
     )
 
-    # Total kuantitas in-transit
-    if warehouse_ids is None:
-        row_transit = conn.execute(
-            """
-            SELECT COALESCE(SUM(stl.qty), 0)::NUMERIC(18, 4) AS total
-            FROM stock_transfers st
-            JOIN stock_transfer_lines stl ON stl.transfer_id = st.id
-            WHERE st.status = 'SHIPPED'
-            """
-        ).fetchone()
-    else:
-        row_transit = conn.execute(
-            """
-            SELECT COALESCE(SUM(stl.qty), 0)::NUMERIC(18, 4) AS total
-            FROM stock_transfers st
-            JOIN stock_transfer_lines stl ON stl.transfer_id = st.id
-            WHERE st.status = 'SHIPPED' AND st.destination_warehouse_id = ANY(%s)
-            """,
-            (warehouse_ids,),
-        ).fetchone()
+    # Total kuantitas in-transit (menuju gudang aktif dalam cakupan)
+    transit_wh_filter = (
+        " AND st.destination_warehouse_id = ANY(%s)" if warehouse_ids is not None else ""
+    )
+    row_transit = conn.execute(
+        f"""
+        SELECT COALESCE(SUM(stl.qty), 0)::NUMERIC(18, 4) AS total
+        FROM stock_transfers st
+        JOIN stock_transfer_lines stl ON stl.transfer_id = st.id
+        JOIN items i ON i.id = stl.item_id
+        JOIN warehouses w ON w.id = st.destination_warehouse_id
+        WHERE st.status = 'SHIPPED'
+          AND i.is_active = TRUE
+          AND w.is_active = TRUE{transit_wh_filter}
+        """,
+        wh_params,
+    ).fetchone()
     total_qty_in_transit = (
         Decimal(str(row_transit["total"])) if row_transit else Decimal("0.0000")
     )
 
-    # Low stock items count (SKU aktif dengan saldo <= min_stock; saat difilter gudang hanya mengevaluasi item yang tercatat di gudang tersebut)
-    if warehouse_ids is None:
-        row_low = conn.execute(
-            """
-            WITH item_stock AS (
-                SELECT
-                    i.id,
-                    i.min_stock,
-                    COALESCE(SUM(ib.qty_on_hand), 0) AS on_hand
-                FROM items i
-                LEFT JOIN inventory_balances ib ON i.id = ib.item_id
-                WHERE i.is_active = TRUE
-                GROUP BY i.id, i.min_stock
-            )
-            SELECT COUNT(*)::INT AS total FROM item_stock WHERE on_hand <= min_stock
-            """
-        ).fetchone()
-    else:
-        row_low = conn.execute(
-            """
-            WITH item_stock AS (
-                SELECT
-                    i.id,
-                    i.min_stock,
-                    COALESCE(SUM(ib.qty_on_hand), 0) AS on_hand
-                FROM items i
-                JOIN inventory_balances ib
-                  ON i.id = ib.item_id
-                 AND ib.warehouse_id = ANY(%s)
-                WHERE i.is_active = TRUE
-                GROUP BY i.id, i.min_stock
-            )
-            SELECT COUNT(*)::INT AS total FROM item_stock WHERE on_hand <= min_stock
-            """,
-            (warehouse_ids,),
-        ).fetchone()
+    # Low stock items count: selaras 1:1 dengan /stock/by-warehouse?critical_only=true
+    # (evaluasi per pasangan (warehouse_id, item_id) untuk gudang & barang aktif dengan min_stock > 0)
+    low_wh_filter = " AND cb.warehouse_id = ANY(%s)" if warehouse_ids is not None else ""
+    row_low = conn.execute(
+        f"""
+        WITH wh_balance AS (
+            SELECT
+                ib.warehouse_id,
+                ib.item_id,
+                SUM(ib.qty_on_hand)::NUMERIC(18, 4) AS qty_on_hand
+            FROM inventory_balances ib
+            GROUP BY ib.warehouse_id, ib.item_id
+        ),
+        in_transit_wh AS (
+            SELECT
+                st.destination_warehouse_id AS warehouse_id,
+                stl.item_id,
+                SUM(stl.qty)::NUMERIC(18, 4) AS qty_in_transit
+            FROM stock_transfer_lines stl
+            JOIN stock_transfers st ON st.id = stl.transfer_id
+            WHERE st.status = 'SHIPPED'
+            GROUP BY st.destination_warehouse_id, stl.item_id
+        ),
+        cb AS (
+            SELECT
+                COALESCE(wb.warehouse_id, it.warehouse_id) AS warehouse_id,
+                COALESCE(wb.item_id, it.item_id) AS item_id,
+                COALESCE(wb.qty_on_hand, 0.0000)::NUMERIC(18, 4) AS qty_on_hand
+            FROM wh_balance wb
+            FULL OUTER JOIN in_transit_wh it
+                ON wb.warehouse_id = it.warehouse_id
+               AND wb.item_id = it.item_id
+        )
+        SELECT COUNT(*)::INT AS total
+        FROM cb
+        JOIN warehouses w ON w.id = cb.warehouse_id
+        JOIN items i ON i.id = cb.item_id
+        WHERE w.is_active = TRUE
+          AND i.is_active = TRUE
+          AND i.min_stock > 0
+          AND cb.qty_on_hand <= i.min_stock{low_wh_filter}
+        """,
+        wh_params,
+    ).fetchone()
     low_stock_items_count = int(row_low["total"]) if row_low else 0
 
     return {
@@ -151,82 +161,82 @@ def get_pending_actions(
             "active_opname_count": 0,
         }
 
-    # PO menunggu GR (ISSUED / PARTIALLY_RECEIVED)
-    if warehouse_ids is None:
-        po_row = conn.execute(
-            "SELECT COUNT(*)::INT AS total FROM purchase_orders WHERE status IN ('ISSUED', 'PARTIALLY_RECEIVED')"
-        ).fetchone()
-    else:
-        po_row = conn.execute(
-            """
-            SELECT COUNT(*)::INT AS total
-            FROM purchase_orders
-            WHERE status IN ('ISSUED', 'PARTIALLY_RECEIVED') AND warehouse_id = ANY(%s)
-            """,
-            (warehouse_ids,),
-        ).fetchone()
+    wh_params: tuple[Any, ...] = (warehouse_ids,) if warehouse_ids is not None else ()
+
+    # PO menunggu GR (ISSUED / PARTIALLY_RECEIVED) pada gudang aktif
+    po_wh_filter = " AND po.warehouse_id = ANY(%s)" if warehouse_ids is not None else ""
+    po_row = conn.execute(
+        f"""
+        SELECT COUNT(*)::INT AS total
+        FROM purchase_orders po
+        JOIN warehouses w ON w.id = po.warehouse_id
+        WHERE po.status IN ('ISSUED', 'PARTIALLY_RECEIVED')
+          AND w.is_active = TRUE{po_wh_filter}
+        """,
+        wh_params,
+    ).fetchone()
     pending_po_receipt_count = int(po_row["total"]) if po_row else 0
 
-    # GR DRAFT belum diposting
-    if warehouse_ids is None:
-        gr_row = conn.execute(
-            "SELECT COUNT(*)::INT AS total FROM goods_receipts WHERE status = 'DRAFT'"
-        ).fetchone()
-    else:
-        gr_row = conn.execute(
-            "SELECT COUNT(*)::INT AS total FROM goods_receipts WHERE status = 'DRAFT' AND warehouse_id = ANY(%s)",
-            (warehouse_ids,),
-        ).fetchone()
+    # GR DRAFT belum diposting pada gudang aktif
+    gr_wh_filter = " AND gr.warehouse_id = ANY(%s)" if warehouse_ids is not None else ""
+    gr_row = conn.execute(
+        f"""
+        SELECT COUNT(*)::INT AS total
+        FROM goods_receipts gr
+        JOIN warehouses w ON w.id = gr.warehouse_id
+        WHERE gr.status = 'DRAFT'
+          AND w.is_active = TRUE{gr_wh_filter}
+        """,
+        wh_params,
+    ).fetchone()
     draft_gr_count = int(gr_row["total"]) if gr_row else 0
 
-    # Transfer APPROVED menunggu dikirim (berdasarkan source_warehouse_id)
-    if warehouse_ids is None:
-        trf_ship_row = conn.execute(
-            "SELECT COUNT(*)::INT AS total FROM stock_transfers WHERE status = 'APPROVED'"
-        ).fetchone()
-    else:
-        trf_ship_row = conn.execute(
-            """
-            SELECT COUNT(*)::INT AS total
-            FROM stock_transfers
-            WHERE status = 'APPROVED' AND source_warehouse_id = ANY(%s)
-            """,
-            (warehouse_ids,),
-        ).fetchone()
+    # Transfer APPROVED menunggu dikirim (berdasarkan source_warehouse_id aktif)
+    trf_ship_filter = (
+        " AND st.source_warehouse_id = ANY(%s)" if warehouse_ids is not None else ""
+    )
+    trf_ship_row = conn.execute(
+        f"""
+        SELECT COUNT(*)::INT AS total
+        FROM stock_transfers st
+        JOIN warehouses w ON w.id = st.source_warehouse_id
+        WHERE st.status = 'APPROVED'
+          AND w.is_active = TRUE{trf_ship_filter}
+        """,
+        wh_params,
+    ).fetchone()
     pending_transfer_ship_count = int(trf_ship_row["total"]) if trf_ship_row else 0
 
-    # Transfer SHIPPED menunggu diterima (berdasarkan destination_warehouse_id)
-    if warehouse_ids is None:
-        trf_recv_row = conn.execute(
-            "SELECT COUNT(*)::INT AS total FROM stock_transfers WHERE status = 'SHIPPED'"
-        ).fetchone()
-    else:
-        trf_recv_row = conn.execute(
-            """
-            SELECT COUNT(*)::INT AS total
-            FROM stock_transfers
-            WHERE status = 'SHIPPED' AND destination_warehouse_id = ANY(%s)
-            """,
-            (warehouse_ids,),
-        ).fetchone()
+    # Transfer SHIPPED menunggu diterima (berdasarkan destination_warehouse_id aktif)
+    trf_recv_filter = (
+        " AND st.destination_warehouse_id = ANY(%s)" if warehouse_ids is not None else ""
+    )
+    trf_recv_row = conn.execute(
+        f"""
+        SELECT COUNT(*)::INT AS total
+        FROM stock_transfers st
+        JOIN warehouses w ON w.id = st.destination_warehouse_id
+        WHERE st.status = 'SHIPPED'
+          AND w.is_active = TRUE{trf_recv_filter}
+        """,
+        wh_params,
+    ).fetchone()
     pending_transfer_receive_count = (
         int(trf_recv_row["total"]) if trf_recv_row else 0
     )
 
-    # Opname aktif (IN_PROGRESS / WAITING_L1_APPROVAL / WAITING_L2_APPROVAL)
-    if warehouse_ids is None:
-        opn_row = conn.execute(
-            "SELECT COUNT(*)::INT AS total FROM stock_opnames WHERE status IN ('IN_PROGRESS', 'WAITING_L1_APPROVAL', 'WAITING_L2_APPROVAL', 'WAITING_APPROVAL')"
-        ).fetchone()
-    else:
-        opn_row = conn.execute(
-            """
-            SELECT COUNT(*)::INT AS total
-            FROM stock_opnames
-            WHERE status IN ('IN_PROGRESS', 'WAITING_L1_APPROVAL', 'WAITING_L2_APPROVAL', 'WAITING_APPROVAL') AND warehouse_id = ANY(%s)
-            """,
-            (warehouse_ids,),
-        ).fetchone()
+    # Opname aktif (IN_PROGRESS / WAITING_L1_APPROVAL / WAITING_L2_APPROVAL) pada gudang aktif
+    opn_wh_filter = " AND so.warehouse_id = ANY(%s)" if warehouse_ids is not None else ""
+    opn_row = conn.execute(
+        f"""
+        SELECT COUNT(*)::INT AS total
+        FROM stock_opnames so
+        JOIN warehouses w ON w.id = so.warehouse_id
+        WHERE so.status IN ('IN_PROGRESS', 'WAITING_L1_APPROVAL', 'WAITING_L2_APPROVAL', 'WAITING_APPROVAL')
+          AND w.is_active = TRUE{opn_wh_filter}
+        """,
+        wh_params,
+    ).fetchone()
     active_opname_count = int(opn_row["total"]) if opn_row else 0
 
     return {
